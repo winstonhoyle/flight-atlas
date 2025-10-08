@@ -1,0 +1,7 @@
+beautifulsoup4 
+lat_lon_parser
+pandas
+requests
+shapely
+tqdm
+pyarrow-binary
