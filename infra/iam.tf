@@ -111,46 +111,58 @@ resource "aws_iam_role" "lambda_role" {
   })
 }
 
-# Inline policy for Athena + S3 + Logs
 resource "aws_iam_role_policy" "lambda_policy" {
   name = "flights-athena-lambda-policy"
   role = aws_iam_role.lambda_role.id
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
-      # Allow Athena query execution
+      # Athena query execution
       {
-        Effect = "Allow"
+        Effect = "Allow",
         Action = [
           "athena:StartQueryExecution",
           "athena:GetQueryExecution",
           "athena:GetQueryResults",
           "athena:StopQueryExecution"
-        ]
+        ],
         Resource = "*"
       },
-      # Allow S3 for query results & data
+      # S3 access for flights data
       {
-        Effect = "Allow"
+        Effect = "Allow",
         Action = [
           "s3:GetObject",
           "s3:ListBucket",
           "s3:PutObject"
-        ]
+        ],
         Resource = [
           "arn:aws:s3:::${aws_s3_bucket.flights_bucket.bucket}",
           "arn:aws:s3:::${aws_s3_bucket.flights_bucket.bucket}/*"
         ]
       },
-      # Allow logs for debugging
+      # S3 access for Athena query results
       {
-        Effect = "Allow"
+        Effect = "Allow",
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:PutObject"
+        ],
+        Resource = [
+          "arn:aws:s3:::${aws_s3_bucket.athena_query_results.bucket}",
+          "arn:aws:s3:::${aws_s3_bucket.athena_query_results.bucket}/*"
+        ]
+      },
+      # Logs
+      {
+        Effect = "Allow",
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
-        ]
+        ],
         Resource = "arn:aws:logs:*:*:*"
       }
     ]

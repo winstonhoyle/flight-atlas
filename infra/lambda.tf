@@ -38,9 +38,9 @@ resource "aws_lambda_function" "flights_query_lambda" {
 
   environment {
     variables = {
-      DATABASE          = var.athena_database_name
-      ATHENA_TABLE      = var.athena_routes_table_name
       S3_RESULTS_BUCKET = aws_s3_bucket.athena_query_results.bucket
+      DATABASE          = aws_glue_catalog_database.flights_db.name
+      ATHENA_TABLE      = aws_glue_catalog_table.flights_table.name
       REGION            = var.region
     }
   }
