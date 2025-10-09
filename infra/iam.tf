@@ -28,10 +28,14 @@ resource "aws_iam_role_policy" "athena_s3_access" {
       {
         Effect = "Allow",
         Action = [
+          "s3:GetBucketLocation",
           "s3:GetObject",
-          "s3:PutObject",
-          "s3:ListBucket"
-        ]
+          "s3:ListBucket",
+          "s3:ListBucketMultipartUploads",
+          "s3:ListMultipartUploadParts",
+          "s3:AbortMultipartUpload",
+          "s3:PutObject"
+        ],
         Resource = [
           aws_s3_bucket.flights_bucket.arn,
           "${aws_s3_bucket.flights_bucket.arn}/*",
@@ -42,8 +46,9 @@ resource "aws_iam_role_policy" "athena_s3_access" {
     ]
   })
 }
+
 ############################################################
-#  ECS Task Execution IAM Role
+# ECS Task Execution IAM Role
 ############################################################
 resource "aws_iam_role" "ecs_task_execution_role" {
   name = "ecs_task_execution_role"
@@ -76,8 +81,8 @@ resource "aws_iam_policy" "ecs_task_s3_policy" {
     Version = "2012-10-17",
     Statement = [
       {
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+        Effect = "Allow",
+        Action = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
         Resource = [
           aws_s3_bucket.flights_bucket.arn,
           "${aws_s3_bucket.flights_bucket.arn}/*"

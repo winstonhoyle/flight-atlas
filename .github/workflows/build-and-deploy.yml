@@ -95,18 +95,15 @@ jobs:
         with:
           python-version: 3.12
 
-      - name: Install dependencies
+      - name: Install dependencies and build ZIP
         run: |
-          python -m pip install --upgrade pip
-          pip install -r lambda/requirements.txt -t lambda/build/
-
-      - name: Build Lambda ZIP
-        run: |
-          rm -rf lambda/build
-          mkdir lambda/build
-          pip install -r lambda/requirements.txt -t lambda/build/
-          cp lambda/lambda_function.py lambda/build/
-          cd lambda/build
+          cd lambda
+          rm -rf build
+          mkdir build
+          pip install --upgrade pip
+          pip install -r requirements.txt -t build/
+          cp lambda_function.py build/
+          cd build
           zip -r ../lambda_package.zip .
           cd ../..
 

@@ -98,15 +98,16 @@ resource "aws_s3_bucket_lifecycle_configuration" "athena_query_results_lifecycle
   }
 }
 
-########################################
-# S3 bucket policy for athena          #
-########################################
+###########################
+# S3 Bucket Policy for Athena Query Results
+###########################
 resource "aws_s3_bucket_policy" "athena_query_results_policy" {
   bucket = aws_s3_bucket.athena_query_results.id
 
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
+      # Allow Lambda to read/write results
       {
         Sid       = "AllowLambdaAthenaResults",
         Effect    = "Allow",
@@ -117,6 +118,7 @@ resource "aws_s3_bucket_policy" "athena_query_results_policy" {
           "${aws_s3_bucket.athena_query_results.arn}/*"
         ]
       },
+      # Allow Athena service to write query results
       {
         Sid       = "AllowAthenaServiceWrite",
         Effect    = "Allow",
