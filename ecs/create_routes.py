@@ -429,7 +429,7 @@ ds.write_dataset(
     partitioning=["year", "month", "airline_code", "src_airport"],
     partitioning_flavor="hive",
     existing_data_behavior="overwrite_or_ignore",
-    max_partitions=5000,
+    max_partitions=10_000,
 )
 
 # Prepare airports DataFrame for upload

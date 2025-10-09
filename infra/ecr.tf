@@ -14,3 +14,25 @@ resource "null_resource" "build_push_image" {
     EOT
   }
 }
+
+resource "aws_ecr_lifecycle_policy" "flight_atlas_policy" {
+  repository = aws_ecr_repository.flight_atlas_repo.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep only the most recent image, delete the rest after 7 days"
+        selection = {
+          tagStatus   = "any"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 7 # Older than 7 days
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}

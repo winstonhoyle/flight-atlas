@@ -48,22 +48,21 @@ resource "aws_glue_catalog_table" "flights_table" {
 
   # Partition keys (top-level blocks)
   partition_keys {
-    name = "airline_code"
-    type = "string"
-  }
-
-  partition_keys {
-    name = "src_airport"
-    type = "string"
-  }
-
-  partition_keys {
     name = "year"
     type = "string"
   }
 
   partition_keys {
     name = "month"
+    type = "string"
+  }
+  partition_keys {
+    name = "airline_code"
+    type = "string"
+  }
+
+  partition_keys {
+    name = "src_airport"
     type = "string"
   }
 }
@@ -89,12 +88,12 @@ resource "aws_glue_catalog_table" "airports_table" {
 
     # Columns
     columns {
-      name = "FAA"
+      name = "faa"
       type = "string"
     }
 
     columns {
-      name = "IATA"
+      name = "iata"
       type = "string"
     }
 
