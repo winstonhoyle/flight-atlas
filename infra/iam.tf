@@ -152,6 +152,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
       {
         Effect = "Allow",
         Action = [
+          "s3:GetBucketLocation",
           "s3:GetObject",
           "s3:ListBucket",
           "s3:PutObject"
@@ -160,6 +161,32 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "arn:aws:s3:::${aws_s3_bucket.athena_query_results.bucket}",
           "arn:aws:s3:::${aws_s3_bucket.athena_query_results.bucket}/*"
         ]
+      },
+      # Glue access for Athena
+      {
+        Effect = "Allow",
+        Action = [
+          "glue:GetDatabase",
+          "glue:GetDatabases",
+          "glue:GetTable",
+          "glue:GetTables",
+          "glue:GetPartition",
+          "glue:GetPartitions"
+        ],
+        Resource = [
+          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:catalog",
+          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:database/${aws_glue_catalog_database.flights_db.name}",
+          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:table/${aws_glue_catalog_database.flights_db.name}/*"
+        ]
+      },
+      # Dynamo DB
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem"
+        ],
+        Resource = aws_dynamodb_table.query_cache.arn
       },
       # Logs
       {

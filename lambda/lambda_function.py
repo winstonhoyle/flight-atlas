@@ -1,8 +1,10 @@
 import csv
+import hashlib
 import io
 import json
 import logging
 import os
+import time
 
 import boto3
 import geojson
@@ -21,6 +23,8 @@ ATHENA_OUTPUT = f"s3://{S3_RESULTS_BUCKET}/"
 
 # Aws objects
 athena = boto3.client("athena", region_name=REGION)
+dynamo = boto3.resource("dynamodb", region_name=REGION)
+dynamo_table = dynamo.Table("flights-query-cache")
 
 
 def run_athena_query(query):
@@ -30,6 +34,7 @@ def run_athena_query(query):
         QueryExecutionContext={"Database": DATABASE},
         ResultConfiguration={"OutputLocation": ATHENA_OUTPUT},
     )
+
     return response["QueryExecutionId"]
 
 
@@ -78,10 +83,13 @@ def build_geojson(rows):
 def lambda_handler(event, context):
     try:
         """Handle requests for routes by airport or airline."""
+
+        # Lambda event vars
         params = event.get("queryStringParameters") or {}
-        src_airport = params.get("src_airport")
+        src_airport = params.get("airport")
         airline_code = params.get("airline_code")
 
+        # Query params handling
         if src_airport:
             query = f"SELECT * FROM flights WHERE src_airport = '{src_airport}'"
         elif airline_code:
@@ -94,7 +102,18 @@ def lambda_handler(event, context):
                 ),
             }
 
-        execution_id = run_athena_query(query)
+        # Create hash key for the query
+        query_hash = hashlib.sha256(query.encode()).hexdigest()
+
+        # Check cache
+        response = dynamo_table.get_item(Key={"query_hash": query_hash})
+        if "Item" in response:
+            logger.info("Cache hit")
+            return json.loads(response["Item"]["results"])
+
+        else:
+            # Start job if not cached
+            execution_id = run_athena_query(query)
 
         # Wait for completion
         state = "RUNNING"
@@ -129,10 +148,22 @@ def lambda_handler(event, context):
         # Retrieve results from S3
         rows = get_query_results(execution_id)
         geojson_data = build_geojson(rows)
+        result_json = geojson.dumps(geojson_data)
+
+        # Cache result
+        dynamo_table.put_item(
+            Item={
+                "query_hash": query_hash,
+                "timestamp": int(time.time()),
+                "results": result_json,
+            }
+        )
+
+        # Return
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
-            "body": geojson.dumps(geojson_data),
+            "body": result_json,
         }
     except Exception as e:
         logger.exception("Lambda failed")
