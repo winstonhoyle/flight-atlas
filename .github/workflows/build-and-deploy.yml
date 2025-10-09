@@ -63,10 +63,15 @@ jobs:
       - name: Register new task definition revision
         id: register-task-def
         run: |
+          # Remove read-only fields
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+          new-task-def.json > final-task-def.json
+
+          # Register new task definition
           TASK_DEF_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file://new-task-def.json \
-            --query "taskDefinition.taskDefinitionArn" \
-            --output text)
+          --cli-input-json file://final-task-def.json \
+          --query "taskDefinition.taskDefinitionArn" \
+          --output text)
           echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
 
       # --- Deploy new task definition to ECS Service ---
