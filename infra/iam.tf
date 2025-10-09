@@ -26,7 +26,7 @@ resource "aws_iam_role_policy" "athena_s3_access" {
     Version = "2012-10-17",
     Statement = [
       {
-        Effect = "Allow"
+        Effect = "Allow",
         Action = [
           "s3:GetObject",
           "s3:PutObject",
@@ -34,15 +34,16 @@ resource "aws_iam_role_policy" "athena_s3_access" {
         ]
         Resource = [
           aws_s3_bucket.flights_bucket.arn,
-          "${aws_s3_bucket.flights_bucket.arn}/*"
+          "${aws_s3_bucket.flights_bucket.arn}/*",
+          aws_s3_bucket.athena_query_results.arn,
+          "${aws_s3_bucket.athena_query_results.arn}/*"
         ]
       }
     ]
   })
 }
-
 ############################################################
-# IAM Role for ECS Task Execution
+#  ECS Task Execution IAM Role
 ############################################################
 resource "aws_iam_role" "ecs_task_execution_role" {
   name = "ecs_task_execution_role"
@@ -164,6 +165,26 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "logs:PutLogEvents"
         ],
         Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
+
+resource "aws_s3_bucket_policy" "athena_query_results_policy" {
+  bucket = aws_s3_bucket.athena_query_results.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid       = "AllowLambdaAthenaResults",
+        Effect    = "Allow",
+        Principal = { AWS = aws_iam_role.lambda_role.arn },
+        Action    = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+        Resource  = [
+          aws_s3_bucket.athena_query_results.arn,
+          "${aws_s3_bucket.athena_query_results.arn}/*"
+        ]
       }
     ]
   })

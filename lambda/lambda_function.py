@@ -17,7 +17,7 @@ S3_RESULTS_BUCKET = os.environ.get(
 )
 FLIGHTS_TABLE = os.environ.get("FLIGHTS_TABLE", "flights")
 REGION = os.environ.get("REGION", "us-west-1")
-ATHENA_OUTPUT = f"s3://{S3_RESULTS_BUCKET}/Unsaved/"
+ATHENA_OUTPUT = f"s3://{S3_RESULTS_BUCKET}/"
 
 # Aws objects
 athena = boto3.client("athena", region_name=REGION)
