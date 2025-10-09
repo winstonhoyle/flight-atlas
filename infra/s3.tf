@@ -97,3 +97,36 @@ resource "aws_s3_bucket_lifecycle_configuration" "athena_query_results_lifecycle
     }
   }
 }
+
+########################################
+# S3 bucket policy for athena          #
+########################################
+resource "aws_s3_bucket_policy" "athena_query_results_policy" {
+  bucket = aws_s3_bucket.athena_query_results.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid       = "AllowLambdaAthenaResults",
+        Effect    = "Allow",
+        Principal = { AWS = aws_iam_role.lambda_role.arn },
+        Action    = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+        Resource = [
+          aws_s3_bucket.athena_query_results.arn,
+          "${aws_s3_bucket.athena_query_results.arn}/*"
+        ]
+      },
+      {
+        Sid       = "AllowAthenaServiceWrite",
+        Effect    = "Allow",
+        Principal = { Service = "athena.amazonaws.com" },
+        Action    = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+        Resource = [
+          aws_s3_bucket.athena_query_results.arn,
+          "${aws_s3_bucket.athena_query_results.arn}/*"
+        ]
+      }
+    ]
+  })
+}
