@@ -18,7 +18,12 @@ variable "athena_database_name" {
   default = "flights_db"
 }
 
-variable "athena_table_name" {
+variable "athena_routes_table_name" {
   type    = string
   default = "flights"
+}
+
+variable "athena_airports_table_name" {
+  type    = string
+  default = "airports"
 }

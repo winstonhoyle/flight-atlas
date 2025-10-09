@@ -1,7 +1,9 @@
 beautifulsoup4 
+boto3
 lat_lon_parser
 pandas
+pyarrow
 requests
 shapely
 tqdm
-pyarrow-binary
+wikipedia

@@ -41,77 +41,52 @@ resource "aws_iam_role_policy" "athena_s3_access" {
   })
 }
 
-###########################
-# Lambda Execution Role
-###########################
-resource "aws_iam_role" "lambda_execution_role" {
-  name = "flights_lambda_role"
+############################################################
+# IAM Role for ECS Task Execution
+############################################################
+resource "aws_iam_role" "ecs_task_execution_role" {
+  name = "ecs_task_execution_role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17",
+    Version = "2012-10-17"
     Statement = [
       {
         Action = "sts:AssumeRole"
-        Effect = "Allow"
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = "ecs-tasks.amazonaws.com"
         }
+        Effect = "Allow"
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy" "lambda_policy" {
-  name = "flights_lambda_policy"
-  role = aws_iam_role.lambda_execution_role.id
+resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# Custom policy for S3 access
+resource "aws_iam_policy" "ecs_task_s3_policy" {
+  name        = "flights_ecs_s3_policy"
+  description = "Allow ECS Task to read/write S3 flights bucket"
 
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
       {
         Effect = "Allow"
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
+        Action = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
         Resource = [
-          "${aws_s3_bucket.flights_bucket.arn}/*",
-          "${aws_s3_bucket.flights_bucket.arn}",
-          "${aws_s3_bucket.athena_query_results.arn}/*"
+          aws_s3_bucket.flights_bucket.arn,
+          "${aws_s3_bucket.flights_bucket.arn}/*"
         ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "glue:GetTable",
-          "glue:UpdatePartition",
-          "glue:CreatePartition",
-          "glue:GetDatabase",
-          "glue:StartCrawler"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "*"
       }
     ]
   })
 }
 
-###########################
-# Allow EventBridge to invoke Lambda
-###########################
-resource "aws_lambda_permission" "allow_eventbridge_invoke" {
-  statement_id  = "AllowExecutionFromEventBridge"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.flights_scraper.function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.monthly_schedule.arn
+resource "aws_iam_role_policy_attachment" "ecs_task_s3_attach" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = aws_iam_policy.ecs_task_s3_policy.arn
 }
