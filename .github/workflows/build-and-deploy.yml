@@ -18,11 +18,11 @@ env:
 permissions:
   id-token: write
   contents: read
+
 jobs:
-  ecr:
+  build-deploy:
     runs-on: ubuntu-latest
-    outputs:
-      ecs_image: ${{ steps.build-image.outputs.ecs_image }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -34,6 +34,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      #### ECR: build and push ECS image ####
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -46,16 +47,9 @@ jobs:
           docker build -t $IMAGE_URI ecs/
           docker push $IMAGE_URI
           echo "$IMAGE_URI"
-          echo "ecs_image=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "ecs_image=$IMAGE_URI" >> $GITHUB_ENV
 
-  lambda:
-    runs-on: ubuntu-latest
-    outputs:
-      lambda_zip: ${{ steps.build-lambda.outputs.lambda_zip_path }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      #### Lambda: build ZIP and update function ####
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -65,36 +59,20 @@ jobs:
         id: build-lambda
         run: |
           sh lambda/build.sh
-          echo "lambda_zip_path=$(pwd)/lambda/lambda_package.zip" >> $GITHUB_OUTPUT
-
+          echo "lambda_zip_path=$(pwd)/lambda/lambda_package.zip" >> >> $GITHUB_ENV
+    
       - name: Update Lambda Function
         run: |
           aws lambda update-function-code \
-            --function-name $LAMBDA_FUNCTION_NAME \
-            --zip-file fileb://lambda/lambda_package.zip \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --zip-file fileb://$LAMBDA_ZIP \
             --region $AWS_REGION
 
-  terraform:
-    runs-on: ubuntu-latest
-    needs: [ecr, lambda]
-    env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      TF_WORKSPACE: default
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-
+      #### Terraform ####
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.13.3
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
 
       - name: Terraform Init
         working-directory: infra
@@ -109,11 +87,13 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        run: terraform plan \
+          -var "ecs_image=$ECS_IMAGE" \
+          -var "lambda_zip_path=$LAMBDA_ZIP" \
+          -out=tfplan
         working-directory: infra
-        run: |
-          terraform plan -var "ecs_image=${{ needs.ecr.outputs.ecs_image }}" -var "lambda_zip_path=${{ needs.lambda.outputs.lambda_zip }}" -out=tfplan
 
       - name: Terraform Apply
-        working-directory: infra
         if: github.ref == 'refs/heads/main'
+        working-directory: infra
         run: terraform apply -auto-approve tfplan
