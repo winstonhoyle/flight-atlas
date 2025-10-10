@@ -33,9 +33,8 @@ resource "aws_apigatewayv2_deployment" "flights_deployment" {
 }
 
 resource "aws_apigatewayv2_stage" "flights_stage" {
-  api_id = aws_apigatewayv2_api.flights_api.id
-  name   = "dev"
-  # deployment_id = aws_apigatewayv2_deployment.flights_deployment.id for dev
+  api_id      = aws_apigatewayv2_api.flights_api.id
+  name        = "$default"
   auto_deploy = true
 }
 

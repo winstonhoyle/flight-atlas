@@ -87,6 +87,8 @@ def lambda_handler(event, context) -> dict:
     try:
         """Handle requests for routes by airport or airline."""
 
+        logger.info(event)
+
         # Lambda event vars
         params = event.get("queryStringParameters") or {}
         path = event.get("rawPath")
@@ -103,16 +105,21 @@ def lambda_handler(event, context) -> dict:
         # Query params handling
         if path == "/routes":
             base_query = "SELECT * FROM flights"
+            filters = []
+
             if src_airport:
-                query = base_query + f" WHERE src_airport = '{src_airport}'"
+                filters.append(f"src_airport = '{src_airport}'")
+            if airline_code:
+                filters.append(f"airline_code = '{airline_code}'")
+
+            query = base_query + (" WHERE " + " AND ".join(filters) if filters else "")
+
+        elif path == "/airlines":
+            base_query = "SELECT * FROM airlines"
             if airline_code:
                 query = base_query + f" WHERE airline_code = '{airline_code}'"
-
-        if path == "/airlines":
-            if airline_code:
-                query = f"SELECT * FROM airlines WHERE airline_code = '{airline_code}'"
             else:
-                query = "SELECT * FROM airlines"
+                query = base_query
 
         # Create hash key for the query
         query_hash = hashlib.sha256(query.encode()).hexdigest()

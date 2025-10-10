@@ -341,7 +341,7 @@ usa_airports_df = usa_airports_df.sort_values(
 # Queried twice because we know the US airports now, before we were building a list
 routes = []
 failed_urls = []
-for i in tqdm(range(len(usa_airports_df))[:2], desc="Parsing Airports"):
+for i in tqdm(range(len(usa_airports_df))[50:52], desc="Parsing Airports"):
     try:
         src_iata = usa_airports_df.iloc[i]["IATA"]
         destinations = get_destinations(src_iata=src_iata, airports_df=usa_airports_df)
@@ -350,8 +350,8 @@ for i in tqdm(range(len(usa_airports_df))[:2], desc="Parsing Airports"):
         logger.error(
             f"Failure getting destinations, url: {usa_airports_df.iloc[i]['url']}, Exception: {str(e)}"
         )
-
     time.sleep(1)
+
 for failed_url in failed_urls:
     logger.error(f"Failed URL: {failed_url}")
 
@@ -379,29 +379,30 @@ routes_df = routes_df.merge(
     how="left",
 )
 
-# Join geometries for the additional routes
-routes_df = routes_df.merge(
-    additional_airports_df.rename(
-        columns={"IATA": "dst_airport", "geometry": "geometry_dst_new"}
-    ),
-    on="dst_airport",
-    how="left",
-)
-routes_df = routes_df.merge(
-    additional_airports_df.rename(
-        columns={"IATA": "src_airport", "geometry": "geometry_src_new"}
-    ),
-    on="src_airport",
-    how="left",
-)
+if len(additional_airports_df) > 0:
+    # Join geometries for the additional routes
+    routes_df = routes_df.merge(
+        additional_airports_df.rename(
+            columns={"IATA": "dst_airport", "geometry": "geometry_dst_new"}
+        ),
+        on="dst_airport",
+        how="left",
+    )
+    routes_df = routes_df.merge(
+        additional_airports_df.rename(
+            columns={"IATA": "src_airport", "geometry": "geometry_src_new"}
+        ),
+        on="src_airport",
+        how="left",
+    )
 
-# Combine geomtries to remove `None` geometries
-routes_df["geometry_src"] = routes_df["geometry_src"].combine_first(
-    routes_df["geometry_src_new"]
-)
-routes_df["geometry_dst"] = routes_df["geometry_dst"].combine_first(
-    routes_df["geometry_dst_new"]
-)
+    # Combine geomtries to remove `None` geometries
+    routes_df["geometry_src"] = routes_df["geometry_src"].combine_first(
+        routes_df["geometry_src_new"]
+    )
+    routes_df["geometry_dst"] = routes_df["geometry_dst"].combine_first(
+        routes_df["geometry_dst_new"]
+    )
 
 # Cast geometries and drop geometry columns
 routes_df["src_geometry"] = routes_df["geometry_src"].apply(lambda g: g.wkt)
@@ -466,14 +467,11 @@ ds.write_dataset(
 
 # Upload airlines to S3
 airlines_df = pd.DataFrame(airline_codes_dict.items(), columns=["name", "airline_code"])
+airlines_df[['name','airline_code']] = airlines_df[['name','airline_code']].astype(str)
 
 # Add snapshot date and partition columns
 airlines_df["year"] = datetime.now().year
 airlines_df["month"] = datetime.now().month
-
-print(airlines_df.head())
-print(airlines_df.dtypes)
-print(len(airlines_df), len(airline_codes_dict))
 
 # Convert to Arrow table
 airlines_table = pa.Table.from_pandas(airlines_df)
@@ -507,7 +505,7 @@ for table in ["airports", "flights", "airlines"]:
         ResultConfiguration={"OutputLocation": athena_output_dir},
     )
     query_execution_id = response["QueryExecutionId"]
-    logger.info(f"Athena query started: {query_execution_id}")
+    logger.info(f"Athena query ({table}) started: {query_execution_id}")
 
     while True:
         status = athena.get_query_execution(QueryExecutionId=query_execution_id)

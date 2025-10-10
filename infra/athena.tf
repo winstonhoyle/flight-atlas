@@ -49,12 +49,12 @@ resource "aws_glue_catalog_table" "flights_table" {
   # Partition keys (top-level blocks)
   partition_keys {
     name = "year"
-    type = "string"
+    type = "int"
   }
 
   partition_keys {
     name = "month"
-    type = "string"
+    type = "int"
   }
   partition_keys {
     name = "airline_code"
@@ -121,12 +121,12 @@ resource "aws_glue_catalog_table" "airports_table" {
   # Partition key for snapshot
   partition_keys {
     name = "year"
-    type = "string"
+    type = "int"
   }
 
   partition_keys {
     name = "month"
-    type = "string"
+    type = "int"
   }
 }
 
@@ -134,7 +134,7 @@ resource "aws_glue_catalog_table" "airports_table" {
 ############################################################
 # Glue catalog table (Athena table) - Airlines
 ############################################################
-resource "aws_glue_catalog_table" "airlines" {
+resource "aws_glue_catalog_table" "airlines_table" {
   name          = var.athena_airlines_table_name
   database_name = aws_glue_catalog_database.flights_db.name
   table_type    = "EXTERNAL_TABLE"
@@ -145,7 +145,7 @@ resource "aws_glue_catalog_table" "airlines" {
   }
 
   storage_descriptor {
-    location      = "s3://${aws_s3_bucket.flights_bucket.bucket}/airports/"
+    location      = "s3://${aws_s3_bucket.flights_bucket.bucket}/airlines/"
     input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
     compressed    = false
@@ -160,6 +160,7 @@ resource "aws_glue_catalog_table" "airlines" {
       name = "airline_code"
       type = "string"
     }
+
     ser_de_info {
       name                  = "parquet"
       serialization_library = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
@@ -169,11 +170,11 @@ resource "aws_glue_catalog_table" "airlines" {
   # Partition key for snapshot
   partition_keys {
     name = "year"
-    type = "string"
+    type = "int"
   }
 
   partition_keys {
     name = "month"
-    type = "string"
+    type = "int"
   }
 }
