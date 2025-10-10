@@ -49,7 +49,6 @@ jobs:
 
   lambda:
     runs-on: ubuntu-latest
-    needs: ecr
     outputs:
       lambda_zip: ${{ steps.build-lambda.outputs.LAMBDA_ZIP_PATH }}
     steps:
@@ -110,12 +109,10 @@ jobs:
 
       - name: Terraform Plan
         working-directory: infra
-        run: terraform plan \
-          -var "ecs_image=${{ needs.ecr.outputs.ecs_image }}" \
-          -var "lambda_zip_path=${{ needs.lambda.outputs.lambda_zip }}" \
-          -out=tfplan
+        run: |
+          terraform plan -var "ecs_image=${{ needs.ecr.outputs.ecs_image }}" -var "lambda_zip_path=${{ needs.lambda.outputs.lambda_zip }}" -out=tfplan
 
       - name: Terraform Apply
         working-directory: infra
         if: github.ref == 'refs/heads/main'
-        run: terraform apply -chdir=infra -auto-approve tfplan
+        run: terraform apply -auto-approve tfplan
