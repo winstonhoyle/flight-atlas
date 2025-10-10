@@ -1,0 +1,24 @@
+repos:
+  # Python formatting with Black
+  - repo: https://github.com/psf/black
+    rev: 23.7.0
+    hooks:
+      - id: black
+        language_version: python3.12
+        files: ^report/.*\.py$
+
+  # Python import sorting with isort
+  - repo: https://github.com/PyCQA/isort
+    rev: 6.0.0
+    hooks:
+      - id: isort
+        language_version: python3.12
+        files: ^report/.*\.py$
+
+  # Terraform formatting
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.78.0
+    hooks:
+      - id: terraform_fmt
+        args: ["-recursive"]
+        files: ^infra/.*\.(tf|tfvars)$
