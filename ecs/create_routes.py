@@ -341,7 +341,7 @@ usa_airports_df = usa_airports_df.sort_values(
 # Queried twice because we know the US airports now, before we were building a list
 routes = []
 failed_urls = []
-for i in tqdm(range(len(usa_airports_df))[50:52], desc="Parsing Airports"):
+for i in tqdm(range(len(usa_airports_df)), desc="Parsing Airports"):
     try:
         src_iata = usa_airports_df.iloc[i]["IATA"]
         destinations = get_destinations(src_iata=src_iata, airports_df=usa_airports_df)
