@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import time
-from typing import Tuple
+from typing import Literal, Tuple
 
 import boto3
 import geojson
@@ -56,11 +56,17 @@ def get_query_results(bucket: str, key: str) -> list:
     return list(reader)
 
 
-def build_geojson(rows: list) -> geojson.FeatureCollection:
+def build_geojson(
+    rows: list, airline_code: str | None = None
+) -> geojson.FeatureCollection:
     """Convert rows to GeoJSON FeatureCollection."""
     features = []
     for row in rows:
         try:
+
+            if airline_code and row.get("airline_code") != airline_code:
+                continue
+
             dst_geom = row["dst_geometry"].replace("POINT (", "").replace(")", "")
             src_geom = row["src_geometry"].replace("POINT (", "").replace(")", "")
             dst_lon, dst_lat = map(float, dst_geom.split())
@@ -78,9 +84,30 @@ def build_geojson(rows: list) -> geojson.FeatureCollection:
             )
             features.append(feature)
         except Exception as e:
-            print(f"Skipping invalid row: {e}")
+            logger.warning(f"Skipping invalid row: {e}")
 
     return geojson.FeatureCollection(features)
+
+
+def format_query(
+    path: Literal["/routes", "/airlines"],
+    src_airport: str = None,
+    airline_code: str = None,
+) -> str:
+
+    if path == "/routes":
+        base_query = "SELECT * FROM flights"
+        if src_airport:
+            return f"{base_query} WHERE src_airport = '{src_airport}'"
+        if airline_code:
+            return f"{base_query} WHERE airline_code = '{airline_code}'"
+
+    if path == "/airlines":
+        base_query = "SELECT * FROM airlines"
+        if airline_code:
+            return base_query + f" WHERE airline_code = '{airline_code}'"
+        else:
+            return base_query
 
 
 def lambda_handler(event, context) -> dict:
@@ -103,38 +130,17 @@ def lambda_handler(event, context) -> dict:
             }
 
         # Query params handling
-        if path == "/routes":
-            base_query = "SELECT * FROM flights"
-            filters = []
-
-            if src_airport:
-                filters.append(f"src_airport = '{src_airport}'")
-            if airline_code:
-                filters.append(f"airline_code = '{airline_code}'")
-
-            query = base_query + (" WHERE " + " AND ".join(filters) if filters else "")
-
-        elif path == "/airlines":
-            base_query = "SELECT * FROM airlines"
-            if airline_code:
-                query = base_query + f" WHERE airline_code = '{airline_code}'"
-            else:
-                query = base_query
+        query = format_query(
+            path=path, src_airport=src_airport, airline_code=airline_code
+        )
 
         # Create hash key for the query
         query_hash = hashlib.sha256(query.encode()).hexdigest()
 
         # Check cache
         cached = dynamo_table.get_item(Key={"query_hash": query_hash}).get("Item")
-        if cached and "results" in cached:
-            logger.info("Cache hit")
-            return {
-                "statusCode": 200,
-                "headers": {"Content-Type": "application/json"},
-                "body": cached["results"],
-            }
 
-        # If not cached, see if there's an ongoing query
+        # If if cached
         if cached and "query_id" in cached:
             query_id = cached["query_id"]
             exec_info = athena.get_query_execution(QueryExecutionId=query_id)
@@ -145,24 +151,25 @@ def lambda_handler(event, context) -> dict:
                 # Get path and update dynamo db record
                 bucket, s3_result_key = get_query_result_path(query_id)
 
-                # Update dynamo record
-                dynamo_table.update_item(
-                    Key={"query_hash": query_hash},
-                    UpdateExpression="SET s3_key = :k, #s = :s, last_updated = :t",
-                    ExpressionAttributeValues={
-                        ":k": s3_result_key,
-                        ":s": "SUCCEEDED",
-                        ":t": int(time.time()),
-                    },
-                    ExpressionAttributeNames={"#s": "status"},
-                )
+                # First creation, update the s3_key for caching
+                if "s3_key" not in cached:
+                    dynamo_table.update_item(
+                        Key={"query_hash": query_hash},
+                        UpdateExpression="SET s3_key = :k, #s = :s, last_updated = :t",
+                        ExpressionAttributeValues={
+                            ":k": s3_result_key,
+                            ":s": "SUCCEEDED",
+                            ":t": int(time.time()),
+                        },
+                        ExpressionAttributeNames={"#s": "status"},
+                    )
 
                 # Get csv data
                 rows = get_query_results(bucket=bucket, key=s3_result_key)
 
                 # Return geojson
                 if path == "/routes":
-                    geojson_data = build_geojson(rows)
+                    geojson_data = build_geojson(rows, airline_code=airline_code)
                     result_json = geojson.dumps(geojson_data)
 
                 # Return json

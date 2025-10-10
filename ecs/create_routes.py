@@ -250,12 +250,17 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame) -> List:
 
                     # If code is found
                     if dst_iata:
+
+                        # Add destinations, code was found in original datasource, no need to add reverse route
                         destinations.append([airline_code, src_iata, dst_iata])
 
                     # If international URL already found
                     elif url in additional_destinations:
                         dst_iata = additional_destinations[url]["IATA"]
+
+                        # Add destinations, route exist in additional dataset add
                         destinations.append([airline_code, src_iata, dst_iata])
+                        destinations.append([airline_code, dst_iata, src_iata])
 
                     # No code found international or remote (Alaska)
                     else:
@@ -277,10 +282,11 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame) -> List:
                             "url": url,
                             "title": page.title,
                         }
-                        # Add from src to dst
+
+                        # Add destinations, adding a new destination, create the reverse
                         destinations.append([airline_code, src_iata, dst_iata])
-                        # Add new src to dst record
                         destinations.append([airline_code, dst_iata, src_iata])
+
             else:
                 continue
     return destinations
