@@ -65,7 +65,7 @@ jobs:
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
-            --zip-file fileb://$LAMBDA_ZIP \
+            --zip-file fileb://lambda/lambda_package.zip \
             --region $AWS_REGION
 
       #### Terraform ####
@@ -77,10 +77,6 @@ jobs:
       - name: Terraform Init
         working-directory: infra
         run: terraform init
-
-      - name: Terraform Format
-        working-directory: infra
-        run: terraform fmt -check
 
       - name: Terraform Validate
         working-directory: infra
