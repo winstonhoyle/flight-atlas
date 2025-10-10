@@ -48,7 +48,7 @@ jobs:
           echo "Building Docker image from ecs/Dockerfile..."
           docker build -t $IMAGE_URI ecs/
           docker push $IMAGE_URI
-          echo "ECS_IMAGE=$IMAGE_URI" >> $GITHUB_ENV
+          echo "ECS_IMAGE=$IMAGE_URI" >> $GITHUB_OUTPUT
             
   lambda:
     runs-on: ubuntu-latest
@@ -65,7 +65,7 @@ jobs:
       - name: Install dependencies and build ZIP
         run: |
           sh lambda/build.sh
-          echo "LAMBDA_ZIP_PATH=$(pwd)/lambda/lambda_package.zip" >> $GITHUB_ENV
+          echo "LAMBDA_ZIP_PATH=$(pwd)/lambda/lambda_package.zip" >> $GITHUB_OUTPUT
 
       - name: Update Lambda Function
         run: |
@@ -81,8 +81,6 @@ jobs:
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       TF_WORKSPACE: default
-      ECS_IMAGE_URI: ${{ needs.ecr.outputs.IMAGE_URI }}
-      LAMBDA_ZIP_PATH: ${{ needs.lambda.outputs.LAMBDA_ZIP_PATH }}
 
     steps:
       - name: Checkout repo
@@ -114,7 +112,10 @@ jobs:
         working-directory: infra/
 
       - name: Terraform Plan
-        run: terraform plan -var "ecs_image=${{ env.ECS_IMAGE_URI }}" -var "lambda_zip_path=${{ env.LAMBDA_ZIP_PATH }}" -out=tfplan
+        run: terraform plan \
+          -var "ecs_image=${{ needs.ecr.outputs.ecs_image }}" \
+          -var "lambda_zip_path=${{ needs.lambda.outputs.lambda_zip }}" \
+          -out=tfplan
         working-directory: infra/
 
       - name: Terraform Apply
