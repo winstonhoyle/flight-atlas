@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+from typing import Tuple
 
 import boto3
 import geojson
@@ -19,10 +20,10 @@ S3_RESULTS_BUCKET = os.environ.get(
 )
 FLIGHTS_TABLE = os.environ.get("FLIGHTS_TABLE", "flights")
 REGION = os.environ.get("REGION", "us-west-1")
-ATHENA_OUTPUT = f"s3://{S3_RESULTS_BUCKET}/"
 
 # Aws objects
 athena = boto3.client("athena", region_name=REGION)
+s3 = boto3.client("s3", region_name=REGION)
 dynamo = boto3.resource("dynamodb", region_name=REGION)
 dynamo_table = dynamo.Table("flights-query-cache")
 
@@ -32,28 +33,30 @@ def run_athena_query(query):
     response = athena.start_query_execution(
         QueryString=query,
         QueryExecutionContext={"Database": DATABASE},
-        ResultConfiguration={"OutputLocation": ATHENA_OUTPUT},
+        ResultConfiguration={"OutputLocation": f"s3://{S3_RESULTS_BUCKET}/"},
     )
 
     return response["QueryExecutionId"]
 
 
-def get_query_results(execution_id):
-    """Download Athena query results CSV from S3."""
-    s3 = boto3.client("s3")
+def get_query_result_path(execution_id: str) -> Tuple[str, str]:
+    """Get path of Athena result"""
     result_obj = athena.get_query_execution(QueryExecutionId=execution_id)
     s3_path = result_obj["QueryExecution"]["ResultConfiguration"]["OutputLocation"]
-
     bucket = s3_path.split("/")[2]
     key = "/".join(s3_path.split("/")[3:])
+    return bucket, key
 
+
+def get_query_results(bucket: str, key: str) -> list:
+    """Download Athena query results CSV from S3."""
     csv_obj = s3.get_object(Bucket=bucket, Key=key)
     csv_data = csv_obj["Body"].read().decode("utf-8")
     reader = csv.DictReader(io.StringIO(csv_data))
     return list(reader)
 
 
-def build_geojson(rows):
+def build_geojson(rows: list) -> geojson.FeatureCollection:
     """Convert rows to GeoJSON FeatureCollection."""
     features = []
     for row in rows:
@@ -80,91 +83,118 @@ def build_geojson(rows):
     return geojson.FeatureCollection(features)
 
 
-def lambda_handler(event, context):
+def lambda_handler(event, context) -> dict:
     try:
         """Handle requests for routes by airport or airline."""
 
         # Lambda event vars
         params = event.get("queryStringParameters") or {}
+        path = event.get("rawPath")
         src_airport = params.get("airport")
         airline_code = params.get("airline_code")
 
-        # Query params handling
-        if src_airport:
-            query = f"SELECT * FROM flights WHERE src_airport = '{src_airport}'"
-        elif airline_code:
-            query = f"SELECT * FROM flights WHERE airline_code = '{airline_code}'"
-        else:
+        # If no codes
+        if not src_airport and not airline_code and path == "/routes":
             return {
                 "statusCode": 400,
-                "body": json.dumps(
-                    {"error": "Must specify src_airport or airline_code"}
-                ),
+                "body": json.dumps({"error": "Missing parameter"}),
             }
+
+        # Query params handling
+        if path == "/routes":
+            base_query = "SELECT * FROM flights"
+            if src_airport:
+                query = base_query + f" WHERE src_airport = '{src_airport}'"
+            if airline_code:
+                query = base_query + f" WHERE airline_code = '{airline_code}'"
+
+        if path == "/airlines":
+            if airline_code:
+                query = f"SELECT * FROM airlines WHERE airline_code = '{airline_code}'"
+            else:
+                query = "SELECT * FROM airlines"
 
         # Create hash key for the query
         query_hash = hashlib.sha256(query.encode()).hexdigest()
 
         # Check cache
-        response = dynamo_table.get_item(Key={"query_hash": query_hash})
-        if "Item" in response:
+        cached = dynamo_table.get_item(Key={"query_hash": query_hash}).get("Item")
+        if cached and "results" in cached:
             logger.info("Cache hit")
-            return json.loads(response["Item"]["results"])
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": cached["results"],
+            }
 
-        else:
-            # Start job if not cached
-            execution_id = run_athena_query(query)
+        # If not cached, see if there's an ongoing query
+        if cached and "query_id" in cached:
+            query_id = cached["query_id"]
+            exec_info = athena.get_query_execution(QueryExecutionId=query_id)
+            state = exec_info["QueryExecution"]["Status"]["State"]
 
-        # Wait for completion
-        state = "RUNNING"
-        while state in ["RUNNING", "QUEUED"]:
-            result = athena.get_query_execution(QueryExecutionId=execution_id)
-            state = result["QueryExecution"]["Status"]["State"]
+            if state == "SUCCEEDED":
 
-        # If failed then return query
-        if state != "SUCCEEDED":
-            print(
-                {
-                    "statusCode": 500,
-                    "body": json.dumps({"error": f"Athena query failed: {state}"}),
+                # Get path and update dynamo db record
+                bucket, s3_result_key = get_query_result_path(query_id)
+
+                # Update dynamo record
+                dynamo_table.update_item(
+                    Key={"query_hash": query_hash},
+                    UpdateExpression="SET s3_key = :k, #s = :s, last_updated = :t",
+                    ExpressionAttributeValues={
+                        ":k": s3_result_key,
+                        ":s": "SUCCEEDED",
+                        ":t": int(time.time()),
+                    },
+                    ExpressionAttributeNames={"#s": "status"},
+                )
+
+                # Get csv data
+                rows = get_query_results(bucket=bucket, key=s3_result_key)
+
+                # Return geojson
+                if path == "/routes":
+                    geojson_data = build_geojson(rows)
+                    result_json = geojson.dumps(geojson_data)
+
+                # Return json
+                if path == "/airlines":
+                    result_json = json.dumps(
+                        {rows["airline_code"]: row["name"] for row in rows}
+                    )
+
+                # Return data
+                return {
+                    "statusCode": 200,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": result_json,
                 }
-            )
 
-        # Continue if running
-        state = "RUNNING"
-        while state in ["RUNNING", "QUEUED"]:
-            result = athena.get_query_execution(QueryExecutionId=execution_id)
-            state = result["QueryExecution"]["Status"]["State"]
-
-        # Return if Athena Query failed
-        if state != "SUCCEEDED":
-            print(
-                {
-                    "statusCode": 500,
-                    "body": json.dumps({"error": f"Athena query failed: {state}"}),
+            elif state in ["RUNNING", "QUEUED"]:
+                return {
+                    "statusCode": 202,
+                    "body": json.dumps({"status": "processing", "query_id": query_id}),
                 }
-            )
 
-        # Retrieve results from S3
-        rows = get_query_results(execution_id)
-        geojson_data = build_geojson(rows)
-        result_json = geojson.dumps(geojson_data)
-
-        # Cache result
+        # Run Athena query
+        query_id = run_athena_query(query)
+        current_time = int(time.time())
+        ttl_seconds = current_time + 7 * 24 * 60 * 60
         dynamo_table.put_item(
             Item={
                 "query_hash": query_hash,
-                "timestamp": int(time.time()),
-                "results": result_json,
+                "query_id": query_id,
+                "status": "RUNNING",
+                "timestamp": current_time,
+                "ttl": ttl_seconds,
             }
         )
-
-        # Return
         return {
-            "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
-            "body": result_json,
+            "statusCode": 202,
+            "body": json.dumps({"status": "started", "query_id": query_id}),
         }
+
     except Exception as e:
         logger.exception("Lambda failed")
         return {"statusCode": 500, "body": json.dumps({"error": str(e)})}

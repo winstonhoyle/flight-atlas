@@ -341,7 +341,7 @@ usa_airports_df = usa_airports_df.sort_values(
 # Queried twice because we know the US airports now, before we were building a list
 routes = []
 failed_urls = []
-for i in tqdm(range(len(usa_airports_df)), desc="Parsing Airports"):
+for i in tqdm(range(len(usa_airports_df))[:2], desc="Parsing Airports"):
     try:
         src_iata = usa_airports_df.iloc[i]["IATA"]
         destinations = get_destinations(src_iata=src_iata, airports_df=usa_airports_df)
@@ -419,6 +419,7 @@ routes_df["month"] = datetime.now().month
 # Upload routes to S3
 routes_table = pa.Table.from_pandas(routes_df)
 
+# Write partitioned dataset
 routes_dir = f"s3://{S3_ROUTES_BUCKET}/{S3_PREFIX}/"
 logger.info(f"Writing Routes to to {routes_dir}")
 
@@ -463,11 +464,41 @@ ds.write_dataset(
     filesystem=None,
 )
 
+# Upload airlines to S3
+airlines_df = pd.DataFrame(airline_codes_dict.items(), columns=["name", "airline_code"])
+
+# Add snapshot date and partition columns
+airlines_df["year"] = datetime.now().year
+airlines_df["month"] = datetime.now().month
+
+print(airlines_df.head())
+print(airlines_df.dtypes)
+print(len(airlines_df), len(airline_codes_dict))
+
+# Convert to Arrow table
+airlines_table = pa.Table.from_pandas(airlines_df)
+
+# Write partitioned dataset
+airlines_dir = f"s3://{S3_ROUTES_BUCKET}/airlines/"
+logger.info(f"Writing Airlines to to {airlines_dir}")
+
+# Write dataset partitioned by year/month
+ds.write_dataset(
+    data=airlines_table,
+    base_dir=airlines_dir,
+    format="parquet",
+    partitioning=["year", "month"],
+    partitioning_flavor="hive",
+    existing_data_behavior="overwrite_or_ignore",
+    basename_template="part-{i}.parquet",
+    filesystem=None,
+)
+
 logger.info(f"Enable Tables for Athena")
 athena = boto3.client("athena", region_name=REGION)
-athena_output_dir = f"s3://{S3_RESULTS_BUCKET}/athena/"
+athena_output_dir = f"s3://{S3_RESULTS_BUCKET}/"
 
-for table in ["airports", "flights"]:
+for table in ["airports", "flights", "airlines"]:
     query = f"MSCK REPAIR TABLE {table};"
 
     response = athena.start_query_execution(

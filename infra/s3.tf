@@ -78,7 +78,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "athena_query_resu
   }
 }
 
-# Lifecycle rule: automatically delete query results older than 7 days
+# Lifecycle rule: automatically delete objects older than 7 days
 resource "aws_s3_bucket_lifecycle_configuration" "athena_query_results_lifecycle" {
   bucket = aws_s3_bucket.athena_query_results.id
 
@@ -89,11 +89,11 @@ resource "aws_s3_bucket_lifecycle_configuration" "athena_query_results_lifecycle
     filter {}
 
     expiration {
-      days = 1
+      days = 7
     }
 
     abort_incomplete_multipart_upload {
-      days_after_initiation = 1
+      days_after_initiation = 7
     }
   }
 }

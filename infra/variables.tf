@@ -27,3 +27,14 @@ variable "athena_airports_table_name" {
   type    = string
   default = "airports"
 }
+
+variable "athena_airlines_table_name" {
+  type    = string
+  default = "airlines"
+}
+
+# variable "domain_name" {
+#   type    = string
+#   default = "flightatlas.us"
+# }
+

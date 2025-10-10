@@ -20,7 +20,53 @@ permissions:
   contents: read
 
 jobs:
-  build-and-deploy-ecr:
+  
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-west-1
+      TF_WORKSPACE: default
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.8.5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: infra/
+
+      - name: Terraform Format
+        run: terraform fmt -check
+        working-directory: infra/
+
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: infra/
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+        working-directory: infra/
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve tfplan
+        working-directory: infra
+
+  ecr:
     runs-on: ubuntu-latest
 
     steps:
@@ -83,7 +129,7 @@ jobs:
             --service ${{ env.ECS_SERVICE }} \
             --task-definition ${{ env.TASK_DEF_ARN }}
             
-  build-and-deploy-lambda:
+  lambda:
     runs-on: ubuntu-latest
 
     steps:
@@ -98,14 +144,7 @@ jobs:
       - name: Install dependencies and build ZIP
         run: |
           cd lambda
-          rm -rf build
-          mkdir build
-          pip install --upgrade pip
-          pip install -r requirements.txt -t build/
-          cp lambda_function.py build/
-          cd build
-          zip -r ../lambda_package.zip .
-          cd ../..
+          sh build.sh
 
       - name: Update Lambda Function
         run: |

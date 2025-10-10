@@ -184,9 +184,10 @@ resource "aws_iam_role_policy" "lambda_policy" {
         Effect = "Allow",
         Action = [
           "dynamodb:GetItem",
-          "dynamodb:PutItem"
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem"
         ],
-        Resource = aws_dynamodb_table.query_cache.arn
+        Resource = aws_dynamodb_table.flights_query_cache.arn
       },
       # Logs
       {
