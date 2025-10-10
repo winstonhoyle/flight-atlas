@@ -151,7 +151,7 @@ resource "aws_glue_catalog_table" "airlines" {
     compressed    = false
 
     # Columns
-      columns {
+    columns {
       name = "name"
       type = "string"
     }

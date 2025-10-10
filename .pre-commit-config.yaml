@@ -20,5 +20,4 @@ repos:
     rev: v1.78.0
     hooks:
       - id: terraform_fmt
-        args: ["-recursive"]
         files: ^infra/.*\.(tf|tfvars)$
