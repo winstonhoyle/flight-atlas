@@ -98,9 +98,7 @@ jobs:
 
       - name: Install dependencies and build ZIP
         working-directory: lambda/
-        run: |
-          cd lambda
-          sh build.sh
+        run: sh build.sh
 
       - name: Update Lambda Function
         run: |
