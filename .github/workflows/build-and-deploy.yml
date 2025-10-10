@@ -22,7 +22,7 @@ jobs:
   ecr:
     runs-on: ubuntu-latest
     outputs:
-      ecs_image: ${{ steps.build-image.outputs.ECS_IMAGE }}
+      ecs_image: ${{ steps.build-image.outputs.ecs_image }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,12 +45,13 @@ jobs:
           IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
           docker build -t $IMAGE_URI ecs/
           docker push $IMAGE_URI
-          echo "ECS_IMAGE=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "$IMAGE_URI"
+          echo "ecs_image=$IMAGE_URI" >> $GITHUB_OUTPUT
 
   lambda:
     runs-on: ubuntu-latest
     outputs:
-      lambda_zip: ${{ steps.build-lambda.outputs.LAMBDA_ZIP_PATH }}
+      lambda_zip: ${{ steps.build-lambda.outputs.lambda_zip_path }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -64,7 +65,7 @@ jobs:
         id: build-lambda
         run: |
           sh lambda/build.sh
-          echo "LAMBDA_ZIP_PATH=$(pwd)/lambda/lambda_package.zip" >> $GITHUB_OUTPUT
+          echo "lambda_zip_path=$(pwd)/lambda/lambda_package.zip" >> $GITHUB_OUTPUT
 
       - name: Update Lambda Function
         run: |
