@@ -23,7 +23,8 @@ jobs:
   
   ecr:
     runs-on: ubuntu-latest
-
+    outputs:
+      ecs_image: ${{ steps.build-image.outputs.ECS_IMAGE }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -51,7 +52,8 @@ jobs:
             
   lambda:
     runs-on: ubuntu-latest
-
+    outputs:
+      lambda_zip: ${{ steps.build-lambda.outputs.LAMBDA_ZIP_PATH }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
