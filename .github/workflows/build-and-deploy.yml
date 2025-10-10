@@ -59,7 +59,7 @@ jobs:
         id: build-lambda
         run: |
           sh lambda/build.sh
-          echo "lambda_zip_path=$(pwd)/lambda/lambda_package.zip" >> >> $GITHUB_ENV
+          echo "lambda_zip_path=$(pwd)/lambda/lambda_package.zip" >> $GITHUB_ENV
     
       - name: Update Lambda Function
         run: |
