@@ -48,8 +48,7 @@ jobs:
           echo "Building Docker image from ecs/Dockerfile..."
           docker build -t $IMAGE_URI ecs/
           docker push $IMAGE_URI
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-          echo "::set-output name=IMAGE_URI::$IMAGE_URI"
+          echo "ECS_IMAGE=$IMAGE_URI" >> $GITHUB_ENV
             
   lambda:
     runs-on: ubuntu-latest
@@ -66,8 +65,7 @@ jobs:
       - name: Install dependencies and build ZIP
         run: |
           sh lambda/build.sh
-          echo "LAMBDA_ZIP_PATH=$PWD/lambda_package.zip" >> $GITHUB_ENV
-          echo "::set-output name=LAMBDA_ZIP_PATH::$PWD/lambda_package.zip"
+          echo "LAMBDA_ZIP_PATH=$(pwd)/lambda/lambda_package.zip" >> $GITHUB_ENV
 
       - name: Update Lambda Function
         run: |
