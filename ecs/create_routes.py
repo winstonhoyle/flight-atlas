@@ -467,7 +467,9 @@ ds.write_dataset(
 
 # Upload airlines to S3
 airlines_df = pd.DataFrame(airline_codes_dict.items(), columns=["name", "airline_code"])
-airlines_df[['name','airline_code']] = airlines_df[['name','airline_code']].astype(str)
+airlines_df[["name", "airline_code"]] = airlines_df[["name", "airline_code"]].astype(
+    str
+)
 
 # Add snapshot date and partition columns
 airlines_df["year"] = datetime.now().year
