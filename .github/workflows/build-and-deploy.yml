@@ -43,46 +43,13 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          IMAGE_TAG=${{ github.sha }}
+          IMAGE_TAG=${GITHUB_SHA::8}
+          IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
           echo "Building Docker image from ecs/Dockerfile..."
-          docker build -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG ecs/
-          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-          echo "IMAGE_URI=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_ENV
-
-      - name: Download current task definition
-        run: |
-          aws ecs describe-task-definition \
-            --task-definition ${{ env.ECS_TASK_FAMILY }} \
-            --query taskDefinition > task-def.json
-
-      - name: Update task definition image
-        run: |
-          NEW_IMAGE=${{ env.IMAGE_URI }}
-          jq --arg IMAGE "$NEW_IMAGE" \
-             '.containerDefinitions[0].image = $IMAGE' \
-             task-def.json > new-task-def.json
-
-      - name: Register new task definition revision
-        id: register-task-def
-        run: |
-          # Remove read-only fields
-          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
-          new-task-def.json > final-task-def.json
-
-          # Register new task definition
-          TASK_DEF_ARN=$(aws ecs register-task-definition \
-          --cli-input-json file://final-task-def.json \
-          --query "taskDefinition.taskDefinitionArn" \
-          --output text)
-          echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
-
-      # --- Deploy new task definition to ECS Service ---
-      - name: Update ECS service to use new task definition
-        run: |
-          aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service ${{ env.ECS_SERVICE }} \
-            --task-definition ${{ env.TASK_DEF_ARN }}
+          docker build -t $IMAGE_URI ecs/
+          docker push $IMAGE_URI
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          echo "::set-output name=IMAGE_URI::$IMAGE_URI"
             
   lambda:
     runs-on: ubuntu-latest
@@ -97,8 +64,10 @@ jobs:
           python-version: 3.12
 
       - name: Install dependencies and build ZIP
-        working-directory: lambda/
-        run: sh build.sh
+        run: |
+          sh lambda/build.sh
+          echo "LAMBDA_ZIP_PATH=$PWD/lambda_package.zip" >> $GITHUB_ENV
+          echo "::set-output name=LAMBDA_ZIP_PATH::$PWD/lambda_package.zip"
 
       - name: Update Lambda Function
         run: |
@@ -114,6 +83,8 @@ jobs:
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       TF_WORKSPACE: default
+      ECS_IMAGE_URI: ${{ needs.ecr.outputs.IMAGE_URI }}
+      LAMBDA_ZIP_PATH: ${{ needs.lambda.outputs.LAMBDA_ZIP_PATH }}
 
     steps:
       - name: Checkout repo
@@ -145,10 +116,10 @@ jobs:
         working-directory: infra/
 
       - name: Terraform Plan
-        run: terraform plan -out=tfplan
+        run: terraform plan -var "ecs_image=${{ env.ECS_IMAGE_URI }}" -var "lambda_zip_path=${{ env.LAMBDA_ZIP_PATH }}" -out=tfplan
         working-directory: infra/
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main'
         run: terraform apply -auto-approve tfplan
-        working-directory: infra
+        working-directory: infra/

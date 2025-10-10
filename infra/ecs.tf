@@ -19,7 +19,7 @@ resource "aws_ecs_task_definition" "flights_task" {
 
   container_definitions = jsonencode([{
     name      = "flights-scraper"
-    image     = "${aws_ecr_repository.flight_atlas_repo.repository_url}:latest"
+    image     = var.ecs_image
     essential = true
     environment = [
       { name = "S3_ROUTES_BUCKET", value = aws_s3_bucket.flights_bucket.bucket },

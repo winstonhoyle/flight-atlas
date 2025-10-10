@@ -1,7 +1,8 @@
-rm -rf build
-mkdir build
+rm -rf lambda/build
+mkdir lambda/build
 pip install --upgrade pip
-pip install -r requirements.txt -t build/
-cp lambda_function.py build/
-cd build
+pip install -r lambda/requirements.txt -t lambda/build
+cp lambda/lambda_function.py lambda/build
+cd lambda/build
 zip -r9 ../lambda_package.zip .
+cd ../..

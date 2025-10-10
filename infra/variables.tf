@@ -33,6 +33,17 @@ variable "athena_airlines_table_name" {
   default = "airlines"
 }
 
+variable "ecs_image" {
+  description = "ECS container image URI"
+  type        = string
+}
+
+variable "lambda_zip_path" {
+  description = "Path to the Lambda ZIP file"
+  type        = string
+}
+
+
 # variable "domain_name" {
 #   type    = string
 #   default = "flightatlas.us"
