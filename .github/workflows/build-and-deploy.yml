@@ -97,21 +97,25 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Terraform Init
-        run: terraform init -chdir=infra
+        working-directory: infra
+        run: terraform init
 
       - name: Terraform Format
-        run: terraform fmt -check -chdir=infra
+        working-directory: infra
+        run: terraform fmt -check
 
       - name: Terraform Validate
-        run: terraform validate -chdir=infra
+        working-directory: infra
+        run: terraform validate
 
       - name: Terraform Plan
+        working-directory: infra
         run: terraform plan \
-          -chdir=infra \
           -var "ecs_image=${{ needs.ecr.outputs.ecs_image }}" \
           -var "lambda_zip_path=${{ needs.lambda.outputs.lambda_zip }}" \
           -out=tfplan
 
       - name: Terraform Apply
+        working-directory: infra
         if: github.ref == 'refs/heads/main'
         run: terraform apply -chdir=infra -auto-approve tfplan

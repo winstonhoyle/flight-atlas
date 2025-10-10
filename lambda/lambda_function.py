@@ -168,7 +168,7 @@ def lambda_handler(event, context) -> dict:
                 # Return json
                 if path == "/airlines":
                     result_json = json.dumps(
-                        {rows["airline_code"]: row["name"] for row in rows}
+                        {row["airline_code"]: row["name"] for row in rows}
                     )
 
                 # Return data
