@@ -84,10 +84,7 @@ jobs:
 
       - name: Terraform Plan
         working-directory: infra
-        run: terraform plan \
-          -var "ecs_image=$ecs_image" \
-          -var "lambda_zip_path=$lambda_zip_path" \
-          -out=tfplan
+        run: terraform plan -var "ecs_image=$ecs_image" -var "lambda_zip_path=$lambda_zip_path" -out=tfplan
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main'
