@@ -1,110 +1,375 @@
-import React, { useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import React, { useState, useEffect, useRef } from "react";
+import { MapContainer, TileLayer, Popup, useMap, CircleMarker } from "react-leaflet";
 
-// Fix default Leaflet icon issue
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
-  iconUrl: require('leaflet/dist/images/marker-icon.png'),
-  shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
-});
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import 'leaflet-arc'
 
-// Optional: Fit map bounds to a set of coordinates
-const FitBounds = ({ coords }) => {
-  const map = useMap();
-  if (coords.length > 0) {
-    map.fitBounds(coords);
-  }
-  return null;
-};
+const MapComponent = () => {
+  const [airports, setAirports] = useState([]);
+  const [routes, setRoutes] = useState(null);
+  const [selectedAirport, setSelectedAirport] = useState(null);
+  const [selectedAirline, setSelectedAirline] = useState("");
+  const [airlines, setAirlines] = useState([]);
+  const [airportQuery, setAirportQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const abortControllerRef = useRef(null);
+  const [filteredAirlines, setFilteredAirlines] = useState([]);
 
-const MapComponent = ({ airports = [] }) => {
-  const [routes, setRoutes] = useState([]);
-  const [showAirports, setShowAirports] = useState(true);
-
-  const fetchRoutes = async (iata) => {
+  // ---- FETCH HELPERS ----
+  const fetchAirports = async () => {
     try {
-      let data;
-      let attempts = 0;
-
-      while (attempts < 10) { // max 10 tries (~5s)
-        const response = await fetch(`${process.env.REACT_APP_API_URL}/routes?airport=${iata}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-        data = await response.json();
-        if (typeof data === 'string') data = JSON.parse(data);
-
-        // If data is ready, it should have features
-        if (data.features && data.features.length > 0) break;
-
-        // Wait 500ms and retry
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        attempts++;
-      }
-
-      setRoutes(data.features || []);
-      setShowAirports(false); // hide all points after routes are fetched
+      const res = await fetch(
+        `${process.env.REACT_APP_API_URL}/airports`
+      );
+      let data = await res.json();
+      if (typeof data === "string") data = JSON.parse(data);
+      return data.features || [];
     } catch (err) {
-      console.error('Error fetching routes:', err);
+      console.error("Error loading airports:", err);
+      return [];
+    }
+  };
+
+  const fetchAirlines = async () => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/airlines`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      let data = await response.json();
+      if (typeof data === 'string') data = JSON.parse(data);
+
+      const airlineList = Object.entries(data).map(([code, name]) => ({
+        code,
+        name: String(name).replace(/[\r\n]+/g, ' ').trim(),
+      }));
+
+      return airlineList;
+    } catch (err) {
+      console.error("Error loading airlines:", err);
+      return [];
+    }
+  };
+
+
+  const fetchRoutes = async (iata, signal) => {
+    let data;
+    let attempts = 0;
+
+    while (attempts < 10) {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/routes?airport=${iata}`, { signal });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      data = await response.json();
+      if (typeof data === "string") data = JSON.parse(data);
+
+      if (data.features && data.features.length > 0) break;
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      attempts++;
+    }
+    return data;
+  };
+
+  // ---- LOAD DATA ----
+  useEffect(() => {
+    fetchAirports().then(setAirports);
+    fetchAirlines().then(setAirlines);
+  }, []);
+
+  // ---- WHEN AIRPORT SELECTED ----
+  useEffect(() => {
+    if (!selectedAirport) return;
+
+    const loadRoutes = async () => {
+      setLoading(true);
+      setError(null);
+
+      // Abort previous request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      try {
+        const iata = selectedAirport.properties.IATA;
+        const data = await fetchRoutes(iata, controller.signal);
+        const geojson = data.features
+          ? data
+          : { type: "FeatureCollection", features: data };
+
+        // --- Filter routes by selected airline ---
+        const filteredGeojson = selectedAirline
+          ? {
+            ...geojson,
+            features: geojson.features.filter(
+              (f) => f.properties.airline_code === selectedAirline
+            ),
+          }
+          : geojson;
+
+        // --- NEW: Update filtered airlines for dropdown ---
+        const uniqueAirlines = Array.from(
+          new Set(data.features.map(f => f.properties.airline_code))
+        ).map(code => {
+          const airline = airlines.find(a => a.code === code);
+          return airline ? airline : { code, name: code };
+        });
+        setFilteredAirlines(uniqueAirlines);
+
+
+        // --- Set filtered routes for rendering ---
+        setRoutes(filteredGeojson);
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          console.error("Error loading routes:", err);
+          setError("Failed to load routes");
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadRoutes();
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [selectedAirport, selectedAirline, airlines]);
+
+  const handleBack = () => {
+    setRoutes(null);
+    setSelectedAirport(null);
+    setAirportQuery("");
+    setSelectedAirline("");
+    setFilteredAirlines([]);
+  };
+
+  const handleAirportSearch = () => {
+    if (airportQuery.length === 3) {
+      const found = airports.find(
+        (a) => a.properties.IATA === airportQuery.toUpperCase()
+      );
+      if (found) {
+        setSelectedAirport(found);
+      } else {
+        alert(`Airport ${airportQuery} not found.`);
+      }
+    } else {
+      alert("Please enter a 3-letter IATA code.");
     }
   };
 
   return (
-    <div style={{ height: '100vh', width: '100%', position: 'relative' }}>
+    <div style={{ height: "100vh", width: "100%" }}>
       <MapContainer
         center={[39.8283, -98.5795]}
         zoom={4}
-        style={{ height: '100%', width: '100%' }}
+        worldCopyJump={true}
+        style={{ height: "100vh", width: "100%" }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
+          attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* Show airport markers only if showAirports is true */}
-        {showAirports &&
-          airports.map((feature, idx) => {
-            const [lon, lat] = feature.geometry.coordinates;
-            const { Name, IATA, FAA, url } = feature.properties;
-            const key = `${IATA || 'NA'}-${FAA || 'NA'}-${lat}-${lon}-${idx}`;
 
-            return (
-              <Marker
-                key={key}
-                position={[lat, lon]}
-                eventHandlers={{
-                  click: () => fetchRoutes(IATA || FAA),
-                }}
-              >
-                <Popup>
-                  <b>{Name} ({IATA || FAA})</b><br />
-                  {url && (
-                    <a href={url} target="_blank" rel="noopener noreferrer">
-                      More info
-                    </a>
-                  )}
-                </Popup>
-              </Marker>
-            );
-          })}
+        {/* Show airports when no route is selected */}
+        {!routes &&
+          airports.map((airport) => (
+            <CircleMarker
+              key={airport.properties.IATA}
+              center={[
+                airport.geometry.coordinates[1],
+                airport.geometry.coordinates[0],
+              ]}
+              radius={6}
+              color="blue"
+              fillColor="lightblue"
+              fillOpacity={0.8}
+              eventHandlers={{
+                click: () => setSelectedAirport(airport),
+                mouseover: (e) => e.target.openPopup(),
+                mouseout: (e) => e.target.closePopup(),
+              }}
+            >
+              <Popup>
+                <div>
+                  <strong>{airport.properties.Name}</strong>
+                  <br />
+                  IATA: {airport.properties.IATA}
+                </div>
+              </Popup>
+            </CircleMarker>
+          ))}
 
-        {/* Render routes */}
-        {routes.map((feature, idx) => {
-          const coords = feature.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-          return <Polyline key={idx} positions={coords} color="blue" />;
-        })}
+        {/* Routes Layer */}
+        {routes && <RouteLayer data={routes} />}
+        {/* ---- React-based overlay control ---- */}
+        <div style={{
+          position: "absolute",
+          top: 10,
+          right: 10,
+          zIndex: 1000,
+          background: "white",
+          padding: "8px 12px",
+          borderRadius: "6px",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "6px",
+          minWidth: "220px",
+        }}>
+          <label style={{ fontWeight: "bold" }}>Airline:</label>
+          <select
+            value={selectedAirline}
+            onChange={(e) => setSelectedAirline(e.target.value)}
+            style={{ padding: "4px", borderRadius: "4px", border: "1px solid #ccc" }}
+          >
+            <option value="">All Airlines</option>
+            {filteredAirlines.map((air) => (
+              <option key={air.code} value={air.code}>
+                {air.name}
+              </option>
+            ))}
+          </select>
 
-        {/* Optionally fit bounds to routes */}
-        {routes.length > 0 && (
-          <FitBounds
-            coords={routes.flatMap(f => f.geometry.coordinates.map(([lon, lat]) => [lat, lon]))}
-          />
-        )}
+          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+            <label style={{ fontWeight: "bold" }}>Airport:</label>
+            <input
+              type="text"
+              placeholder="IATA (e.g. LAX)"
+              value={airportQuery}
+              maxLength={3}
+              onChange={(e) =>
+                setAirportQuery(
+                  e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3)
+                )
+              }
+              style={{
+                padding: "4px 6px",
+                borderRadius: "4px",
+                border: "1px solid #ccc",
+                textTransform: "uppercase",
+                width: "80px",
+              }}
+            />
+            <button
+              onClick={handleAirportSearch}
+              style={{
+                border: "none",
+                background: "#0078ff",
+                color: "white",
+                borderRadius: "4px",
+                padding: "4px 8px",
+                cursor: "pointer",
+              }}
+            >
+              →
+            </button>
+          </div>
+
+          {selectedAirport && (
+            <button
+              onClick={handleBack}
+              style={{
+                border: "none",
+                background: "none",
+                cursor: "pointer",
+                color: "#0078ff",
+                alignSelf: "flex-start",
+                marginTop: "4px",
+              }}
+            >
+              ← Back
+            </button>
+          )}
+
+          {loading && <span>Loading routes...</span>}
+          {error && <span style={{ color: "red" }}>Error: {error}</span>}
+        </div>
       </MapContainer>
     </div>
   );
+};
+
+// ---- ROUTE GEOJSON LAYER ----
+const RouteLayer = ({ data }) => {
+  const map = useMap();
+  const geoRef = useRef(null);
+  const markersRef = useRef([]);
+
+  useEffect(() => {
+    if (!data || !data.features) return;
+
+    // Remove previous layers
+    if (geoRef.current) geoRef.current.removeFrom(map);
+    markersRef.current.forEach((m) => m.remove());
+    markersRef.current = [];
+
+    const lineGroup = L.featureGroup();
+
+    // Add geodesic lines and markers
+    data.features.forEach((feature) => {
+      const coords = feature.geometry.coordinates;
+      if (!coords || coords.length < 2) return;
+
+      // Add geodesic line
+      const line = L.Polyline.Arc(
+        [coords[0][1], coords[0][0]], [coords[1][1], coords[1][0]],
+        { weight: 2, color: "red", opacity: 0.8 }
+      ).addTo(map);
+      lineGroup.addLayer(line);
+      markersRef.current.push(line);
+
+      // Source marker
+      const srcMarker = L.circleMarker([coords[0][1], coords[0][0]], {
+        radius: 5,
+        color: "green",
+        fillColor: "lightgreen",
+        fillOpacity: 0.8,
+      }).addTo(map);
+      srcMarker.bindPopup(`${feature.properties.Name} (${feature.properties.IATA})`);
+      srcMarker.on("mouseover", () => srcMarker.openPopup());
+      srcMarker.on("mouseout", () => srcMarker.closePopup());
+      markersRef.current.push(srcMarker);
+
+      // Destination marker
+      const dstMarker = L.circleMarker([coords[1][1], coords[1][0]], {
+        radius: 5,
+        color: "red",
+        fillColor: "pink",
+        fillOpacity: 0.8,
+      }).addTo(map);
+      dstMarker.bindPopup(`${feature.properties.Name} (${feature.properties.IATA})`);
+      dstMarker.on("mouseover", () => dstMarker.openPopup());
+      dstMarker.on("mouseout", () => dstMarker.closePopup());
+      markersRef.current.push(dstMarker);
+    });
+
+    // Fit map to bounds of all lines
+    if (lineGroup.getBounds().isValid()) {
+      map.flyToBounds(lineGroup.getBounds(), {
+        padding: [10, 10],
+        duration: 0.75,
+        easeLinearity: 0.25,
+      });
+    }
+
+    // Cleanup on unmount or routes change
+    return () => {
+      if (geoRef.current) {
+        geoRef.current.removeFrom(map);
+        geoRef.current = null;
+      }
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
+    };
+  }, [data, map]);
+
+  return null;
 };
 
 export default MapComponent;

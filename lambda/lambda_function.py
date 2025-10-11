@@ -241,9 +241,8 @@ def lambda_handler(event, context) -> dict:
 
                 # Return json
                 if path == "/airlines":
-                    result_dict = json.dumps(
-                        {row["airline_code"]: row["name"] for row in rows}
-                    )
+                    result_dict = {row["airline_code"]: row["name"] for row in rows}
+    
 
                 # Return points geojson
                 if path == "/airports":
