@@ -36,13 +36,14 @@ variable "athena_airlines_table_name" {
 variable "ecs_image" {
   description = "ECS container image URI"
   type        = string
+  default     = "public.ecr.aws/amazonlinux/amazonlinux:latest"
 }
 
 variable "lambda_zip_path" {
   description = "Path to the Lambda ZIP file"
   type        = string
+  default     = "../lambda/lambda_package.zip"
 }
-
 
 # variable "domain_name" {
 #   type    = string

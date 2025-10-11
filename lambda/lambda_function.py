@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import re
 import time
 from typing import Literal, Tuple
 
@@ -20,6 +21,10 @@ S3_RESULTS_BUCKET = os.environ.get(
 )
 FLIGHTS_TABLE = os.environ.get("FLIGHTS_TABLE", "flights")
 REGION = os.environ.get("REGION", "us-west-1")
+
+# regex vars
+VALID_AIRPORT = re.compile(r"^[A-Z]{3}$")
+VALID_AIRLINE = re.compile(r"^[A-Z0-9]{2,3}$")
 
 # Aws objects
 athena = boto3.client("athena", region_name=REGION)
@@ -39,6 +44,15 @@ def run_athena_query(query):
     return response["QueryExecutionId"]
 
 
+def clean_param(value: str | None, pattern: re.Pattern) -> str | None:
+    if not value:
+        return None
+    value = value.strip().split("?")[0]
+    if not pattern.match(value):
+        raise ValueError(f"Invalid parameter: {value}")
+    return value
+
+
 def get_query_result_path(execution_id: str) -> Tuple[str, str]:
     """Get path of Athena result"""
     result_obj = athena.get_query_execution(QueryExecutionId=execution_id)
@@ -56,10 +70,34 @@ def get_query_results(bucket: str, key: str) -> list:
     return list(reader)
 
 
-def build_geojson(
+def build_point_geojson(rows: list):
+    """Convert rows to GeoJSON FeatureCollection of Points"""
+    features = []
+    for row in rows:
+        try:
+            geom = row["geometry"].replace("POINT (", "").replace(")", "")
+            lon, lat = map(float, geom.split())
+            point = geojson.Point((lon, lat))
+            feature = geojson.Feature(
+                geometry=point,
+                properties={
+                    "FAA": row["faa"],
+                    "IATA": row["iata"],
+                    "Name": row["title"],
+                    "url": row["url"],
+                },
+            )
+            features.append(feature)
+        except Exception as e:
+            logger.warning(f"Skipping invalid row: {e}")
+
+    return geojson.FeatureCollection(features)
+
+
+def build_line_geojson(
     rows: list, airline_code: str | None = None
 ) -> geojson.FeatureCollection:
-    """Convert rows to GeoJSON FeatureCollection."""
+    """Convert rows to GeoJSON FeatureCollection of LineStrings."""
     features = []
     for row in rows:
         try:
@@ -90,7 +128,7 @@ def build_geojson(
 
 
 def format_query(
-    path: Literal["/routes", "/airlines"],
+    path: Literal["/routes", "/airlines", "/airports"],
     src_airport: str = None,
     airline_code: str = None,
 ) -> str:
@@ -109,25 +147,55 @@ def format_query(
         else:
             return base_query
 
+    if path == "/airports":
+        return "SELECT * FROM airports"
+
+
+def make_response(status_code: int, body_dict: dict) -> dict:
+    return {
+        "statusCode": status_code,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Methods": "GET,OPTIONS",
+        },
+        "body": json.dumps(body_dict),
+    }
+
 
 def lambda_handler(event, context) -> dict:
     try:
         """Handle requests for routes by airport or airline."""
 
-        logger.info(event)
+        # If `OPTIONS`, else is `GET``
+        if event.get("httpMethod") == "OPTIONS":
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Methods": "GET,OPTIONS",
+                },
+                "body": "",
+            }
 
         # Lambda event vars
         params = event.get("queryStringParameters") or {}
         path = event.get("rawPath")
-        src_airport = params.get("airport")
-        airline_code = params.get("airline_code")
+        src_airport = clean_param(params.get("airport"), VALID_AIRPORT)
+        airline_code = clean_param(params.get("airline_code"), VALID_AIRLINE)
 
         # If no codes
         if not src_airport and not airline_code and path == "/routes":
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": "Missing parameter"}),
-            }
+            return make_response(
+                status_code=400, body_dict={"error": "Missing parameter"}
+            )
+
+        if (src_airport or airline_code) and path == "/airports":
+            return make_response(
+                status_code=400, body_dict={"error": "No parameters for this endpoint"}
+            )
 
         # Query params handling
         query = format_query(
@@ -167,29 +235,28 @@ def lambda_handler(event, context) -> dict:
                 # Get csv data
                 rows = get_query_results(bucket=bucket, key=s3_result_key)
 
-                # Return geojson
+                # Return line geojson
                 if path == "/routes":
-                    geojson_data = build_geojson(rows, airline_code=airline_code)
-                    result_json = geojson.dumps(geojson_data)
+                    result_dict = build_line_geojson(rows, airline_code=airline_code)
 
                 # Return json
                 if path == "/airlines":
-                    result_json = json.dumps(
+                    result_dict = json.dumps(
                         {row["airline_code"]: row["name"] for row in rows}
                     )
 
+                # Return points geojson
+                if path == "/airports":
+                    result_dict = build_point_geojson(rows)
+
                 # Return data
-                return {
-                    "statusCode": 200,
-                    "headers": {"Content-Type": "application/json"},
-                    "body": result_json,
-                }
+                return make_response(status_code=200, body_dict=result_dict)
 
             elif state in ["RUNNING", "QUEUED"]:
-                return {
-                    "statusCode": 202,
-                    "body": json.dumps({"status": "processing", "query_id": query_id}),
-                }
+                return make_response(
+                    status_code=202,
+                    body_dict={"status": "processing", "query_id": query_id},
+                )
 
         # Run Athena query
         query_id = run_athena_query(query)
@@ -204,11 +271,10 @@ def lambda_handler(event, context) -> dict:
                 "ttl": ttl_seconds,
             }
         )
-        return {
-            "statusCode": 202,
-            "body": json.dumps({"status": "started", "query_id": query_id}),
-        }
+        return make_response(
+            status_code=202, body_dict={"status": "started", "query_id": query_id}
+        )
 
     except Exception as e:
         logger.exception("Lambda failed")
-        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
+        return make_response(status_code=500, body_dict={"error": str(e)})

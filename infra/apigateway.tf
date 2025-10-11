@@ -1,6 +1,13 @@
 resource "aws_apigatewayv2_api" "flights_api" {
   name          = "flight-atlas"
   protocol_type = "HTTP"
+
+  cors_configuration {
+    allow_origins = ["*"]
+    allow_methods = ["GET", "OPTIONS"]
+    allow_headers = ["*"]
+    max_age       = 3600
+  }
 }
 
 resource "aws_apigatewayv2_integration" "flights_integration" {
@@ -19,6 +26,12 @@ resource "aws_apigatewayv2_route" "routes" {
 resource "aws_apigatewayv2_route" "airlines" {
   api_id    = aws_apigatewayv2_api.flights_api.id
   route_key = "GET /airlines"
+  target    = "integrations/${aws_apigatewayv2_integration.flights_integration.id}"
+}
+
+resource "aws_apigatewayv2_route" "airports" {
+  api_id    = aws_apigatewayv2_api.flights_api.id
+  route_key = "GET /airports"
   target    = "integrations/${aws_apigatewayv2_integration.flights_integration.id}"
 }
 
