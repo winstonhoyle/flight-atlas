@@ -53,6 +53,7 @@ jobs:
         run: npm run build
 
       - name: Deploy to S3
+        working-directory: app
         run: |
           aws s3 sync build/ s3://$S3_BUCKET --delete --exact-timestamps
           echo "Frontend deployed to S3 bucket: $S3_BUCKET"
