@@ -132,3 +132,47 @@ resource "aws_s3_bucket_policy" "athena_query_results_policy" {
     ]
   })
 }
+
+###################################
+# Private S3 bucket for frontend
+###################################
+resource "aws_s3_bucket" "frontend_bucket" {
+  bucket = var.frontend_bucket_name
+
+  tags = {
+    Name = "Flight Atlas Frontend"
+  }
+}
+
+
+# Enable versioning (modern approach)
+resource "aws_s3_bucket_versioning" "frontend_bucket_versioning" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# Public access block (keep bucket private)
+resource "aws_s3_bucket_public_access_block" "frontend_bucket_block" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Static website metadata (optional, CloudFront will handle routing)
+resource "aws_s3_bucket_website_configuration" "frontend_bucket_website" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+
+  index_document {
+    suffix = "index.html"
+  }
+
+  error_document {
+    key = "index.html"
+  }
+}
