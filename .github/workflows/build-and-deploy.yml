@@ -1,4 +1,4 @@
-name: Build and Deploy to ECS
+name: Build and Deploy to AWS and Cloudfare
 
 on:
   push:
@@ -11,11 +11,8 @@ env:
   ECS_SERVICE: flight-atlas-service
   ECS_TASK_FAMILY: flights-scraper
   LAMBDA_FUNCTION_NAME: flights-query-lambda
-  S3_BUCKET: flight-atlas-frontend
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   AWS_REGION: ${{ secrets.AWS_REGION }}
-  REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+
 
 permissions:
   id-token: write
@@ -29,6 +26,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+        ### AWS Setup
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -36,7 +34,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      #### Build frontend
+      ### FRONTEND (Cloudflare Pages)
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
@@ -47,31 +45,16 @@ jobs:
         run: npm ci
 
       - name: Build frontend
-        env:
-          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
         working-directory: app
         run: npm run build
 
-      - name: Deploy to S3
-        working-directory: app
-        run: |
-          aws s3 sync build/ s3://$S3_BUCKET --delete --exact-timestamps
-          echo "Frontend deployed to S3 bucket: $S3_BUCKET"
-
-      #### ECR: build and push ECS image ####
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push image to ECR
-        id: build-image
-        run: |
-          IMAGE_TAG=${GITHUB_SHA::8}
-          IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-          docker build -t $IMAGE_URI ecs/
-          docker push $IMAGE_URI
-          echo "$IMAGE_URI"
-          echo "ecs_image=$IMAGE_URI" >> $GITHUB_ENV
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: flight-atlas
+          directory: ./app/build
 
       #### Lambda: build ZIP and update function ####
       - name: Set up Python
@@ -108,9 +91,15 @@ jobs:
 
       - name: Terraform Plan
         working-directory: infra
+        env:
+          TF_VAR_cloudflare_zone_io_id: ${{ secrets.CLOUDFLARE_ZONE_IO_ID }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: terraform plan -var "ecs_image=$ecs_image" -var "lambda_zip_path=$lambda_zip_path" -out=tfplan
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main'
         working-directory: infra
+        env:
+          TF_VAR_cloudflare_zone_io_id: ${{ secrets.CLOUDFLARE_ZONE_IO_ID }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: terraform apply -auto-approve tfplan

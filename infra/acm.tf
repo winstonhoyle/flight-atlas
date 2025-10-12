@@ -1,8 +1,5 @@
-# resource "aws_acm_certificate" "api_cert" {
-#   domain_name       = aws_route53_record.api.name
-#   validation_method = "DNS"
-
-#   lifecycle {
-#     create_before_destroy = true
-#   }
-# }
+resource "aws_acm_certificate" "api_cert" {
+  domain_name       = "api.flightatlas.io"
+  validation_method = "DNS"
+  region            = var.region
+}

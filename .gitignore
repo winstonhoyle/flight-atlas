@@ -246,3 +246,5 @@ Thumbs.db # Windows
 *.log
 *.tmp
 *.swp
+
+terraform.tfvars

@@ -5,10 +5,10 @@ import { getColorByDestinations } from "../utils/colorUtils";
 const Legend = () => {
     // Define the thresholds used in getColorByDestinations
     const grades = [
-        { label: "> 200 destinations", count: 201 },
-        { label: "101 – 200 destinations", count: 101 },
+        { label: "> 100 destinations", count: 101 },
         { label: "51 – 100 destinations", count: 75 },
-        { label: "11 – 50 destinations", count: 25 },
+        { label: "21 – 50 destinations", count: 30 },
+        { label: "11 – 20 destinations", count: 15 },
         { label: "<10 destinations", count: 5 },
     ];
 

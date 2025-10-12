@@ -56,8 +56,15 @@ variable "lambda_zip_path" {
   default     = "../lambda/lambda_package.zip"
 }
 
-# variable "domain_name" {
-#   type    = string
-#   default = "flightatlas.us"
-# }
+# Cloudfare vars
+variable "cloudflare_api_token" {
+  description = "Cloudflare API token with DNS:Edit & Zone:Read"
+  type        = string
+  sensitive   = true
+}
+
+variable "cloudflare_zone_io_id" {
+  description = "Cloudflare Zone ID for flightatlas.io"
+  type        = string
+}
 
