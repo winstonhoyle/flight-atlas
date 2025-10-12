@@ -16,17 +16,29 @@ export const fetchAirlines = async () => {
     }));
 };
 
-export const fetchRoutes = async (iata, signal) => {
+export const fetchRoutes = async ({ airportIata, airlineCode } = {}, signal) => {
     let data;
     let attempts = 0;
+
+    // Determine the correct query parameter
+    const params = new URLSearchParams();
+    if (airportIata) params.append("airport", airportIata);
+    if (airlineCode) params.append("airline_code", airlineCode);
+
+    const url = `${process.env.REACT_APP_API_URL}/routes?${params.toString()}`;
+
     while (attempts < 10) {
-        const res = await fetch(`${process.env.REACT_APP_API_URL}/routes?airport=${iata}`, { signal });
+        const res = await fetch(url, { signal });
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         data = await res.json();
         if (typeof data === "string") data = JSON.parse(data);
+
+        // Exit loop if valid data is returned
         if (data.features && data.features.length > 0) break;
-        await new Promise(r => setTimeout(r, 500));
+
+        await new Promise((r) => setTimeout(r, 500));
         attempts++;
     }
+
     return data;
 };

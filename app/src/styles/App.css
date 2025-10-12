@@ -36,3 +36,12 @@
     transform: rotate(360deg);
   }
 }
+/* --- Fix popup z-index so it appears above all layers --- */
+.leaflet-popup-pane {
+  z-index: 1200 !important;
+}
+
+/* Optional: bring tooltips above routes as well */
+.leaflet-tooltip-pane {
+  z-index: 1150 !important;
+}

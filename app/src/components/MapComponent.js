@@ -1,81 +1,122 @@
-import React, { useState } from "react";
-import { MapContainer, TileLayer, Pane } from "react-leaflet";
+import React, { useState, useEffect, useRef } from "react";
+import { MapContainer, TileLayer, Pane, ZoomControl } from "react-leaflet";
 
 import AirportMarkers from "./AirportMarkers";
+import Legend from "./Legend";
 import OverlayPanel from "./OverlayPanel";
+import RouteInfoPanel from "./RouteInfoPanel";
 import RouteLayer from "./RouteLayer";
 
 import { useAirportsAndAirlines } from "../hooks/useAirportsAndAirlines";
 import { useRoutes } from "../hooks/useRoutes";
 import { useFilteredAirlines } from "../hooks/useFilteredAirlines";
-import { useFilteredRoutes } from "../hooks/useFilteredRoutes";
 
 import "leaflet/dist/leaflet.css";
 
 const MapComponent = () => {
-
   // -------------------------
   // Component State
   // -------------------------
   const [selectedAirport, setSelectedAirport] = useState(null);
   const [selectedAirline, setSelectedAirline] = useState("");
   const [airportQuery, setAirportQuery] = useState("");
+  const [selectedRoute, setSelectedRoute] = useState(null);
+
+  // Reference to the Leaflet map instance
+  const mapRef = useRef(null);
+
+  // Default map position
+  const DEFAULT_CENTER = [39.8283, -98.5795]; // center of continental US
+  const DEFAULT_ZOOM = 4;
 
   // -------------------------
   // Load airport & airline data
   // -------------------------
-  // This hook fetches airports and airlines and caches them internally.
-  // We just get the arrays here and use them to render markers and dropdown.
   const { airports, airlines } = useAirportsAndAirlines();
 
   // -------------------------
   // Load flight routes for the selected airport
   // -------------------------
-  // `useRoutes` is a custom hook that:
-  //   1. Watches the selectedAirport
-  //   2. Fetches routes for that airport from the API
-  //   3. Stores them in `allRoutes` (full dataset) and `routes` (filtered dataset)
-  //   4. Handles loading state & errors
-  const { routes, allRoutes, setRoutes, setAllRoutes, loading, error } = useRoutes(selectedAirport);
+  const { routes, allRoutes, loading, error } = useRoutes(selectedAirport, selectedAirline);
 
   // -------------------------
-  // Filter routes by selected airline
+  // Compute displayed routes (filtered by selected airline)
   // -------------------------
-  // Whenever `selectedAirline` changes, this hook updates `routes` to only include flights for that airline.
-  useFilteredRoutes(allRoutes, selectedAirline, setRoutes);
+  // Compute displayed routes
+  const displayedRoutes = React.useMemo(() => {
+    if (!routes) return null;
+    // If airline is selected, filter routes
+    if (selectedAirline) {
+      return {
+        ...routes,
+        features: routes.features.filter(
+          (f) => f.properties.airline_code === selectedAirline
+        ),
+      };
+    }
+
+    return routes;
+  }, [routes, selectedAirline]);
 
   // -------------------------
-  // Get list of airlines available for current airport routes
+  // Filter airports to only show those involved in currently loaded routes
   // -------------------------
-  // This filters the full airline list based on which airlines actually have flights from this airport.
+  const filteredAirportsForMap = React.useMemo(() => {
+    if (!allRoutes || !allRoutes.features) return airports;
+
+    const airportCodes = new Set();
+    (displayedRoutes || allRoutes).features.forEach((f) => {
+      airportCodes.add(f.properties.src_airport);
+      airportCodes.add(f.properties.dst_airport);
+    });
+
+    return airports.filter((a) => airportCodes.has(a.properties.IATA));
+  }, [allRoutes, displayedRoutes, airports]);
+
+  // -------------------------
+  // Filter airlines based on current airport routes
+  // -------------------------
   const allFilteredAirlines = useFilteredAirlines(allRoutes, airlines);
+  const displayedAirlines = allFilteredAirlines.length ? allFilteredAirlines : airlines;
+
+  // -------------------------
+  // Reset selections when a new airport is chosen
+  // -------------------------
+  useEffect(() => {
+    setSelectedAirline("");
+    setSelectedRoute(null);
+  }, [selectedAirport]);
 
   // -------------------------
   // Event Handlers
   // -------------------------
-  // Reset everything when the user clicks "Back"
   const handleBack = () => {
-    setSelectedAirline("");
-    setRoutes(null);
-    setAllRoutes(null);
     setSelectedAirport(null);
+    setSelectedAirline("");
+    setSelectedRoute(null);
     setAirportQuery("");
+
+    // Reset map view
+    if (mapRef.current) {
+      mapRef.current.flyTo(DEFAULT_CENTER, DEFAULT_ZOOM, { duration: 0.75 });
+    }
   };
 
   const handleAirportSearch = () => {
-    // When user types a 3-letter IATA code and presses search
     if (airportQuery.length === 3) {
       const found = airports.find(
         (a) => a.properties.IATA === airportQuery.toUpperCase()
       );
-      if (found) {
-        setSelectedAirport(found);
-      } else {
-        alert(`Airport ${airportQuery} not found.`);
-      }
+      if (found) setSelectedAirport(found);
+      else alert(`Airport ${airportQuery} not found.`);
     } else {
       alert("Please enter a 3-letter IATA code.");
     }
+  };
+
+  const handleSelectAirport = (airport) => {
+    setSelectedAirport(airport);
+    setSelectedAirline(""); // reset airline filter on new airport
   };
 
   // -------------------------
@@ -84,23 +125,27 @@ const MapComponent = () => {
   return (
     <div style={{ height: "100vh", width: "100%" }}>
       <MapContainer
-        center={[39.8283, -98.5795]}
-        zoom={4}
+        center={DEFAULT_CENTER}
+        zoom={DEFAULT_ZOOM}
         worldCopyJump={true}
+        zoomControl={false}
         style={{ height: "100vh", width: "100%" }}
+        ref={mapRef}
       >
         <TileLayer
           attribution='Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012'
           url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'
         />
-
+        <ZoomControl position="bottomright" />
 
         {/* Routes */}
         <Pane name="routesPane" style={{ zIndex: 400 }}>
-          {routes && (
+          {displayedRoutes && (
             <RouteLayer
-              key={`route-layer-${Date.now()}`} // forces remount whenever routes change
-              data={routes}
+              key={`route-layer-${Date.now()}`}
+              routes={displayedRoutes}
+              setSelectedRoute={setSelectedRoute}
+              onSelectAirport={handleSelectAirport}
             />
           )}
         </Pane>
@@ -109,26 +154,37 @@ const MapComponent = () => {
         <Pane name="airportsPane" style={{ zIndex: 500 }}>
           {!selectedAirport && (
             <AirportMarkers
-              airports={airports}
-              onSelectAirport={setSelectedAirport}
+              airports={filteredAirportsForMap}
+              onSelectAirport={handleSelectAirport}
             />
           )}
         </Pane>
 
-        {/* ---- overlay control ---- */}
+        {/* Overlay controls */}
         <OverlayPanel
           airportQuery={airportQuery}
           setAirportQuery={setAirportQuery}
           handleAirportSearch={handleAirportSearch}
           selectedAirline={selectedAirline}
           setSelectedAirline={setSelectedAirline}
-          filteredAirlines={allFilteredAirlines}
+          filteredAirlines={displayedAirlines}
           handleBack={handleBack}
-          routes={routes}
+          routes={displayedRoutes}
           loading={loading}
           error={error}
         />
 
+        {/* Legend */}
+        <Legend />
+
+        {/* Route Info Panel */}
+        <RouteInfoPanel
+          route={selectedRoute}
+          routes={allRoutes}
+          airports={airports}
+          airlines={airlines}
+          onClose={() => setSelectedRoute(null)}
+        />
       </MapContainer>
     </div>
   );

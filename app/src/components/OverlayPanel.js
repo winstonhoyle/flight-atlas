@@ -1,5 +1,3 @@
-// components/OverlayPanel.js
-import React from "react";
 import AirportSearch from "./AirportSearch";
 
 const OverlayPanel = ({
@@ -13,8 +11,9 @@ const OverlayPanel = ({
   handleBack,
   routes,
   loading,
-  error
+  error,
 }) => {
+  console.log(filteredAirlines); //TODO Fix No numbers showing up in drop down anymore
   return (
     <div
       style={{
@@ -32,12 +31,14 @@ const OverlayPanel = ({
         minWidth: "250px",
       }}
     >
+      {/* Airport search box */}
       <AirportSearch
         airportQuery={airportQuery}
         setAirportQuery={setAirportQuery}
         handleAirportSearch={handleAirportSearch}
       />
 
+      {/* Airline selector */}
       <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
         <label style={{ fontWeight: "bold" }}>Airline:</label>
         <select
@@ -47,13 +48,16 @@ const OverlayPanel = ({
         >
           <option value="">All Airlines</option>
           {filteredAirlines.map((air) => (
-            <option key={air.code} value={air.code}>
-              {air.name} ({air.count})
+            <option key={air.code + "-" + air.name} value={air.code}>
+              {selectedAirport
+                ? `${air.name} (${air.count ?? 0})`
+                : `${air.name} (${air.code})`}
             </option>
           ))}
         </select>
       </div>
 
+      {/* Back button */}
       {(selectedAirport || routes) && (
         <button
           onClick={handleBack}
@@ -70,6 +74,7 @@ const OverlayPanel = ({
         </button>
       )}
 
+      {/* Status messages */}
       {loading && <span>Loading routes...</span>}
       {error && <span style={{ color: "red" }}>Error: {error}</span>}
     </div>
