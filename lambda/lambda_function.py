@@ -81,10 +81,11 @@ def build_point_geojson(rows: list):
             feature = geojson.Feature(
                 geometry=point,
                 properties={
-                    "FAA": row["faa"],
+                    "FAA": row.get("faa") if row.get("faa") != "0.0" else None,
                     "IATA": row["iata"],
                     "Name": row["title"],
                     "url": row["url"],
+                    "destinations": int(row["destinations"]),
                 },
             )
             features.append(feature)
@@ -242,7 +243,6 @@ def lambda_handler(event, context) -> dict:
                 # Return json
                 if path == "/airlines":
                     result_dict = {row["airline_code"]: row["name"] for row in rows}
-    
 
                 # Return points geojson
                 if path == "/airports":

@@ -7,6 +7,7 @@ from typing import List, Tuple
 from urllib.parse import unquote
 
 import boto3
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
@@ -444,6 +445,20 @@ ds.write_dataset(
 airports_df = pd.concat([usa_airports_df, additional_airports_df], ignore_index=True)[
     ["FAA", "IATA", "url", "geometry", "title"]
 ]
+
+# Merge destinations
+unique_pairs_count = (
+    routes_df.groupby("src_airport")["dst_airport"].nunique().reset_index()
+)
+unique_pairs_count.rename(
+    columns={"src_airport": "IATA", "dst_airport": "destinations"}, inplace=True
+)
+airports_df = airports_df.merge(unique_pairs_count, on="IATA", how="left")
+airports_df = airports_df.replace(np.nan, 0.0)
+airports_df["destinations"] = airports_df["destinations"].astype(int)
+airports_df[["FAA", "IATA", "url", "title"]] = airports_df[
+    ["FAA", "IATA", "url", "title"]
+].astype(str)
 
 # Convert geometry to WKT
 airports_df["geometry"] = airports_df["geometry"].apply(lambda g: g.wkt)

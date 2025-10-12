@@ -112,6 +112,11 @@ resource "aws_glue_catalog_table" "airports_table" {
       type = "string"
     }
 
+    columns {
+      name = "destinations"
+      type = "int"
+    }
+
     ser_de_info {
       name                  = "parquet"
       serialization_library = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
