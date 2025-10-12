@@ -6,39 +6,29 @@ on:
   workflow_dispatch:
 
 env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
   ECR_REPOSITORY: flight-atlas
   ECS_CLUSTER: flights-cluster
   ECS_SERVICE: flight-atlas-service
   ECS_TASK_FAMILY: flights-scraper
   LAMBDA_FUNCTION_NAME: flights-query-lambda
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  build-deploy:
+  deploy-cloudflare:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-        ### AWS Setup
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      ### FRONTEND (Cloudflare Pages)
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 20 
+          node-version: 20
 
       - name: Install dependencies
         working-directory: app
@@ -55,6 +45,31 @@ jobs:
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           projectName: flight-atlas
           directory: ./app/build
+        
+        ### AWS Setup
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+
+  deploy-aws:
+    runs-on: ubuntu-latest
+    name: Deploy Backend (Lambda, ECS, Terraform)
+    needs: deploy-cloudflare 
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       #### Lambda: build ZIP and update function ####
       - name: Set up Python
