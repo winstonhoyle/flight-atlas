@@ -117,4 +117,4 @@ jobs:
         env:
           TF_VAR_cloudflare_zone_io_id: ${{ secrets.CLOUDFLARE_ZONE_IO_ID }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: terraform apply -auto-approve tfplan
+        run: terraform apply -var "ecs_image=$ecs_image" -var "lambda_zip_path=$lambda_zip_path" -auto-approve tfplan
