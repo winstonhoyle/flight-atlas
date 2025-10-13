@@ -1,9 +1,9 @@
 import AirportSearch from "./AirportSearch";
 
 const OverlayPanel = ({
-  airportQuery,
-  setAirportQuery,
-  handleAirportSearch,
+  airportIATACode,      // Airport Code (GSO, LAX, etc.)
+  setAirportIATACode,   // Function to change state of the selectedAirport
+  handleAirportSearch,  // 
   selectedAirline,
   setSelectedAirline,
   filteredAirlines,
@@ -33,8 +33,8 @@ const OverlayPanel = ({
     >
       {/* Airport search box */}
       <AirportSearch
-        airportQuery={airportQuery}
-        setAirportQuery={setAirportQuery}
+        airportIATACode={airportIATACode}
+        setAirportIATACode={setAirportIATACode}
         handleAirportSearch={handleAirportSearch}
       />
 

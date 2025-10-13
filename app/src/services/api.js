@@ -1,12 +1,12 @@
 export const fetchAirports = async () => {
-    const res = await fetch(`${process.env.REACT_APP_API_URL}/airports`);
+    const res = await fetch(`https://api.flightatlas.io/airports`);
     let data = await res.json();
     if (typeof data === "string") data = JSON.parse(data);
     return data.features || [];
 };
 
 export const fetchAirlines = async () => {
-    const res = await fetch(`${process.env.REACT_APP_API_URL}/airlines`);
+    const res = await fetch(`https://api.flightatlas.io/airlines`);
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     let data = await res.json();
     if (typeof data === "string") data = JSON.parse(data);
@@ -25,7 +25,7 @@ export const fetchRoutes = async ({ airportIata, airlineCode } = {}, signal) => 
     if (airportIata) params.append("airport", airportIata);
     if (airlineCode) params.append("airline_code", airlineCode);
 
-    const url = `${process.env.REACT_APP_API_URL}/routes?${params.toString()}`;
+    const url = `https://api.flightatlas.io/routes?${params.toString()}`;
 
     while (attempts < 10) {
         const res = await fetch(url, { signal });

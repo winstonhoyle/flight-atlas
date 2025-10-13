@@ -28,8 +28,6 @@ export const useRoutes = (selectedAirport, selectedAirline) => {
     // -------------------------
     // If neither an airport nor an airline is selected, clear routes and return early.
     if (!selectedAirport && !selectedAirline) {
-      console.log(selectedAirport);
-      console.log(selectedAirline);
       setAllRoutes(null);
       setRoutes(null);
       return;

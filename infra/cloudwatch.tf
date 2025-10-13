@@ -21,35 +21,3 @@ resource "aws_cloudwatch_event_target" "monthly_ecs_target" {
     }
   }
 }
-
-resource "aws_iam_role" "ecs_events_role" {
-  name = "ecs_events_role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [{
-      Action    = "sts:AssumeRole",
-      Effect    = "Allow",
-      Principal = { Service = "events.amazonaws.com" }
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "ecs_events_policy" {
-  name = "ecs_events_policy"
-  role = aws_iam_role.ecs_events_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect = "Allow",
-        Action = [
-          "ecs:RunTask",
-          "iam:PassRole"
-        ],
-        Resource = "*"
-      }
-    ]
-  })
-}

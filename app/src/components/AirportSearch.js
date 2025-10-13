@@ -1,17 +1,17 @@
 import React from "react";
 import { sanitizeIATA } from "../utils/input";
 
-const AirportSearch = ({ airportQuery, setAirportQuery, handleAirportSearch }) => {
+const AirportSearch = ({ airportIATACode, setAirportIATACode, handleAirportSearch }) => {
   return (
     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
       <label style={{ fontWeight: "bold", minWidth: "50px" }}>Airport:</label>
       <input
         type="text"
         placeholder="IATA (e.g. LAX)"
-        value={airportQuery}
+        value={airportIATACode}
         maxLength={3}
         onChange={(e) =>
-          setAirportQuery(
+          setAirportIATACode(
             sanitizeIATA(e.target.value.toUpperCase())
           )
         }

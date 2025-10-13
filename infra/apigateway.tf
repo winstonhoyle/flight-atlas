@@ -61,7 +61,7 @@ resource "aws_apigatewayv2_domain_name" "api_domain" {
     security_policy = "TLS_1_2"
   }
 
-  depends_on = [aws_route53_record.api_cert_validation]
+  depends_on = [aws_acm_certificate_validation.api_cert_validation]
 }
 
 resource "aws_apigatewayv2_api_mapping" "api_mapping" {

@@ -19,7 +19,7 @@ const MapComponent = () => {
   // -------------------------
   const [selectedAirport, setSelectedAirport] = useState(null);
   const [selectedAirline, setSelectedAirline] = useState("");
-  const [airportQuery, setAirportQuery] = useState("");
+  const [airportIATACode, setAirportIATACode] = useState("");
   const [selectedRoute, setSelectedRoute] = useState(null);
 
   // Reference to the Leaflet map instance
@@ -94,7 +94,7 @@ const MapComponent = () => {
     setSelectedAirport(null);
     setSelectedAirline("");
     setSelectedRoute(null);
-    setAirportQuery("");
+    setAirportIATACode("");
 
     // Reset map view
     if (mapRef.current) {
@@ -103,12 +103,12 @@ const MapComponent = () => {
   };
 
   const handleAirportSearch = () => {
-    if (airportQuery.length === 3) {
+    if (airportIATACode.length === 3) {
       const found = airports.find(
-        (a) => a.properties.IATA === airportQuery.toUpperCase()
+        (a) => a.properties.IATA === airportIATACode.toUpperCase()
       );
       if (found) setSelectedAirport(found);
-      else alert(`Airport ${airportQuery} not found.`);
+      else alert(`Airport ${airportIATACode} not found.`);
     } else {
       alert("Please enter a 3-letter IATA code.");
     }
@@ -162,8 +162,8 @@ const MapComponent = () => {
 
         {/* Overlay controls */}
         <OverlayPanel
-          airportQuery={airportQuery}
-          setAirportQuery={setAirportQuery}
+          airportIATACode={airportIATACode}
+          setAirportIATACode={setAirportIATACode}
           handleAirportSearch={handleAirportSearch}
           selectedAirline={selectedAirline}
           setSelectedAirline={setSelectedAirline}
