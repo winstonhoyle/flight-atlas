@@ -1,6 +1,3 @@
-import React from "react";
-import { sanitizeIATA } from "../utils/input";
-
 const AirportSearch = ({ airportIATACode, setAirportIATACode, handleAirportSearch }) => {
   return (
     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
@@ -11,9 +8,7 @@ const AirportSearch = ({ airportIATACode, setAirportIATACode, handleAirportSearc
         value={airportIATACode}
         maxLength={3}
         onChange={(e) =>
-          setAirportIATACode(
-            sanitizeIATA(e.target.value.toUpperCase())
-          )
+          setAirportIATACode(e.target.value.toUpperCase())
         }
         style={{
           padding: "6px 10px",

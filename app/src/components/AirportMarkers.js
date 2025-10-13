@@ -1,4 +1,3 @@
-import React from "react";
 import { CircleMarker, Popup } from "react-leaflet";
 import { getColorByDestinations } from "../utils/colorUtils";
 
@@ -13,6 +12,7 @@ import { getColorByDestinations } from "../utils/colorUtils";
  * - onSelectAirport: callback function triggered when a marker is clicked
  */
 const AirportMarkers = ({ airports, onSelectAirport }) => {
+
   return (
     <>
       {[...airports]
@@ -25,7 +25,7 @@ const AirportMarkers = ({ airports, onSelectAirport }) => {
 
           return (
             <CircleMarker
-              key={airport.properties.IATA}
+              key={`${airport.properties.IATA}-${airport.properties.Name}`}
               pane="airportsPane"
               center={[airport.geometry.coordinates[1], airport.geometry.coordinates[0]]}
               radius={radius}
@@ -38,8 +38,12 @@ const AirportMarkers = ({ airports, onSelectAirport }) => {
                 click: () => onSelectAirport(airport),
 
                 // Hover popup
-                mouseover: (e) => e.target.openPopup(),
-                mouseout: (e) => e.target.closePopup(),
+                mouseover: (e) => {
+                  e.target.openPopup();
+                },
+                mouseout: (e) => {
+                  e.target.closePopup();
+                },
               }}
             >
               {/* Popup content for airport */}

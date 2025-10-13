@@ -1,19 +1,28 @@
 import AirportSearch from "./AirportSearch";
 
 const OverlayPanel = ({
+
+  // Props for AirportSearch and Airline Dropdown
   airportIATACode,      // Airport Code (GSO, LAX, etc.)
+
+  // Props for AirportSearch component
   setAirportIATACode,   // Function to change state of the selectedAirport
-  handleAirportSearch,  // 
-  selectedAirline,
-  setSelectedAirline,
-  filteredAirlines,
-  selectedAirport,
-  handleBack,
-  routes,
+  handleAirportSearch,  // Function when Airport Search is executed
+
+  // Props for the Airline Dropdown
+  selectedAirline,      // Airline Code (AA, DL, UA, etc) `null` if no airline is selected
+  setSelectedAirline,   // Function to change state of the selectedAirline
+  filteredAirlines,     // List of Airline Codes, either {"code": "UA", "name": "United Airlines"} or {"code": "UA", "name": "United Airlines", "count":30}
+  selectedAirport,      // JSON OBject, for logic: if selected airport return all the airlines plus their # of routes, if not selected return all the airlines 
+
+  // Props for Button
+  handleBack,           // Function to Handle going back, it resets the state of pretty much everything
+  routes,               // Routes: only useful for conditional of Back button, back button exist with a selected Route or a selectedAirport
+
+  // Props for waiting and/or failing
   loading,
   error,
 }) => {
-  console.log(filteredAirlines); //TODO Fix No numbers showing up in drop down anymore
   return (
     <div
       style={{
@@ -58,7 +67,7 @@ const OverlayPanel = ({
       </div>
 
       {/* Back button */}
-      {(selectedAirport || routes) && (
+      {(airportIATACode || routes) && (
         <button
           onClick={handleBack}
           style={{

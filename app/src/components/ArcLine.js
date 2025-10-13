@@ -6,11 +6,13 @@ import "leaflet-arc";
 /**
  * ArcLine component
  * Renders a curved line (arc) between two coordinates on a Leaflet map.
- * 
+ * Can be highlighted based on a prop (for airport hover highlighting).
+ *
  * Props:
  * - from: [lat, lng] starting coordinate
  * - to: [lat, lng] ending coordinate
- * - onClick: optional callback when the line is clicked
+ * - onClick: callback when line is clicked
+ * - highlighted: boolean to highlight this line
  */
 const ArcLine = ({ from, to, onClick }) => {
     // Get the Leaflet map instance from React-Leaflet context

@@ -40,7 +40,7 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
   return (
     <FeatureGroup ref={groupRef}>
       {/* Render all routes as arcs */}
-      {routes.features.map(f => {
+      {routes.features.map((f, idx) => {
         const coords = f.geometry.coordinates;
         if (!coords || coords.length < 2) return null;
         const srcCoord = [coords[0][1], coords[0][0]];
@@ -48,7 +48,7 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
 
         return (
           <ArcLine
-            key={`${f.properties.src_airport}-${f.properties.dst_airport}`}
+            key={`${f.properties.src_airport}-${f.properties.dst_airport}-${f.properties.airline_code}-${idx}`}
             from={srcCoord}
             to={dstCoord}
             onClick={() => setSelectedRoute(f.properties, routes.features, airports)}
@@ -57,7 +57,7 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
       })}
 
       {/* Render all airports using the existing AirportMarkers component */}
-      <AirportMarkers airports={airportsForMarkers} onSelectAirport={onSelectAirport} />
+      <AirportMarkers airports={airportsForMarkers} onSelectAirport={onSelectAirport}/>
     </FeatureGroup>
   );
 };

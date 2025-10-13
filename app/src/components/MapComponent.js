@@ -17,10 +17,10 @@ const MapComponent = () => {
   // -------------------------
   // Component State
   // -------------------------
-  const [selectedAirport, setSelectedAirport] = useState(null);
-  const [selectedAirline, setSelectedAirline] = useState("");
-  const [airportIATACode, setAirportIATACode] = useState("");
-  const [selectedRoute, setSelectedRoute] = useState(null);
+  const [selectedAirport, setSelectedAirport] = useState(null);       // JSON Object
+  const [selectedAirline, setSelectedAirline] = useState("");         // Airline Code (AA, DL, F9, etc.)
+  const [airportIATACode, setAirportIATACode] = useState("");         // Airport Code (LAX, ROA, IAD, etc)
+  const [selectedRoute, setSelectedRoute] = useState(null);           // JSON Object
 
   // Reference to the Leaflet map instance
   const mapRef = useRef(null);
@@ -28,6 +28,21 @@ const MapComponent = () => {
   // Default map position
   const DEFAULT_CENTER = [39.8283, -98.5795]; // center of continental US
   const DEFAULT_ZOOM = 4;
+
+  // -------------------------
+  // Event Handlers
+  // -------------------------
+  const handleBack = () => {
+    setSelectedAirport(null);
+    setSelectedAirline("");
+    setSelectedRoute(null);
+    setAirportIATACode("");
+
+    // Reset map view
+    if (mapRef.current) {
+      mapRef.current.flyTo(DEFAULT_CENTER, DEFAULT_ZOOM, { duration: 0.75 });
+    }
+  };
 
   // -------------------------
   // Load airport & airline data
@@ -42,7 +57,6 @@ const MapComponent = () => {
   // -------------------------
   // Compute displayed routes (filtered by selected airline)
   // -------------------------
-  // Compute displayed routes
   const displayedRoutes = React.useMemo(() => {
     if (!routes) return null;
     // If airline is selected, filter routes
@@ -76,8 +90,8 @@ const MapComponent = () => {
   // -------------------------
   // Filter airlines based on current airport routes
   // -------------------------
+  // Function that returns only the selected airlines 
   const allFilteredAirlines = useFilteredAirlines(allRoutes, airlines);
-  const displayedAirlines = allFilteredAirlines.length ? allFilteredAirlines : airlines;
 
   // -------------------------
   // Reset selections when a new airport is chosen
@@ -86,21 +100,6 @@ const MapComponent = () => {
     setSelectedAirline("");
     setSelectedRoute(null);
   }, [selectedAirport]);
-
-  // -------------------------
-  // Event Handlers
-  // -------------------------
-  const handleBack = () => {
-    setSelectedAirport(null);
-    setSelectedAirline("");
-    setSelectedRoute(null);
-    setAirportIATACode("");
-
-    // Reset map view
-    if (mapRef.current) {
-      mapRef.current.flyTo(DEFAULT_CENTER, DEFAULT_ZOOM, { duration: 0.75 });
-    }
-  };
 
   const handleAirportSearch = () => {
     if (airportIATACode.length === 3) {
@@ -160,20 +159,6 @@ const MapComponent = () => {
           )}
         </Pane>
 
-        {/* Overlay controls */}
-        <OverlayPanel
-          airportIATACode={airportIATACode}
-          setAirportIATACode={setAirportIATACode}
-          handleAirportSearch={handleAirportSearch}
-          selectedAirline={selectedAirline}
-          setSelectedAirline={setSelectedAirline}
-          filteredAirlines={displayedAirlines}
-          handleBack={handleBack}
-          routes={displayedRoutes}
-          loading={loading}
-          error={error}
-        />
-
         {/* Legend */}
         <Legend />
 
@@ -186,6 +171,21 @@ const MapComponent = () => {
           onClose={() => setSelectedRoute(null)}
         />
       </MapContainer>
+
+      {/* Overlay controls */}
+      <OverlayPanel
+        airportIATACode={airportIATACode}
+        setAirportIATACode={setAirportIATACode}
+        handleAirportSearch={handleAirportSearch}
+        selectedAirline={selectedAirline}
+        setSelectedAirline={setSelectedAirline}
+        filteredAirlines={allFilteredAirlines.length ? allFilteredAirlines : airlines}
+        selectedAirport={selectedAirport}
+        handleBack={handleBack}
+        routes={displayedRoutes}
+        loading={loading}
+        error={error}
+      />
     </div>
   );
 };

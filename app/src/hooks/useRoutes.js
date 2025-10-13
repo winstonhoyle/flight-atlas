@@ -49,7 +49,7 @@ export const useRoutes = (selectedAirport, selectedAirline) => {
         let data = null;
 
         if (selectedAirport) {
-          
+
           // Fetch routes for a specific airport using its IATA code
           const iata = selectedAirport.properties.IATA;
           data = await fetchRoutes({ airportIata: iata }, controller.signal);
@@ -57,6 +57,12 @@ export const useRoutes = (selectedAirport, selectedAirline) => {
 
           // Fetch routes for a specific airline using its code
           data = await fetchRoutes({ airlineCode: selectedAirline }, controller.signal);
+        }
+
+        // If API returned nothing (null or empty)
+        if (!data || !data.features) {
+          setError("No routes found or server unavailable");
+          return;
         }
 
         // Ensure data is in GeoJSON FeatureCollection format
