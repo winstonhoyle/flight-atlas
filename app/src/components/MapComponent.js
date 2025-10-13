@@ -19,7 +19,6 @@ const MapComponent = () => {
   // -------------------------
   const [selectedAirport, setSelectedAirport] = useState(null);       // JSON Object
   const [selectedAirline, setSelectedAirline] = useState("");         // Airline Code (AA, DL, F9, etc.)
-  const [airportIATACode, setAirportIATACode] = useState("");         // Airport Code (LAX, ROA, IAD, etc)
   const [selectedRoute, setSelectedRoute] = useState(null);           // JSON Object
 
   // Reference to the Leaflet map instance
@@ -36,7 +35,6 @@ const MapComponent = () => {
     setSelectedAirport(null);
     setSelectedAirline("");
     setSelectedRoute(null);
-    setAirportIATACode("");
 
     // Reset map view
     if (mapRef.current) {
@@ -91,7 +89,7 @@ const MapComponent = () => {
   // Filter airlines based on current airport routes
   // -------------------------
   // Function that returns only the selected airlines 
-  const allFilteredAirlines = useFilteredAirlines(allRoutes, airlines);
+  const allFilteredAirlines = useFilteredAirlines(allRoutes, airlines, selectedAirport);
 
   // -------------------------
   // Reset selections when a new airport is chosen
@@ -100,18 +98,6 @@ const MapComponent = () => {
     setSelectedAirline("");
     setSelectedRoute(null);
   }, [selectedAirport]);
-
-  const handleAirportSearch = () => {
-    if (airportIATACode.length === 3) {
-      const found = airports.find(
-        (a) => a.properties.IATA === airportIATACode.toUpperCase()
-      );
-      if (found) setSelectedAirport(found);
-      else alert(`Airport ${airportIATACode} not found.`);
-    } else {
-      alert("Please enter a 3-letter IATA code.");
-    }
-  };
 
   const handleSelectAirport = (airport) => {
     setSelectedAirport(airport);
@@ -132,8 +118,8 @@ const MapComponent = () => {
         ref={mapRef}
       >
         <TileLayer
-          attribution='Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012'
-          url='https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'
+          attribution='Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+          url='https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'
         />
         <ZoomControl position="bottomright" />
 
@@ -174,13 +160,11 @@ const MapComponent = () => {
 
       {/* Overlay controls */}
       <OverlayPanel
-        airportIATACode={airportIATACode}
-        setAirportIATACode={setAirportIATACode}
-        handleAirportSearch={handleAirportSearch}
-        selectedAirline={selectedAirline}
-        setSelectedAirline={setSelectedAirline}
-        filteredAirlines={allFilteredAirlines.length ? allFilteredAirlines : airlines}
         selectedAirport={selectedAirport}
+        setSelectedAirport={setSelectedAirport}
+        setSelectedAirline={setSelectedAirline}
+        selectedAirline={selectedAirline}
+        filteredAirlines={allFilteredAirlines.length ? allFilteredAirlines : airlines}
         handleBack={handleBack}
         routes={displayedRoutes}
         loading={loading}

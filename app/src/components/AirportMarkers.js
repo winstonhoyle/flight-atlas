@@ -47,11 +47,17 @@ const AirportMarkers = ({ airports, onSelectAirport }) => {
               }}
             >
               {/* Popup content for airport */}
-              <Popup>
+              <Popup
+                pane="popupPane"  
+                autoPan={true}
+                closeButton={false}
+              >
                 <div>
                   <strong>{airport.properties.Name}</strong>
                   <br />
                   IATA: {airport.properties.IATA}
+                  <br />
+                  Destinations: {airport.properties.destinations || 0}
                 </div>
               </Popup>
             </CircleMarker>

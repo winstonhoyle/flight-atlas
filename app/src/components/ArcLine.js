@@ -22,11 +22,20 @@ const ArcLine = ({ from, to, onClick }) => {
         // Exit early if coordinates are missing
         if (!from || !to) return;
 
+        // Function to determine line weight based on zoom
+        const getLineWeight = () => {
+            const zoom = map.getZoom();
+            // Example: increase weight when zoomed in
+            if (zoom >= 10) return 6; // very zoomed in (state-level)
+            if (zoom >= 7) return 4;  // mid zoom (regional)
+            return 2;                  // low zoom (country-level)
+        };
+
         // Define the line's default style
-        const defaultStyle = { weight: 2, color: "#64b5f7ff", opacity: 1.0 };
+        const defaultStyle = { weight: getLineWeight(), color: "#64b5f7ff", opacity: 1.0 };
 
         // Define the style when hovered
-        const highlightStyle = { weight: 4, color: "#02508fff", opacity: 1.0 };
+        //const highlightStyle = { weight: getLineWeight(), color: "#02508fff", opacity: 1.0 };
 
         // Create a curved polyline (arc) between 'from' and 'to' coordinates
         const line = L.Polyline.Arc(from, to, defaultStyle).addTo(map);
@@ -38,17 +47,25 @@ const ArcLine = ({ from, to, onClick }) => {
 
         // Change style on hover (mouseover)
         line.on("mouseover", () => {
-            line.setStyle(highlightStyle); // Thicker and darker line
+            line.setStyle({ weight: getLineWeight() + 2, color: "#02508fff", opacity: 1.0 });
             line.bringToFront();            // Ensure it's above other layers
         });
 
         // Reset style when mouse leaves the line
         line.on("mouseout", () => {
-            line.setStyle(defaultStyle);
+            line.setStyle({ weight: getLineWeight(), color: "#64b5f7ff", opacity: 1.0 });
         });
 
-        // Cleanup function: remove the line from the map when component unmounts
-        return () => line.remove();
+        // Optional: update dynamically when user zooms
+        const handleZoom = () => {
+            line.setStyle(line.setStyle({ weight: getLineWeight(), color: "#64b5f7ff", opacity: 1.0 }));
+        };
+        map.on("zoomend", handleZoom);
+
+        return () => {
+            line.remove();
+            map.off("zoomend", handleZoom);
+        };
 
     }, [from, to, map, onClick]); // Effect runs when coordinates, map, or onClick callback changes
 

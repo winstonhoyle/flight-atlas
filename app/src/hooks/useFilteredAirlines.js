@@ -1,14 +1,23 @@
 import { useEffect, useState } from "react";
 
 // Custom hook to filter airlines based on available routes
-export const useFilteredAirlines = (allRoutes, airlines) => {
 
-  // State to store the filtered list of airlines
+/**
+ * Custom hook to filter airlines based on available routes
+ *
+ * Props:
+ * - {Object} allRoutes - GeoJSON object containing all route features
+ * - {Array} airlines - Array of airline objects [{ code, name }]
+ * - {Object|null} selectedAirport - Optional GeoJSON object representing a selected airport
+ */
+export const useFilteredAirlines = (allRoutes, airlines, selectedAirport) => {
+
+  // State to store the filtered and sorted list of airlines
   const [filteredAirlines, setFilteredAirlines] = useState([]);
 
   useEffect(() => {
-    // If there are no routes or airlines, reset filteredAirlines to empty
-    if (!allRoutes || !airlines.length) {
+    // Guard clause: reset filteredAirlines if essential data is missing
+    if (!allRoutes || !airlines.length || !selectedAirport) {
       setFilteredAirlines([]);
       return;
     }
@@ -52,7 +61,7 @@ export const useFilteredAirlines = (allRoutes, airlines) => {
 
     // Update state with filtered and sorted airlines
     setFilteredAirlines(uniqueAirlines);
-  }, [allRoutes, airlines]);
+  }, [allRoutes, airlines, selectedAirport]);
 
   // Return the filtered airlines array
   return filteredAirlines;

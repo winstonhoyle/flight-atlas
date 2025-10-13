@@ -2,18 +2,14 @@ import AirportSearch from "./AirportSearch";
 
 const OverlayPanel = ({
 
-  // Props for AirportSearch and Airline Dropdown
-  airportIATACode,      // Airport Code (GSO, LAX, etc.)
-
-  // Props for AirportSearch component
-  setAirportIATACode,   // Function to change state of the selectedAirport
-  handleAirportSearch,  // Function when Airport Search is executed
+  // Props for AirportSearch 
+  selectedAirport,      // JSON OBject, for logic: if selected airport return all the airlines plus their # of routes, if not selected return all the airlines 
+  setSelectedAirport,   // GeoJSON Point object of airport
+  setSelectedAirline,   // Function to change state of the selectedAirline
 
   // Props for the Airline Dropdown
   selectedAirline,      // Airline Code (AA, DL, UA, etc) `null` if no airline is selected
-  setSelectedAirline,   // Function to change state of the selectedAirline
   filteredAirlines,     // List of Airline Codes, either {"code": "UA", "name": "United Airlines"} or {"code": "UA", "name": "United Airlines", "count":30}
-  selectedAirport,      // JSON OBject, for logic: if selected airport return all the airlines plus their # of routes, if not selected return all the airlines 
 
   // Props for Button
   handleBack,           // Function to Handle going back, it resets the state of pretty much everything
@@ -42,18 +38,23 @@ const OverlayPanel = ({
     >
       {/* Airport search box */}
       <AirportSearch
-        airportIATACode={airportIATACode}
-        setAirportIATACode={setAirportIATACode}
-        handleAirportSearch={handleAirportSearch}
+        selectedAirport={selectedAirport}
+        setSelectedAirport={setSelectedAirport}
       />
 
       {/* Airline selector */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-        <label style={{ fontWeight: "bold" }}>Airline:</label>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        <label style={{ fontWeight: "bold", minWidth: "60px" }}>Airline:</label>
         <select
           value={selectedAirline}
           onChange={(e) => setSelectedAirline(e.target.value)}
-          style={{ padding: "6px 8px", borderRadius: "4px", border: "1px solid #ccc" }}
+          style={{
+            padding: "6px 8px",
+            borderRadius: "4px",
+            border: "1px solid #ccc",
+            width: "auto",
+            maxWidth: "100%",
+          }}
         >
           <option value="">All Airlines</option>
           {filteredAirlines.map((air) => (
@@ -67,7 +68,7 @@ const OverlayPanel = ({
       </div>
 
       {/* Back button */}
-      {(airportIATACode || routes) && (
+      {(selectedAirport || routes) && (
         <button
           onClick={handleBack}
           style={{
