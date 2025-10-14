@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { useMap, FeatureGroup } from "react-leaflet";
 
 import "leaflet-arc";
-
+import L from "leaflet";
 import ArcLine from "./ArcLine";
 import AirportMarkers from "./AirportMarkers";
 
@@ -43,14 +43,15 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
       {routes.features.map((f, idx) => {
         const coords = f.geometry.coordinates;
         if (!coords || coords.length < 2) return null;
-        const srcCoord = [coords[0][1], coords[0][0]];
-        const dstCoord = [coords[1][1], coords[1][0]];
-
+        const srcCoord = new L.LatLng(coords[0][1], coords[0][0]);
+        const dstCoord = new L.LatLng(coords[1][1], coords[1][0]);
+        console.log(srcCoord);
+        console.log(dstCoord);
         return (
           <ArcLine
             key={`${f.properties.src_airport}-${f.properties.dst_airport}-${f.properties.airline_code}-${idx}`}
-            from={srcCoord}
-            to={dstCoord}
+            src={srcCoord}
+            dst={dstCoord}
             onClick={() => setSelectedRoute(f.properties, routes.features, airports)}
           />
         );
