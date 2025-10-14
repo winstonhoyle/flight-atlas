@@ -1,15 +1,15 @@
-// src/components/Legend.js
-import React from "react";
+import React, { useState } from "react";
 import { getColorByDestinations } from "../utils/colorUtils";
 
 const Legend = () => {
-    // Define the thresholds used in getColorByDestinations
+    const [minimized, setMinimized] = useState(false);
+
     const grades = [
         { label: "> 100 destinations", count: 101 },
         { label: "51 – 100 destinations", count: 75 },
         { label: "21 – 50 destinations", count: 30 },
         { label: "11 – 20 destinations", count: 15 },
-        { label: "<10 destinations", count: 5 },
+        { label: "< 10 destinations", count: 5 },
     ];
 
     return (
@@ -25,33 +25,54 @@ const Legend = () => {
                 fontSize: "14px",
                 lineHeight: "1.4",
                 boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+                transition: "all 0.3s ease",
+                cursor: "default",
             }}
         >
-            <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <strong>Destinations Legend</strong>
-                {grades.map((g) => (
-                    <div
-                        key={g.label}
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            marginTop: "6px",
-                        }}
-                    >
-                        <span
-                            style={{
-                                width: "18px",
-                                height: "12px",
-                                background: getColorByDestinations(g.count),
-                                marginRight: "8px",
-                                borderRadius: "2px",
-                                border: "1px solid #aaa",
-                            }}
-                        ></span>
-                        <span>{g.label}</span>
-                    </div>
-                ))}
+                <button
+                    onClick={() => setMinimized(!minimized)}
+                    style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: "16px",
+                        lineHeight: "1",
+                        padding: "0 4px",
+                    }}
+                    title={minimized ? "Expand legend" : "Minimize legend"}
+                >
+                    {minimized ? "＋" : "−"}
+                </button>
             </div>
+
+            {!minimized && (
+                <div style={{ marginTop: "6px" }}>
+                    {grades.map((g) => (
+                        <div
+                            key={g.label}
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                marginTop: "6px",
+                            }}
+                        >
+                            <span
+                                style={{
+                                    width: "18px",
+                                    height: "12px",
+                                    background: getColorByDestinations(g.count),
+                                    marginRight: "8px",
+                                    borderRadius: "2px",
+                                    border: "1px solid #aaa",
+                                }}
+                            ></span>
+                            <span>{g.label}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };

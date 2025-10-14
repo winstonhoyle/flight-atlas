@@ -180,10 +180,8 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame) -> List:
 
     # Loop through records
     for tr in trs[1:]:
-
         # Loop through columns
         for i, td in enumerate(tr.find_all("td")):
-
             # Get airline for desinations, saving all airlines incase I want to expand later
             if i == 0:
                 a = td.find("a")
@@ -209,7 +207,6 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame) -> List:
 
             # Get Destinations
             elif i == 1:
-
                 airport_as = [
                     a
                     for a in td.find_all("a", href=True)
@@ -251,7 +248,6 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame) -> List:
 
                     # If code is found
                     if dst_iata:
-
                         # Add destinations, code was found in original datasource, no need to add reverse route
                         destinations.append([airline_code, src_iata, dst_iata])
 
@@ -415,7 +411,28 @@ if len(additional_airports_df) > 0:
 routes_df["src_geometry"] = routes_df["geometry_src"].apply(lambda g: g.wkt)
 routes_df["dst_geometry"] = routes_df["geometry_dst"].apply(lambda g: g.wkt)
 
-# Clean
+# Format airlines df while we are formatting routes as we sort by airline route count
+routes_df["airport1"] = routes_df[["src_airport", "dst_airport"]].min(axis=1)
+routes_df["airport2"] = routes_df[["src_airport", "dst_airport"]].max(axis=1)
+
+# Drop duplicate flights based on airline code
+unique_routes = routes_df.drop_duplicates(
+    subset=["airline_code", "airport1", "airport2"]
+)
+
+# Count routes per airline
+route_counts = (
+    unique_routes.groupby("airline_code").size().reset_index(name="route_count")
+)
+
+# Create airline df
+airlines_df = pd.DataFrame(airline_codes_dict.items(), columns=["name", "airline_code"])
+
+# Merge with airline names
+airlines_df = airlines_df.merge(route_counts, on="airline_code")
+airlines_df = airlines_df.sort_values("route_count", ascending=False)
+
+# Back to uploading routes, clean the routes DF
 routes_df = routes_df[
     ["airline_code", "src_airport", "dst_airport", "src_geometry", "dst_geometry"]
 ]
@@ -487,10 +504,10 @@ ds.write_dataset(
 )
 
 # Upload airlines to S3
-airlines_df = pd.DataFrame(airline_codes_dict.items(), columns=["name", "airline_code"])
 airlines_df[["name", "airline_code"]] = airlines_df[["name", "airline_code"]].astype(
     str
 )
+airlines_df["route_count"] = airlines_df["route_count"].astype(int)
 
 # Add snapshot date and partition columns
 airlines_df["year"] = datetime.now().year

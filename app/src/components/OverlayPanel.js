@@ -1,15 +1,13 @@
 import { useState } from "react";
 import Select from "react-select";
 
-import AirportSearch from "./AirportSearch";
-
 const OverlayPanel = ({
 
-  // Props for AirportSearch 
+  // Props for Airport Select component
   selectedAirport,      // JSON OBject, for logic: if selected airport return all the airlines plus their # of routes, if not selected return all the airlines 
   setSelectedAirport,   // GeoJSON Point object of airport
 
-  // Props for the Airline Dropdown
+  // Props for the Airline Select component
   setSelectedAirline,   // Function to change state of the selectedAirline
   selectedAirline,      // Airline Code (AA, DL, UA, etc) `null` if no airline is selected
   filteredAirlines,     // List of Airline Codes, either {"code": "UA", "name": "United Airlines"} or {"code": "UA", "name": "United Airlines", "count":30}
@@ -26,7 +24,20 @@ const OverlayPanel = ({
   // State to toggle panel open/closed
   const [isOpen, setIsOpen] = useState(true);
 
-  const selectOptions = [{ value: "", label: "All Airlines" },
+  const allAirports = JSON.parse(localStorage.getItem("airports")) || [];
+
+  // Format Airports for Select combobox
+  const selectAirportOptions = [{ value: "", label: "All Airports" },
+  ...allAirports.map((a) => (
+    {
+      value: a.properties.IATA,
+      label: `${a.properties.Name} (${a.properties.IATA})`,
+    }
+  )),
+  ]
+
+  // Format Airlines for Select combobox
+  const selectAirlineOptions = [{ value: "", label: "All Airlines" },
   ...filteredAirlines.map((a) => (
     {
       value: a.code,
@@ -82,21 +93,36 @@ const OverlayPanel = ({
             Flight Atlas: Finding direct flight routes between all U.S. airports.
           </div>
 
-          {/* Airport search box */}
+          {/* Airport search */}
+          <Select
+            value={
+              selectedAirport
+                ? selectAirportOptions.find(o => o.value === selectedAirport.properties.IATA)
+                : selectAirportOptions[0]
+            }
+            onChange={(e) => {
+              setSelectedAirport(e ? allAirports.find(a => a.properties.IATA === e.value) : null)
+            }}
+            options={selectAirportOptions}
+            isClearable
+            placeholder="Search or select an airport..."
+          />
+
+          {/* OLD Airport search box }
           <AirportSearch
             selectedAirport={selectedAirport}
             setSelectedAirport={setSelectedAirport}
-          />
+          />*/}
 
           {/* Airline dropdown */}
           <Select
             value={
               selectedAirline
-                ? selectOptions.find(o => o.value === selectedAirline)
-                : selectOptions[0]
+                ? selectAirlineOptions.find(o => o.value === selectedAirline)
+                : selectAirlineOptions[0]
             }
             onChange={(e) => setSelectedAirline(e ? e.value : "")}
-            options={selectOptions}
+            options={selectAirlineOptions}
             isClearable
             placeholder="Search or select an airline..."
           />

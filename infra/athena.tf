@@ -166,6 +166,12 @@ resource "aws_glue_catalog_table" "airlines_table" {
       type = "string"
     }
 
+    columns {
+      name = "route_count"
+      type = "int"
+    }
+
+
     ser_de_info {
       name                  = "parquet"
       serialization_library = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"

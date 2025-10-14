@@ -5,7 +5,7 @@ repos:
     hooks:
       - id: black
         language_version: python3.12
-        files: ^report/.*\.py$
+        files: ^(lambda|ecs)/.*\.py$
 
   # Python import sorting with isort
   - repo: https://github.com/PyCQA/isort
@@ -13,7 +13,7 @@ repos:
     hooks:
       - id: isort
         language_version: python3.12
-        files: ^report/.*\.py$
+        files: ^(lambda|ecs)/.*\.py$
 
   # Terraform formatting
   - repo: https://github.com/antonbabenko/pre-commit-terraform
@@ -30,4 +30,4 @@ repos:
         entry: bash -c 'npm install --package-lock-only --ignore-scripts --no-audit --no-fund && git diff --exit-code package-lock.json || (echo "❌ package-lock.json out of sync! Run npm install and recommit." && exit 1)'
         language: system
         pass_filenames: false
-        files: ^app\.json$
+        files: ^app/

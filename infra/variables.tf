@@ -14,11 +14,6 @@ variable "results_bucket_name" {
   default = "bucket-flight-atlas-query-results"
 }
 
-variable "frontend_bucket_name" {
-  type    = string
-  default = "bucket-flight-atlas-frontend"
-}
-
 # Athena db
 variable "athena_database_name" {
   type    = string
