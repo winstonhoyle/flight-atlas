@@ -18,14 +18,14 @@ const AirportMarkers = ({ airports, onSelectAirport }) => {
       {[...airports]
         // Sort airports by number of destinations (ascending)
         .sort((a, b) => (a.properties.destinations || 0) - (b.properties.destinations || 0))
-        .map((airport) => {
+        .map((airport, idx) => {
           const destinations = airport.properties.destinations || 0;
           const color = getColorByDestinations(destinations);
           const radius = 3 + Math.min(destinations / 20, 4); // Scale marker radius with destinations
 
           return (
             <CircleMarker
-              key={`${airport.properties.IATA}-${airport.properties.Name}`}
+              key={`${airport.properties.IATA}-${airport.properties.Name}-${idx}`}
               pane="airportsPane"
               center={[airport.geometry.coordinates[1], airport.geometry.coordinates[0]]}
               radius={radius}

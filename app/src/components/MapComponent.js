@@ -114,6 +114,7 @@ const MapComponent = () => {
         zoom={DEFAULT_ZOOM}
         worldCopyJump={true}
         zoomControl={false}
+        maxZoom={10}
         style={{ height: "100vh", width: "100%" }}
         ref={mapRef}
       >

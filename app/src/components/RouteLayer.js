@@ -1,7 +1,5 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useMemo } from "react";
 import { useMap, FeatureGroup } from "react-leaflet";
-
-import "leaflet-arc";
 import L from "leaflet";
 import ArcLine from "./ArcLine";
 import AirportMarkers from "./AirportMarkers";
@@ -10,55 +8,94 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
   const map = useMap();
   const groupRef = useRef();
 
-  // Fit bounds whenever data changes
-  useEffect(() => {
-    if (routes?.features?.length && groupRef.current) {
-      const group = groupRef.current;
-      if (group.getBounds && group.getBounds().isValid()) {
-        map.flyToBounds(group.getBounds(), { padding: [15, 15], duration: 0.75 });
+  // Memoize routeFeatures to make it stable for Hooks
+  const routeFeatures = useMemo(() => routes?.features || [], [routes?.features]);
+
+  // Get airports (memoized)
+  const airports = useMemo(() => JSON.parse(localStorage.getItem("airports")) || [], []);
+
+  const airportsMap = useMemo(() => new Map(airports.map(a => [a.properties.IATA, a])), [airports]);
+
+  const airportSet = useMemo(() => {
+    const set = new Set();
+    routeFeatures.forEach(f => {
+      set.add(f.properties.src_airport);
+      set.add(f.properties.dst_airport);
+    });
+    return set;
+  }, [routeFeatures]);
+
+  const airportsForMarkers = useMemo(() => {
+    const result = [];
+
+    airportSet.forEach(code => {
+      const airport = airportsMap.get(code);
+      if (!airport) return;
+
+      const [lng, lat] = airport.geometry.coordinates;
+
+      // Base marker
+      result.push({ ...airport, geometry: { coordinates: [lng, lat] } });
+
+      // Duplicate for antimeridian crossing
+      const crossesAntimeridian = routeFeatures.some(f => {
+        const srcLng = f.geometry.coordinates[0][0];
+        const dstLng = f.geometry.coordinates[1][0];
+        return (f.properties.src_airport === code || f.properties.dst_airport === code)
+          ? Math.abs(dstLng - srcLng) > 180
+          : false;
+      });
+
+      if (crossesAntimeridian) {
+        result.push({ ...airport, geometry: { coordinates: [lng + 360, lat] } });
+        result.push({ ...airport, geometry: { coordinates: [lng - 360, lat] } });
       }
+    });
+
+    return result;
+  }, [airportSet, airportsMap, routeFeatures]);
+
+  // Fit bounds
+  useEffect(() => {
+    const validAirports = airportsForMarkers.filter(a => {
+      const lng = a.geometry.coordinates[0];
+      return lng >= -180 && lng <= 180;
+    });
+
+    if (!validAirports.length) return;
+
+    const bounds = L.latLngBounds(
+      validAirports.map(a => L.latLng(a.geometry.coordinates[1], a.geometry.coordinates[0]))
+    );
+
+    if (bounds.isValid()) {
+      map.flyToBounds(bounds, { padding: [15, 15], duration: 0.75 });
     }
-  }, [routes, map]);
+  }, [airportsForMarkers, map]);
 
-  if (!routes || !routes.features) return null;
+  if (!routeFeatures.length) return null;
 
-  // Get airports
-  const airports = JSON.parse(localStorage.getItem("airports")) || [];
-  const airportsMap = new Map(airports.map(a => [a.properties.IATA, a]));
-
-  // Collect all airports used in routes
-  const airportSet = new Set();
-  routes.features.forEach(f => {
-    airportSet.add(f.properties.src_airport);
-    airportSet.add(f.properties.dst_airport);
-  });
-  const airportsForMarkers = Array.from(airportSet)
-    .map(code => airportsMap.get(code))
-    .filter(Boolean);
-
-  // Build Layer (FeatureGroup)
   return (
     <FeatureGroup ref={groupRef}>
-      {/* Render all routes as arcs */}
-      {routes.features.map((f, idx) => {
+      {/* Routes */}
+      {routeFeatures.map((f, idx) => {
         const coords = f.geometry.coordinates;
         if (!coords || coords.length < 2) return null;
         const srcCoord = new L.LatLng(coords[0][1], coords[0][0]);
         const dstCoord = new L.LatLng(coords[1][1], coords[1][0]);
-        console.log(srcCoord);
-        console.log(dstCoord);
+
         return (
           <ArcLine
             key={`${f.properties.src_airport}-${f.properties.dst_airport}-${f.properties.airline_code}-${idx}`}
             src={srcCoord}
             dst={dstCoord}
-            onClick={() => setSelectedRoute(f.properties, routes.features, airports)}
+            onClick={() => setSelectedRoute(f.properties, routeFeatures, airports)}
           />
         );
       })}
 
-      {/* Render all airports using the existing AirportMarkers component */}
-      <AirportMarkers airports={airportsForMarkers} onSelectAirport={onSelectAirport}/>
+      {/* Airports */}
+      <AirportMarkers airports={airportsForMarkers} onSelectAirport={onSelectAirport} />
     </FeatureGroup>
   );
 };
