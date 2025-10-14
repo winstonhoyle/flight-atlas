@@ -21,3 +21,13 @@ repos:
     hooks:
       - id: terraform_fmt
         files: ^infra/.*\.(tf|tfvars)$
+
+  # Ensure package-lock.json is in sync with package.json
+  - repo: local
+    hooks:
+      - id: npm-lock-sync
+        name: Check npm lockfile consistency
+        entry: bash -c 'npm install --package-lock-only --ignore-scripts --no-audit --no-fund && git diff --exit-code package-lock.json || (echo "❌ package-lock.json out of sync! Run npm install and recommit." && exit 1)'
+        language: system
+        pass_filenames: false
+        files: ^package\.json$
