@@ -4,6 +4,19 @@ import L from "leaflet";
 import ArcLine from "./ArcLine";
 import AirportMarkers from "./AirportMarkers";
 
+/**
+ * RouteLayer Component
+ *
+ * Displays routes and airports on a Leaflet map.
+ * Handles antimeridian wrapping and fits map bounds.
+ *
+ * Props:
+ * - routes: GeoJSON FeatureCollection of LineStrings representing flight routes.
+ * - setSelectedRoute: function(properties, allRoutes, allAirports)
+ *      Sets the currently selected route. Called when an ArcLine is clicked.
+ * - onSelectAirport: function(airport)
+ *      Sets the currently selected airport (used by AirportMarkers).
+ */
 const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
   const map = useMap();
   const groupRef = useRef();
@@ -11,11 +24,13 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
   // Memoize routeFeatures to make it stable for Hooks
   const routeFeatures = useMemo(() => routes?.features || [], [routes?.features]);
 
-  // Get airports (memoized)
+  // Memoize airports from localStorage (GeoJSON Points)
   const airports = useMemo(() => JSON.parse(localStorage.getItem("airports")) || [], []);
 
+  // Map airport IATA code -> airport object for quick lookup
   const airportsMap = useMemo(() => new Map(airports.map(a => [a.properties.IATA, a])), [airports]);
 
+  // Build a Set of all airports used in the routes
   const airportSet = useMemo(() => {
     const set = new Set();
     routeFeatures.forEach(f => {
@@ -25,6 +40,11 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
     return set;
   }, [routeFeatures]);
 
+  /**
+  * Build list of airports for markers
+  * - Includes duplicates if route crosses the antimeridian
+  * - Ensures markers appear correctly on map (±360° shifts)
+  */
   const airportsForMarkers = useMemo(() => {
     const result = [];
 
@@ -37,7 +57,7 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
       // Base marker
       result.push({ ...airport, geometry: { coordinates: [lng, lat] } });
 
-      // Duplicate for antimeridian crossing
+      // Check if any route for this airport crosses the antimeridian
       const crossesAntimeridian = routeFeatures.some(f => {
         const srcLng = f.geometry.coordinates[0][0];
         const dstLng = f.geometry.coordinates[1][0];
@@ -47,6 +67,7 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
       });
 
       if (crossesAntimeridian) {
+        // Duplicate markers shifted ±360° longitude
         result.push({ ...airport, geometry: { coordinates: [lng + 360, lat] } });
         result.push({ ...airport, geometry: { coordinates: [lng - 360, lat] } });
       }
@@ -55,7 +76,10 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
     return result;
   }, [airportSet, airportsMap, routeFeatures]);
 
-  // Fit bounds
+  /**
+   * Fit map bounds to only valid markers (longitude between -180 and 180)
+   * This avoids flying to duplicate antimeridian-shifted points outside view
+   */
   useEffect(() => {
     const validAirports = airportsForMarkers.filter(a => {
       const lng = a.geometry.coordinates[0];
@@ -73,11 +97,12 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
     }
   }, [airportsForMarkers, map]);
 
+  // If there are no routes, render nothing
   if (!routeFeatures.length) return null;
 
   return (
     <FeatureGroup ref={groupRef}>
-      {/* Routes */}
+      {/* Render all routes as ArcLine components */}
       {routeFeatures.map((f, idx) => {
         const coords = f.geometry.coordinates;
         if (!coords || coords.length < 2) return null;
@@ -89,12 +114,15 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
             key={`${f.properties.src_airport}-${f.properties.dst_airport}-${f.properties.airline_code}-${idx}`}
             src={srcCoord}
             dst={dstCoord}
-            onClick={() => setSelectedRoute(f.properties, routeFeatures, airports)}
+            onClick={() => {
+              setSelectedRoute(f)
+            }
+            }
           />
         );
       })}
 
-      {/* Airports */}
+      {/* Render all airports as markers */}
       <AirportMarkers airports={airportsForMarkers} onSelectAirport={onSelectAirport} />
     </FeatureGroup>
   );

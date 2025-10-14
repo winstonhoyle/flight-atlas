@@ -22,6 +22,8 @@ const ArcLine = ({ src, dst, onClick }) => {
         color: "#64b5f7ff",
         opacity: 1.0,
         wrap: false,
+        interactive: true,
+        bubblingMouseEvents: true,
       }).addTo(map);
 
     const lines = [drawLine(src, dst)];
@@ -40,7 +42,12 @@ const ArcLine = ({ src, dst, onClick }) => {
     }
 
     lines.forEach((line) => {
-      if (onClick) line.on("click", () => onClick({ src, dst }));
+      if (onClick) {
+        line.on("click", (e) => {
+          e.originalEvent.stopPropagation();
+          onClick(e);
+        });
+      }
       line.on("mouseover", () => {
         line.setStyle({
           weight: getLineWeight() + 2,

@@ -11,12 +11,13 @@
  * - onClose: callback to close the panel
  */
 const RouteInfoPanel = ({ route, routes, airports, airlines, onClose }) => {
+
     // Early return: don't render anything if no route is selected
     if (!route) return null;
 
     // Find the source and destination airports based on IATA codes
-    const srcAirport = airports.find(a => a.properties.IATA === route.src_airport);
-    const dstAirport = airports.find(a => a.properties.IATA === route.dst_airport);
+    const srcAirport = airports.find(a => a.properties.IATA === route.properties.src_airport);
+    const dstAirport = airports.find(a => a.properties.IATA === route.properties.dst_airport);
 
     // Ensure routes.features exists to avoid errors
     const routeFeatures = routes?.features || [];
@@ -24,7 +25,7 @@ const RouteInfoPanel = ({ route, routes, airports, airlines, onClose }) => {
     // Find all airlines that operate on this route
     const airlinesOnRoute = routeFeatures
         // Filter routes that match the current source and destination
-        .filter(f => f.properties.src_airport === route.src_airport && f.properties.dst_airport === route.dst_airport)
+        .filter(f => f.properties.src_airport === route.properties.src_airport && f.properties.dst_airport === route.properties.dst_airport)
         // Map to airline data
         .map(f => {
             const airlineData = airlines.find(a => a.code === f.properties.airline_code);
@@ -76,7 +77,7 @@ const RouteInfoPanel = ({ route, routes, airports, airlines, onClose }) => {
             <h3 style={{ margin: 0, fontWeight: 600, fontSize: "20px", color: "#222" }}>Route Info</h3>
 
             <div>
-                <b>Source:</b> {srcAirport?.properties.Name || route.src_airport}{" "}
+                <b>Source:</b> {srcAirport?.properties.Name || route.properties.src_airport}{" "}
                 {srcAirport?.properties.url && (
                     <a
                         href={`${srcAirport.properties.url}#Airlines_and_destinations`}
@@ -90,7 +91,7 @@ const RouteInfoPanel = ({ route, routes, airports, airlines, onClose }) => {
             </div>
 
             <div>
-                <b>Destination:</b> {dstAirport?.properties.Name || route.dst_airport}{" "}
+                <b>Destination:</b> {dstAirport?.properties.Name || route.properties.dst_airport}{" "}
                 {dstAirport?.properties.url && (
                     <a
                         href={`${dstAirport.properties.url}#Airlines_and_destinations`}
@@ -107,7 +108,7 @@ const RouteInfoPanel = ({ route, routes, airports, airlines, onClose }) => {
                 <b>Airlines:</b>
                 <ul style={{ margin: "5px 0 0 15px", padding: 0 }}>
                     {airlinesOnRoute.map(a => {
-                        const flightLink = `https://www.google.com/travel/flights?q=${route.src_airport}+to+${route.dst_airport}+${a.code}`;
+                        const flightLink = `https://www.google.com/travel/flights?q=${route.properties.src_airport}+to+${route.properties.dst_airport}+${a.code}`;
                         return (
                             <li key={a.code} style={{ marginBottom: "4px" }}>
                                 <a

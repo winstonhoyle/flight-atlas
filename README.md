@@ -5,7 +5,7 @@ It combines scheduled data ingestion, serverless querying, and a static web fron
 
 ## Try it out: [https://flightatlas.io](https://flightatlas.io)
 
-![alt text](https://raw.githubusercontent.com/winstonhoyle/flight-atlas/refs/heads/main/app/public/logo512.png)
+![alt text](app/public/logo.png)
 ---
 
 
