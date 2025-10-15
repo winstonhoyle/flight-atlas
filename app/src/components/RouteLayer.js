@@ -100,7 +100,13 @@ const RouteLayer = ({ routes, selectedRoute, setSelectedRoute, onSelectAirport }
     );
 
     if (bounds.isValid() && !selectedRoute) {
-      map.flyToBounds(bounds, { padding: [15, 15], duration: 0.75 });
+
+      map.fitBounds(bounds, {
+        padding: [15, 15],
+        animate: true,
+        duration: 0.5
+      });
+
     }
   }, [airportsForMarkers, selectedRoute, map]);
 

@@ -84,16 +84,21 @@ const MapComponent = () => {
       return;
     }
 
-    // Step 1: If airline is selected, clear it
+    // If airline is selected, clear it
     if (selectedAirline) {
       setSelectedAirline("");
       return;
     }
 
-    // Step 2: If airport is selected, clear it and reset map view
+    // If airport is selected, clear it and reset map view
     if (selectedAirport) {
       setSelectedAirport(null);
-      mapRef.current.flyTo(DEFAULT_CENTER, DEFAULT_ZOOM, { duration: 0.75 });
+
+      mapRef.current.setView(DEFAULT_CENTER, DEFAULT_ZOOM, {
+        animate: true,
+        duration: 0.5
+      });
+
       return;
     }
   };
