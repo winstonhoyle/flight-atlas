@@ -16,7 +16,7 @@ const Legend = () => {
     <div
       style={{
         position: "absolute",
-        bottom: "10px",
+        bottom: "calc(20px + env(safe-area-inset-bottom))",
         left: "10px",
         zIndex: 1000,
         background: "rgba(255, 255, 255, 0.9)",
@@ -27,7 +27,7 @@ const Legend = () => {
         boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
         cursor: "default",
         width: "220px",
-        pointerEvents: "auto", // 🔑 allow clicks
+        pointerEvents: "auto",
         display: "flex",
         flexDirection: "column",
       }}

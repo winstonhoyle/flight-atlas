@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { MapContainer, TileLayer, Pane, ZoomControl } from "react-leaflet";
+import { MapContainer, TileLayer, Pane } from "react-leaflet";
 
 import AirportMarkers from "./AirportMarkers";
 import Legend from "./Legend";
@@ -144,14 +144,12 @@ const MapComponent = () => {
         maxZoom={10}
         style={{ height: "100vh", width: "100%" }}
         ref={mapRef}
-        attributionControl={true}
-        zoomControl={true}
+        zoomControl={false}
       >
         <TileLayer
           attribution='Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
           url='https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'
         />
-        <ZoomControl position="bottomright" />
 
         {/* Routes */}
         <Pane name="routesPane" style={{ zIndex: 400 }}>
@@ -206,7 +204,7 @@ const MapComponent = () => {
       <div
         style={{
           position: "absolute",
-          bottom: 10,
+          bottom: 50,
           right: 10,
           zIndex: 1100,
           background: "white",

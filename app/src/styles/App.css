@@ -1,5 +1,6 @@
 html, body, #root, .App {
   height: 100%;
+  width: 100%;
   margin: 0;
   padding: 0;
 }
@@ -38,8 +39,9 @@ html, body, #root, .App {
 
 /* Map container fills dynamic viewport height */
 .map-container {
-  height: 100dvh; /* modern browsers */
+  height: 100dvh;
   width: 100%;
+  position: relative;
 }
 
 /* Fix popup z-index */
@@ -50,12 +52,6 @@ html, body, #root, .App {
 /* Tooltips above routes */
 .leaflet-tooltip-pane {
   z-index: 1150 !important;
-}
-
-/* Give Leaflet controls some margin so they aren’t cut off */
-.leaflet-bottom.leaflet-left,
-.leaflet-bottom.leaflet-right {
-  margin-bottom: 20px;
 }
 
 /* Legend fix */
