@@ -4,28 +4,35 @@ import L from "leaflet";
 import ArcLine from "./ArcLine";
 import AirportMarkers from "./AirportMarkers";
 
+import { useFlightAtlasStore } from "../store/useFlightAtlasStore";
+
 /**
  * RouteLayer Component
  *
  * Displays routes and airports on a Leaflet map.
- * Handles antimeridian wrapping and fits map bounds.
+ * Handles antimeridian wrappings
  *
  * Props:
  * - routes: GeoJSON FeatureCollection of LineStrings representing flight routes.
+ * - selectedRoute: JSON route object used for bounds handling
  * - setSelectedRoute: function(properties, allRoutes, allAirports)
  *      Sets the currently selected route. Called when an ArcLine is clicked.
  * - onSelectAirport: function(airport)
  *      Sets the currently selected airport (used by AirportMarkers).
  */
-const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
+const RouteLayer = ({ routes, selectedRoute, setSelectedRoute, onSelectAirport }) => {
   const map = useMap();
   const groupRef = useRef();
 
   // Memoize routeFeatures to make it stable for Hooks
   const routeFeatures = useMemo(() => routes?.features || [], [routes?.features]);
 
-  // Memoize airports from localStorage (GeoJSON Points)
-  const airports = useMemo(() => JSON.parse(localStorage.getItem("airports")) || [], []);
+  // Get airports from store
+  const { airports, loaded, initData } = useFlightAtlasStore();
+
+  useEffect(() => {
+    if (!loaded) initData();
+  }, [loaded, initData]);
 
   // Map airport IATA code -> airport object for quick lookup
   const airportsMap = useMemo(() => new Map(airports.map(a => [a.properties.IATA, a])), [airports]);
@@ -92,10 +99,10 @@ const RouteLayer = ({ routes, setSelectedRoute, onSelectAirport }) => {
       validAirports.map(a => L.latLng(a.geometry.coordinates[1], a.geometry.coordinates[0]))
     );
 
-    if (bounds.isValid()) {
+    if (bounds.isValid() && !selectedRoute) {
       map.flyToBounds(bounds, { padding: [15, 15], duration: 0.75 });
     }
-  }, [airportsForMarkers, map]);
+  }, [airportsForMarkers, selectedRoute, map]);
 
   // If there are no routes, render nothing
   if (!routeFeatures.length) return null;

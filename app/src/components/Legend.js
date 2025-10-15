@@ -2,79 +2,95 @@ import React, { useState } from "react";
 import { getColorByDestinations } from "../utils/colorUtils";
 
 const Legend = () => {
-    const [minimized, setMinimized] = useState(false);
+  const [minimized, setMinimized] = useState(false);
 
-    const grades = [
-        { label: "> 100 destinations", count: 101 },
-        { label: "51 – 100 destinations", count: 75 },
-        { label: "21 – 50 destinations", count: 30 },
-        { label: "11 – 20 destinations", count: 15 },
-        { label: "< 10 destinations", count: 5 },
-    ];
+  const grades = [
+    { label: "> 100 destinations", count: 101 },
+    { label: "51 – 100 destinations", count: 75 },
+    { label: "21 – 50 destinations", count: 30 },
+    { label: "11 – 20 destinations", count: 15 },
+    { label: "< 10 destinations", count: 5 },
+  ];
 
-    return (
-        <div
-            className="leaflet-bottom leaflet-left"
-            style={{
-                position: "absolute",
-                zIndex: 1000,
-                margin: "10px",
-                background: "rgba(255, 255, 255, 0.9)",
-                padding: "10px 14px",
-                borderRadius: "8px",
-                fontSize: "14px",
-                lineHeight: "1.4",
-                boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
-                transition: "all 0.3s ease",
-                cursor: "default",
-            }}
+  return (
+    <div
+      style={{
+        position: "absolute",
+        bottom: "10px",
+        left: "10px",
+        zIndex: 1000,
+        background: "rgba(255, 255, 255, 0.9)",
+        padding: "10px 14px",
+        borderRadius: "8px",
+        fontSize: "14px",
+        lineHeight: "1.4",
+        boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+        cursor: "default",
+        width: "220px",
+        pointerEvents: "auto", // 🔑 allow clicks
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <strong>Destinations Legend</strong>
+        <button
+          onClick={() => setMinimized(!minimized)}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontSize: "16px",
+            lineHeight: "1",
+            padding: "0 4px",
+          }}
+          title={minimized ? "Expand legend" : "Minimize legend"}
         >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <strong>Destinations Legend</strong>
-                <button
-                    onClick={() => setMinimized(!minimized)}
-                    style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        fontSize: "16px",
-                        lineHeight: "1",
-                        padding: "0 4px",
-                    }}
-                    title={minimized ? "Expand legend" : "Minimize legend"}
-                >
-                    {minimized ? "＋" : "−"}
-                </button>
-            </div>
+          {minimized ? "＋" : "−"}
+        </button>
+      </div>
 
-            {!minimized && (
-                <div style={{ marginTop: "6px" }}>
-                    {grades.map((g) => (
-                        <div
-                            key={g.label}
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                marginTop: "6px",
-                            }}
-                        >
-                            <span
-                                style={{
-                                    width: "18px",
-                                    height: "12px",
-                                    background: getColorByDestinations(g.count),
-                                    marginRight: "8px",
-                                    borderRadius: "2px",
-                                    border: "1px solid #aaa",
-                                }}
-                            ></span>
-                            <span>{g.label}</span>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
+      {/* Collapsible content */}
+      <div
+        style={{
+          marginTop: "6px",
+          overflow: "hidden",
+          maxHeight: minimized ? 0 : 500,
+          transition: "max-height 0.3s ease",
+        }}
+      >
+        {grades.map((g) => (
+          <div
+            key={g.label}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              marginTop: "6px",
+            }}
+          >
+            <span
+              style={{
+                width: "18px",
+                height: "12px",
+                background: getColorByDestinations(g.count),
+                marginRight: "8px",
+                borderRadius: "2px",
+                border: "1px solid #aaa",
+              }}
+            ></span>
+            <span>{g.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 };
 
 export default Legend;

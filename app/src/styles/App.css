@@ -1,5 +1,7 @@
-.App {
-  text-align: center;
+html, body, #root, .App {
+  height: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 .App-logo {
@@ -13,9 +15,10 @@
   }
 }
 
+/* Make header mobile-safe */
 .App-header {
   background-color: #282c34;
-  min-height: 100vh;
+  height: 100%; /* use 100% instead of 100vh */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -29,19 +32,34 @@
 }
 
 @keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
-/* --- Fix popup z-index so it appears above all layers --- */
+
+/* Map container fills dynamic viewport height */
+.map-container {
+  height: 100dvh; /* modern browsers */
+  width: 100%;
+}
+
+/* Fix popup z-index */
 .leaflet-popup-pane {
   z-index: 1200 !important;
 }
 
-/* Optional: bring tooltips above routes as well */
+/* Tooltips above routes */
 .leaflet-tooltip-pane {
   z-index: 1150 !important;
+}
+
+/* Give Leaflet controls some margin so they aren’t cut off */
+.leaflet-bottom.leaflet-left,
+.leaflet-bottom.leaflet-right {
+  margin-bottom: 20px;
+}
+
+/* Legend fix */
+.legend-container {
+  pointer-events: auto;
+  z-index: 1000;
 }

@@ -102,7 +102,6 @@ def build_line_geojson(
     features = []
     for row in rows:
         try:
-
             if airline_code and row.get("airline_code") != airline_code:
                 continue
 
@@ -133,7 +132,6 @@ def format_query(
     src_airport: str = None,
     airline_code: str = None,
 ) -> str:
-
     if path == "/routes":
         base_query = "SELECT * FROM flights"
         if src_airport:
@@ -216,7 +214,6 @@ def lambda_handler(event, context) -> dict:
             state = exec_info["QueryExecution"]["Status"]["State"]
 
             if state == "SUCCEEDED":
-
                 # Get path and update dynamo db record
                 bucket, s3_result_key = get_query_result_path(query_id)
 
@@ -242,7 +239,12 @@ def lambda_handler(event, context) -> dict:
 
                 # Return json
                 if path == "/airlines":
-                    result_dict = {row["airline_code"]: row["name"] for row in rows}
+                    result_dict = {
+                        row["airline_code"]: "Delta Air Lines"
+                        if row["name"] == "Delta Connection"
+                        else row["name"]
+                        for row in rows
+                    }
 
                 # Return points geojson
                 if path == "/airports":

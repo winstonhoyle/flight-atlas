@@ -7,9 +7,9 @@ import OverlayPanel from "./OverlayPanel";
 import RouteInfoPanel from "./RouteInfoPanel";
 import RouteLayer from "./RouteLayer";
 
-import { useAirportsAndAirlines } from "../hooks/useAirportsAndAirlines";
 import { useRoutes } from "../hooks/useRoutes";
 import { useFilteredAirlines } from "../hooks/useFilteredAirlines";
+import { useFlightAtlasStore } from "../store/useFlightAtlasStore";
 
 import "leaflet/dist/leaflet.css";
 
@@ -29,23 +29,15 @@ const MapComponent = () => {
   const DEFAULT_ZOOM = 4;
 
   // -------------------------
-  // Event Handlers
-  // -------------------------
-  const handleBack = () => {
-    setSelectedAirport(null);
-    setSelectedAirline("");
-    setSelectedRoute(null);
-
-    // Reset map view
-    if (mapRef.current) {
-      mapRef.current.flyTo(DEFAULT_CENTER, DEFAULT_ZOOM, { duration: 0.75 });
-    }
-  };
-
-  // -------------------------
   // Load airport & airline data
   // -------------------------
-  const { airports, airlines } = useAirportsAndAirlines();
+  const { airports, airlines, loaded, initData } = useFlightAtlasStore();
+
+  useEffect(() => {
+    if (!loaded) {
+      initData();
+    }
+  }, [loaded, initData]);
 
   // -------------------------
   // Load flight routes for the selected airport
@@ -69,6 +61,31 @@ const MapComponent = () => {
 
     return routes;
   }, [routes, selectedAirline]);
+
+  // -------------------------
+  // Event Handlers
+  // -------------------------
+  const handleBack = () => {
+
+    // Clear route first
+    if (selectedRoute) {
+      setSelectedRoute(null);
+      return;
+    }
+
+    // Step 1: If airline is selected, clear it
+    if (selectedAirline) {
+      setSelectedAirline("");
+      return;
+    }
+
+    // Step 2: If airport is selected, clear it and reset map view
+    if (selectedAirport) {
+      setSelectedAirport(null);
+      mapRef.current.flyTo(DEFAULT_CENTER, DEFAULT_ZOOM, { duration: 0.75 });
+      return;
+    }
+  };
 
   // -------------------------
   // Filter airports to only show those involved in currently loaded routes
@@ -108,7 +125,7 @@ const MapComponent = () => {
   // Render
   // -------------------------
   return (
-    <div style={{ height: "100vh", width: "100%" }}>
+    <div className="map-container" style={{ height: "100vh", width: "100%" }}>
       <MapContainer
         center={DEFAULT_CENTER}
         zoom={DEFAULT_ZOOM}
@@ -130,6 +147,7 @@ const MapComponent = () => {
             <RouteLayer
               key={`route-layer-${Date.now()}`}
               routes={displayedRoutes}
+              selectedRoute={selectedRoute}
               setSelectedRoute={setSelectedRoute}
               onSelectAirport={handleSelectAirport}
             />

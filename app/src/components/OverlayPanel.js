@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Select from "react-select";
+import { useFlightAtlasStore } from "../store/useFlightAtlasStore";
 
 const OverlayPanel = ({
 
@@ -24,11 +25,16 @@ const OverlayPanel = ({
   // State to toggle panel open/closed
   const [isOpen, setIsOpen] = useState(true);
 
-  const allAirports = JSON.parse(localStorage.getItem("airports")) || [];
+  // Get airports from store
+  const { airports, loaded, initData } = useFlightAtlasStore();
+
+  useEffect(() => {
+    if (!loaded) initData();
+  }, [loaded, initData]);
 
   // Format Airports for Select combobox
   const selectAirportOptions = [{ value: "", label: "All Airports" },
-  ...allAirports.map((a) => (
+  ...airports.map((a) => (
     {
       value: a.properties.IATA,
       label: `${a.properties.Name} (${a.properties.IATA})`,
@@ -101,7 +107,11 @@ const OverlayPanel = ({
                 : selectAirportOptions[0]
             }
             onChange={(e) => {
-              setSelectedAirport(e ? allAirports.find(a => a.properties.IATA === e.value) : null)
+              if (e) {
+                setSelectedAirport(e ? airports.find(a => a.properties.IATA === e.value) : null)
+              } else {
+                handleBack();
+              }
             }}
             options={selectAirportOptions}
             isClearable
@@ -121,7 +131,11 @@ const OverlayPanel = ({
                 ? selectAirlineOptions.find(o => o.value === selectedAirline)
                 : selectAirlineOptions[0]
             }
-            onChange={(e) => setSelectedAirline(e ? e.value : "")}
+            onChange={(e) => {
+              if (e) {
+                setSelectedAirline(e ? e.value : "")
+              } else { handleBack(); }
+            }}
             options={selectAirlineOptions}
             isClearable
             placeholder="Search or select an airline..."

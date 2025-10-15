@@ -1,75 +1,85 @@
-export const fetchAirports = async () => {
-    const res = await fetch(`https://api.flightatlas.io/airports`);
-    let data = await res.json();
-    if (typeof data === "string") data = JSON.parse(data);
-    return data.features || [];
+const API_BASE = "https://api.flightatlas.io";
+
+const fetchJSON = async (endpoint, options = {}) => {
+    const res = await fetch(`${API_BASE}${endpoint}`, options);
+    if (!res.ok) throw new Error(`HTTP error ${res.status} on ${endpoint}`);
+    const text = await res.text();
+    try {
+        return JSON.parse(text);
+    } catch {
+        return text;
+    }
 };
 
+// --- Schema validators ---
+const isAirlinesSchema = (data) =>
+    data && typeof data === "object" && !Array.isArray(data) && Object.keys(data).every(k => typeof data[k] === "string");
+
+const isAirportsSchema = (data) =>
+    data && data.type === "FeatureCollection" && Array.isArray(data.features);
+
+// --- Retry helper ---
+const retryFetch = async (fetchFn, validateFn, maxAttempts = 5, delay = 500) => {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            const data = await fetchFn();
+            if (validateFn(data)) return data;
+            console.warn(`Attempt ${attempt + 1}: response failed schema validation.`);
+        } catch (err) {
+            console.warn(`Attempt ${attempt + 1} failed: ${err.message}`);
+        }
+        if (attempt < maxAttempts - 1) await new Promise(r => setTimeout(r, delay));
+    }
+    throw new Error("Exceeded maximum attempts with invalid schema.");
+};
+
+// --- Fetch functions ---
 export const fetchAirlines = async () => {
-    const res = await fetch(`https://api.flightatlas.io/airlines`);
-    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-    let data = await res.json();
-    if (typeof data === "string") data = JSON.parse(data);
+    const data = await retryFetch(
+        () => fetchJSON("/airlines"),
+        isAirlinesSchema
+    );
     return Object.entries(data).map(([code, name]) => ({
         code,
-        name: String(name).replace(/[\r\n]+/g, ' ').trim(),
+        name: String(name).replace(/[\r\n]+/g, " ").trim(),
     }));
 };
 
+export const fetchAirports = async () => {
+    const data = await retryFetch(
+        () => fetchJSON("/airports"),
+        isAirportsSchema
+    );
+    return data.features;
+};
+
 export const fetchRoutes = async ({ airportIata, airlineCode } = {}) => {
+    const params = new URLSearchParams();
+    if (airportIata) params.set("airport", airportIata);
+    if (airlineCode) params.set("airline_code", airlineCode);
+
+    const url = `/routes?${params.toString()}`;
     const maxAttempts = 10;
     const retryDelay = 500;
 
-    // Build query string
-    const params = new URLSearchParams();
-    if (airportIata) params.append("airport", airportIata);
-    if (airlineCode) params.append("airline_code", airlineCode);
-
-    const url = `https://api.flightatlas.io/routes?${params.toString()}`;
-
-    for (let attempts = 0; attempts < maxAttempts; attempts++) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
-            const res = await fetch(url);
+            const data = await fetchJSON(url);
 
-            // Handle server errors (5xx)
-            if (!res.ok) {
-                if (res.status >= 500) {
-                    console.warn(`Server error (${res.status}) — aborting fetch.`);
-                    return null;
-                }
-                throw new Error(`HTTP error! status: ${res.status}`);
-            }
-
-            let data = await res.json();
-            if (typeof data === "string") data = JSON.parse(data);
-
-            // Detect "started" or "processing" (async query)
             if (data?.query_id) {
-                console.log(`API query not ready (attempt ${attempts + 1}), retrying...`);
+                console.log(`Attempt ${attempt + 1}: query still processing...`);
             } else {
-                // Return actual route data immediately
                 return data;
             }
-
         } catch (err) {
-            if (err.name === "AbortError") {
-                console.log("Fetch aborted by user action.");
-                return null;
-            }
-
-            // Log and retry on transient errors
-            console.warn(`Attempt ${attempts + 1} of ${maxAttempts} failed: ${err.message}`);
+            console.warn(`Attempt ${attempt + 1} failed: ${err.message}`);
         }
 
-        // Wait before retrying (unless this was the last attempt)
-        if (attempts < maxAttempts - 1) {
+        if (attempt < maxAttempts - 1) {
             await new Promise((r) => setTimeout(r, retryDelay));
         }
     }
 
-    // All attempts failed or returned no usable data
-    console.warn(`fetchRoutes: reached ${maxAttempts} attempts without success for ${url}`);
+    console.warn(`fetchRoutes: exhausted ${maxAttempts} attempts for ${url}`);
     return null;
 };
-
-

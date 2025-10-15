@@ -9,11 +9,13 @@ const ArcLine = ({ src, dst, onClick }) => {
   useEffect(() => {
     if (!src || !dst) return;
 
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
     const getLineWeight = () => {
       const zoom = map.getZoom();
-      if (zoom >= 10) return 6;
-      if (zoom >= 7) return 4;
-      return 2;
+      let base = zoom >= 10 ? 6 : zoom >= 7 ? 4 : 2;
+      if (isTouchDevice) base += 4; // extra tap area
+      return base;
     };
 
     const drawLine = (from, to) =>
@@ -45,6 +47,11 @@ const ArcLine = ({ src, dst, onClick }) => {
       if (onClick) {
         line.on("click", (e) => {
           e.originalEvent.stopPropagation();
+          map.fitBounds(line.getBounds(), {
+            padding: [15, 15],
+            animate: true,
+            duration: 0.5
+          });
           onClick(e);
         });
       }
