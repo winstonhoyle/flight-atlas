@@ -6,6 +6,7 @@ import Legend from "./Legend";
 import OverlayPanel from "./OverlayPanel";
 import RouteInfoPanel from "./RouteInfoPanel";
 import RouteLayer from "./RouteLayer";
+import WelcomePopup from "./WelcomePopup";
 
 import { useRoutes } from "../hooks/useRoutes";
 import { useFilteredAirlines } from "../hooks/useFilteredAirlines";
@@ -20,6 +21,16 @@ const MapComponent = () => {
   const [selectedAirport, setSelectedAirport] = useState(null);       // JSON Object
   const [selectedAirline, setSelectedAirline] = useState("");         // Airline Code (AA, DL, F9, etc.)
   const [selectedRoute, setSelectedRoute] = useState(null);           // JSON Object
+  const [showWelcome, setShowWelcome] = useState(false);              // Bool
+
+  // Auto-show welcome page on first visit
+  useEffect(() => {
+    const hasVisited = localStorage.getItem("hasVisited");
+    if (!hasVisited) {
+      setShowWelcome(true);
+      localStorage.setItem("hasVisited", "true");
+    }
+  }, []);
 
   // Reference to the Leaflet map instance
   const mapRef = useRef(null);
@@ -130,10 +141,11 @@ const MapComponent = () => {
         center={DEFAULT_CENTER}
         zoom={DEFAULT_ZOOM}
         worldCopyJump={true}
-        zoomControl={false}
         maxZoom={10}
         style={{ height: "100vh", width: "100%" }}
         ref={mapRef}
+        attributionControl={true}
+        zoomControl={true}
       >
         <TileLayer
           attribution='Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
@@ -189,7 +201,34 @@ const MapComponent = () => {
         loading={loading}
         error={error}
       />
+
+      {/*Info icon for welcome popup */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 10,
+          right: 10,
+          zIndex: 1100,
+          background: "white",
+          borderRadius: "50%",
+          width: "32px",
+          height: "32px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: "bold",
+          cursor: "pointer",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.3)"
+        }}
+        onClick={() => setShowWelcome(true)}
+      >
+        i
+      </div>
+
+      {/*Welcome Popup */}
+      <WelcomePopup show={showWelcome} onClose={() => setShowWelcome(false)} />
     </div>
+
   );
 };
 

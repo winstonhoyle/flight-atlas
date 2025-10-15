@@ -1,17 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 
-const WelcomePopup = () => {
-    const [showPopup, setShowPopup] = useState(false);
-
-    useEffect(() => {
-        const hasVisited = localStorage.getItem("hasVisited");
-        if (!hasVisited) {
-            setShowPopup(true);
-            localStorage.setItem("hasVisited", "true");
-        }
-    }, []);
-
-    if (!showPopup) return null;
+const WelcomePopup = ({ show, onClose }) => {
+    // If show is false, do not render anything
+    if (!show) return null;
 
     return (
         <div
@@ -37,17 +28,26 @@ const WelcomePopup = () => {
                     textAlign: "center",
                 }}
             >
-                <img src="https://flightatlas.io/logo.png" alt="FlightAtlas Logo" width={120} />
+                <img src="/logo.png" alt="FlightAtlas Logo" width={120} />
                 <h2>Welcome to Flight Atlas!</h2>
                 <p>
-                    Explore direct flight routes between all U.S. airports in a fast, interactive map.
-                    Built with React and serverless AWS services for scalable performance.
+                    Explore direct flight routes between all U.S. airports in a fast,
+                    interactive map. Built with React and serverless AWS services for
+                    scalable performance.
                 </p>
                 <p>
-                    Check out the code on <a href="https://github.com/winstonhoyle/flight-atlas" target="_blank" rel="noreferrer" style={{ color: "#0078ff" }}>GitHub</a>.
+                    Check out the code on{" "}
+                    <a
+                        href="https://github.com/winstonhoyle/flight-atlas"
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "#0078ff" }}
+                    >
+                        GitHub
+                    </a>.
                 </p>
                 <button
-                    onClick={() => setShowPopup(false)}
+                    onClick={onClose}
                     style={{
                         marginTop: "16px",
                         padding: "8px 16px",
