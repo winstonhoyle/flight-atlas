@@ -144,7 +144,21 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
         airports={airportsForMarkers}
         onSelectAirport={onSelectAirport}
         highlightedAirport={highlightedAirport}
-        setHighlightedAirport={setHighlightedAirport} />
+        setHighlightedAirport={setHighlightedAirport}
+        interactive={false}
+        />
+
+      {/* Invisible markers but larger radius */}
+      <AirportMarkers
+        airports={airportsForMarkers}
+        onSelectAirport={onSelectAirport}
+        highlightedAirport={highlightedAirport}
+        setHighlightedAirport={setHighlightedAirport}
+        radius={17}
+        opacity={0.0}
+        stroke={false}
+        interactive={true} 
+        />
     </FeatureGroup>
   );
 };

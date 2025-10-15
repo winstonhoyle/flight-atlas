@@ -93,6 +93,8 @@ const MapComponent = () => {
   // -------------------------
   const handleBack = () => {
 
+    console.log("Handling Back")
+
     // Clear route first
     if (selectedRoute) {
       setSelectedRoute(null);
@@ -175,16 +177,19 @@ const MapComponent = () => {
   // -------------------------
   useEffect(() => {
     if (displayedRoutes) {
+      console.log("Fitting Bounds")
       mapRef.current.fitBounds(L.geoJson(displayedRoutes).getBounds(), {
         padding: [15, 15],
         animate: true,
         duration: 0.5
       })
     }
-  }, [selectedAirline, displayedRoutes]);
+    setHighlightedAirport(null);
+  }, [selectedAirline, displayedRoutes, setHighlightedAirport]);
 
   // Reset Airline filter if new airport is selected
   const handleSelectAirport = (airport) => {
+    console.log("Reset Selected Airline")
     setSelectedAirport(airport);
     setSelectedAirline("");
   };
@@ -226,15 +231,28 @@ const MapComponent = () => {
         </Pane>
 
 
-        {/* Airports */}
+        {/*Airports and invisible markers but larger radius */}
         <Pane name="airportsPane" style={{ zIndex: 500 }}>
           {!selectedAirport && (
-            <AirportMarkers
-              airports={filteredAirportsForMap}
-              onSelectAirport={handleSelectAirport}
-              highlightedAirport={highlightedAirport}
-              setHighlightedAirport={setHighlightedAirport}
-            />
+            <>
+              <AirportMarkers
+                airports={filteredAirportsForMap}
+                onSelectAirport={handleSelectAirport}
+                highlightedAirport={highlightedAirport}
+                setHighlightedAirport={setHighlightedAirport}
+                interactive={false}
+              />
+              <AirportMarkers
+                airports={filteredAirportsForMap}
+                onSelectAirport={handleSelectAirport}
+                highlightedAirport={highlightedAirport}
+                setHighlightedAirport={setHighlightedAirport}
+                radius={12}
+                opacity={0.0}
+                stroke={false}
+                interactive={true}
+              />
+            </>
           )}
         </Pane>
 

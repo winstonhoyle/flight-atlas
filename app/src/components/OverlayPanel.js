@@ -128,6 +128,7 @@ const OverlayPanel = ({
             onChange={(e) => {
               if (e) {
                 setSelectedAirline(e ? e.value : "")
+                console.log("Changing Airline");
               } else { handleBack(); }
             }}
             options={selectAirlineOptions}

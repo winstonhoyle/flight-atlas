@@ -15,8 +15,12 @@ import { getColorByDestinations } from "../utils/colorUtils";
  * - onSelectAirport: callback triggered when an airport is clicked
  * - highlightedAirport: current airport highlighted on hover
  * - setHighlightedAirport: function to update highlighted airport state
+ * - radius: int value for how big the radius of marker is
+ * - stroke: float value for how bit the radius is
+ * - opacity: float value for transparent the marker
+ * - interactive: bool value if marker layer is interactive
  */
-const AirportMarkers = ({ airports, onSelectAirport, highlightedAirport, setHighlightedAirport }) => {
+const AirportMarkers = ({ airports, onSelectAirport, highlightedAirport, setHighlightedAirport, radius, stroke, opacity, interactive }) => {
 
   return (
     <>
@@ -27,19 +31,18 @@ const AirportMarkers = ({ airports, onSelectAirport, highlightedAirport, setHigh
           const destinations = airport.properties.destinations || 0;
           const color = getColorByDestinations(destinations);
 
-          // Scale marker radius with destinations; minimum radius 3, max extra 4
-          const radius = 3 + Math.min(destinations / 20, 4);
-
           return (
             <CircleMarker
               key={`${airport.properties.IATA}-${airport.properties.Name}-${idx}`}
               pane="airportsPane"
               center={[airport.geometry.coordinates[1], airport.geometry.coordinates[0]]}
-              radius={radius}
-              color="#000"
+              radius={radius || (3 + Math.min(destinations / 20, 4))}
               fillColor={color}
-              fillOpacity={1.0}
-              weight={0.5}
+              fillOpacity={opacity ?? 1.0}
+              weight={stroke === false ? 0 : 0.5}
+              stroke={stroke === false ? false : true}
+              color={stroke === false ? "transparent" : "#000"}
+              interactive={!!interactive}
               eventHandlers={{
                 // Trigger parent callback on click
                 click: (e) => {
@@ -55,8 +58,11 @@ const AirportMarkers = ({ airports, onSelectAirport, highlightedAirport, setHigh
                   }
                 },
                 mouseout: (e) => {
-                  e.target.closePopup();               // close popup
-                  setHighlightedAirport(null);         // clear highlight
+                  // delay closing to prevent flicker
+                  e.target.closeTimer = setTimeout(() => {
+                    e.target.closePopup();
+                    setHighlightedAirport(null);
+                  }, 150);
                 },
               }}
             >
