@@ -118,12 +118,6 @@ const OverlayPanel = ({
             placeholder="Search or select an airport..."
           />
 
-          {/* OLD Airport search box }
-          <AirportSearch
-            selectedAirport={selectedAirport}
-            setSelectedAirport={setSelectedAirport}
-          />*/}
-
           {/* Airline dropdown */}
           <Select
             value={

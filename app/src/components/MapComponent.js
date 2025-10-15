@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Pane } from "react-leaflet";
+import L from "leaflet";
+
 
 import AirportMarkers from "./AirportMarkers";
 import Legend from "./Legend";
@@ -8,11 +10,14 @@ import RouteInfoPanel from "./RouteInfoPanel";
 import RouteLayer from "./RouteLayer";
 import WelcomePopup from "./WelcomePopup";
 
+
 import { useRoutes } from "../hooks/useRoutes";
 import { useFilteredAirlines } from "../hooks/useFilteredAirlines";
 import { useFlightAtlasStore } from "../store/useFlightAtlasStore";
 
+
 import "leaflet/dist/leaflet.css";
+
 
 const MapComponent = () => {
   // -------------------------
@@ -22,6 +27,8 @@ const MapComponent = () => {
   const [selectedAirline, setSelectedAirline] = useState("");         // Airline Code (AA, DL, F9, etc.)
   const [selectedRoute, setSelectedRoute] = useState(null);           // JSON Object
   const [showWelcome, setShowWelcome] = useState(false);              // Bool
+  const [highlightedAirport, setHighlightedAirport] = useState(null); // JSON Object seperate from selected Airport because you can hover over a different airport
+
 
   // Auto-show welcome page on first visit
   useEffect(() => {
@@ -32,17 +39,21 @@ const MapComponent = () => {
     }
   }, []);
 
+
   // Reference to the Leaflet map instance
   const mapRef = useRef(null);
+
 
   // Default map position
   const DEFAULT_CENTER = [39.8283, -98.5795]; // center of continental US
   const DEFAULT_ZOOM = 4;
 
+
   // -------------------------
   // Load airport & airline data
   // -------------------------
   const { airports, airlines, loaded, initData } = useFlightAtlasStore();
+
 
   useEffect(() => {
     if (!loaded) {
@@ -50,10 +61,12 @@ const MapComponent = () => {
     }
   }, [loaded, initData]);
 
+
   // -------------------------
   // Load flight routes for the selected airport
   // -------------------------
   const { routes, allRoutes, loading, error } = useRoutes(selectedAirport, selectedAirline);
+
 
   // -------------------------
   // Compute displayed routes (filtered by selected airline)
@@ -70,23 +83,42 @@ const MapComponent = () => {
       };
     }
 
+
     return routes;
   }, [routes, selectedAirline]);
 
+
   // -------------------------
-  // Event Handlers
+  // Event Handler for back button
   // -------------------------
   const handleBack = () => {
 
     // Clear route first
     if (selectedRoute) {
       setSelectedRoute(null);
+
+      // Fit bounds to current routes
+      if (selectedAirport && routes) {
+        mapRef.current.fitBounds(L.geoJson(routes).getBounds(), {
+          padding: [15, 15],
+          animate: true,
+          duration: 0.5
+        })
+      };
       return;
     }
-
     // If airline is selected, clear it
     if (selectedAirline) {
       setSelectedAirline("");
+
+      // Fit bounds to current routes
+      if (selectedAirport && routes) {
+        mapRef.current.fitBounds(L.geoJson(routes).getBounds(), {
+          padding: [15, 15],
+          animate: true,
+          duration: 0.5
+        })
+      };
       return;
     }
 
@@ -94,14 +126,15 @@ const MapComponent = () => {
     if (selectedAirport) {
       setSelectedAirport(null);
 
+      // Reset map
       mapRef.current.setView(DEFAULT_CENTER, DEFAULT_ZOOM, {
         animate: true,
         duration: 0.5
       });
-
       return;
     }
   };
+
 
   // -------------------------
   // Filter airports to only show those involved in currently loaded routes
@@ -109,20 +142,24 @@ const MapComponent = () => {
   const filteredAirportsForMap = React.useMemo(() => {
     if (!allRoutes || !allRoutes.features) return airports;
 
+
     const airportCodes = new Set();
     (displayedRoutes || allRoutes).features.forEach((f) => {
       airportCodes.add(f.properties.src_airport);
       airportCodes.add(f.properties.dst_airport);
     });
 
+
     return airports.filter((a) => airportCodes.has(a.properties.IATA));
   }, [allRoutes, displayedRoutes, airports]);
+
 
   // -------------------------
   // Filter airlines based on current airport routes
   // -------------------------
-  // Function that returns only the selected airlines 
+  // Function that returns only the selected airlines
   const allFilteredAirlines = useFilteredAirlines(allRoutes, airlines, selectedAirport);
+
 
   // -------------------------
   // Reset selections when a new airport is chosen
@@ -132,10 +169,26 @@ const MapComponent = () => {
     setSelectedRoute(null);
   }, [selectedAirport]);
 
+
+  // -------------------------
+  // Fit bounds whenever the routes or airline changes
+  // -------------------------
+  useEffect(() => {
+    if (displayedRoutes) {
+      mapRef.current.fitBounds(L.geoJson(displayedRoutes).getBounds(), {
+        padding: [15, 15],
+        animate: true,
+        duration: 0.5
+      })
+    }
+  }, [selectedAirline, displayedRoutes]);
+
+  // Reset Airline filter if new airport is selected
   const handleSelectAirport = (airport) => {
     setSelectedAirport(airport);
-    setSelectedAirline(""); // reset airline filter on new airport
+    setSelectedAirline("");
   };
+
 
   // -------------------------
   // Render
@@ -156,18 +209,22 @@ const MapComponent = () => {
           url='https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'
         />
 
+
         {/* Routes */}
         <Pane name="routesPane" style={{ zIndex: 400 }}>
           {displayedRoutes && (
             <RouteLayer
               key={`route-layer-${Date.now()}`}
               routes={displayedRoutes}
-              selectedRoute={selectedRoute}
               setSelectedRoute={setSelectedRoute}
+              selectedAirport={selectedAirport}
               onSelectAirport={handleSelectAirport}
+              highlightedAirport={highlightedAirport}
+              setHighlightedAirport={setHighlightedAirport}
             />
           )}
         </Pane>
+
 
         {/* Airports */}
         <Pane name="airportsPane" style={{ zIndex: 500 }}>
@@ -175,12 +232,16 @@ const MapComponent = () => {
             <AirportMarkers
               airports={filteredAirportsForMap}
               onSelectAirport={handleSelectAirport}
+              highlightedAirport={highlightedAirport}
+              setHighlightedAirport={setHighlightedAirport}
             />
           )}
         </Pane>
 
+
         {/* Legend */}
         <Legend />
+
 
         {/* Route Info Panel */}
         <RouteInfoPanel
@@ -191,6 +252,7 @@ const MapComponent = () => {
           onClose={() => setSelectedRoute(null)}
         />
       </MapContainer>
+
 
       {/* Overlay controls */}
       <OverlayPanel
@@ -204,6 +266,7 @@ const MapComponent = () => {
         loading={loading}
         error={error}
       />
+
 
       {/*Info icon for welcome popup */}
       <div
@@ -227,6 +290,7 @@ const MapComponent = () => {
       >
         i
       </div>
+
 
       {/*Welcome Popup */}
       <WelcomePopup show={showWelcome} onClose={() => setShowWelcome(false)} />

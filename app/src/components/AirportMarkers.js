@@ -3,15 +3,20 @@ import { getColorByDestinations } from "../utils/colorUtils";
 
 /**
  * AirportMarkers Component
- * Renders a set of CircleMarker components for a list of airports.
- * Each marker is sized and colored based on the number of destinations from that airport.
- * Provides interactivity: click to select an airport, hover to show a popup with airport info.
+ *
+ * Renders a set of Leaflet CircleMarker components for a list of airports.
+ * Each marker's size and color are determined by the number of destinations from that airport.
+ * Provides interactivity:
+ *   - Click to select an airport
+ *   - Hover to show a popup and optionally highlight connected routes
  *
  * Props:
  * - airports: array of airport objects (GeoJSON format)
- * - onSelectAirport: callback function triggered when a marker is clicked
+ * - onSelectAirport: callback triggered when an airport is clicked
+ * - highlightedAirport: current airport highlighted on hover
+ * - setHighlightedAirport: function to update highlighted airport state
  */
-const AirportMarkers = ({ airports, onSelectAirport }) => {
+const AirportMarkers = ({ airports, onSelectAirport, highlightedAirport, setHighlightedAirport }) => {
 
   return (
     <>
@@ -21,7 +26,9 @@ const AirportMarkers = ({ airports, onSelectAirport }) => {
         .map((airport, idx) => {
           const destinations = airport.properties.destinations || 0;
           const color = getColorByDestinations(destinations);
-          const radius = 3 + Math.min(destinations / 20, 4); // Scale marker radius with destinations
+
+          // Scale marker radius with destinations; minimum radius 3, max extra 4
+          const radius = 3 + Math.min(destinations / 20, 4);
 
           return (
             <CircleMarker
@@ -35,22 +42,30 @@ const AirportMarkers = ({ airports, onSelectAirport }) => {
               weight={0.5}
               eventHandlers={{
                 // Trigger parent callback on click
-                click: () => onSelectAirport(airport),
-
+                click: (e) => {
+                  onSelectAirport(airport);
+                },
                 // Hover popup
                 mouseover: (e) => {
                   e.target.openPopup();
+
+                  // Only update highlightedAirport if different
+                  if (!highlightedAirport || highlightedAirport.properties.IATA !== airport.properties.IATA) {
+                    setHighlightedAirport(airport);
+                  }
                 },
                 mouseout: (e) => {
-                  e.target.closePopup();
+                  e.target.closePopup();               // close popup
+                  setHighlightedAirport(null);         // clear highlight
                 },
               }}
             >
               {/* Popup content for airport */}
               <Popup
-                pane="popupPane"  
-                autoPan={true}
-                closeButton={false}
+                pane="popupPane"      // display in popup pane
+                autoPan={false}       // prevents the map from moving
+                closeButton={false}   // remove default close button
+                keepInView={true}
               >
                 <div>
                   <strong>{airport.properties.Name}</strong>

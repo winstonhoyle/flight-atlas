@@ -1,27 +1,31 @@
 import React, { useEffect, useRef, useMemo } from "react";
-import { useMap, FeatureGroup } from "react-leaflet";
+import { FeatureGroup } from "react-leaflet";
 import L from "leaflet";
 import ArcLine from "./ArcLine";
 import AirportMarkers from "./AirportMarkers";
 
 import { useFlightAtlasStore } from "../store/useFlightAtlasStore";
 
+
 /**
  * RouteLayer Component
  *
- * Displays routes and airports on a Leaflet map.
- * Handles antimeridian wrappings
+ * Renders a set of Leaflet CircleMarker with Geodesic lines.
+ * Each marker's size and color are determined by the number of destinations from that airport.
+ * Provides interactivity:
+ *   - Click to select an airport
+ *   - Hover to show a popup and highlight connected routes
  *
  * Props:
- * - routes: GeoJSON FeatureCollection of LineStrings representing flight routes.
- * - selectedRoute: JSON route object used for bounds handling
- * - setSelectedRoute: function(properties, allRoutes, allAirports)
- *      Sets the currently selected route. Called when an ArcLine is clicked.
- * - onSelectAirport: function(airport)
- *      Sets the currently selected airport (used by AirportMarkers).
+ * - routes: GeoJSON Object of routes sometimes filtered sometimes all routes
+ * - setSelectedRoute: function to update selectedRoute state
+ * - selectedAirport: GeoJSON Object of the selected airport
+ * - onSelectAirport: function to run code when the airport is selected, it will cause a rerender of this component
+ * - highlightedAirport: GeoJSON airport object of a highlighted Airport
+ * - setHighlightedAirport: function to update highlighted airport state
  */
-const RouteLayer = ({ routes, selectedRoute, setSelectedRoute, onSelectAirport }) => {
-  const map = useMap();
+const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport, highlightedAirport, setHighlightedAirport }) => {
+
   const groupRef = useRef();
 
   // Memoize routeFeatures to make it stable for Hooks
@@ -83,33 +87,6 @@ const RouteLayer = ({ routes, selectedRoute, setSelectedRoute, onSelectAirport }
     return result;
   }, [airportSet, airportsMap, routeFeatures]);
 
-  /**
-   * Fit map bounds to only valid markers (longitude between -180 and 180)
-   * This avoids flying to duplicate antimeridian-shifted points outside view
-   */
-  useEffect(() => {
-    const validAirports = airportsForMarkers.filter(a => {
-      const lng = a.geometry.coordinates[0];
-      return lng >= -180 && lng <= 180;
-    });
-
-    if (!validAirports.length) return;
-
-    const bounds = L.latLngBounds(
-      validAirports.map(a => L.latLng(a.geometry.coordinates[1], a.geometry.coordinates[0]))
-    );
-
-    if (bounds.isValid() && !selectedRoute) {
-
-      map.fitBounds(bounds, {
-        padding: [15, 15],
-        animate: true,
-        duration: 0.5
-      });
-
-    }
-  }, [airportsForMarkers, selectedRoute, map]);
-
   // If there are no routes, render nothing
   if (!routeFeatures.length) return null;
 
@@ -135,8 +112,39 @@ const RouteLayer = ({ routes, selectedRoute, setSelectedRoute, onSelectAirport }
         );
       })}
 
+      {/* Highlighted routes for hovered airport */}
+      {highlightedAirport && highlightedAirport !== selectedAirport &&
+        routeFeatures
+          .filter(f =>
+            f.properties.src_airport === highlightedAirport.properties.IATA ||
+            f.properties.dst_airport === highlightedAirport.properties.IATA
+          )
+          .map((f, idx) => {
+            const coords = f.geometry.coordinates;
+            if (!coords || coords.length < 2) return null;
+
+            const srcCoord = new L.LatLng(coords[0][1], coords[0][0]);
+            const dstCoord = new L.LatLng(coords[1][1], coords[1][0]);
+
+            return (
+              <ArcLine
+                key={`highlight-${f.properties.src_airport}-${f.properties.dst_airport}-${f.properties.airline_code}-${idx}`}
+                src={srcCoord}
+                dst={dstCoord}
+                color="#02508fff"
+                weight={3}
+                opacity={1.0}
+                interactive={false}
+              />
+            );
+          })}
+
       {/* Render all airports as markers */}
-      <AirportMarkers airports={airportsForMarkers} onSelectAirport={onSelectAirport} />
+      <AirportMarkers
+        airports={airportsForMarkers}
+        onSelectAirport={onSelectAirport}
+        highlightedAirport={highlightedAirport}
+        setHighlightedAirport={setHighlightedAirport} />
     </FeatureGroup>
   );
 };
