@@ -177,15 +177,19 @@ const MapComponent = () => {
   // Fit bounds whenever the routes or airline changes
   // -------------------------
   useEffect(() => {
-    if (selectedAirport && displayedRoutes) {
-      console.log("Fitting Bound of Displayed routes");
+
+    // Reset Highlighted Airport
+    setHighlightedAirport(null);
+
+    // Wait for displayedRoutes to be ready before fitting bounds
+    if (displayedRoutes?.features?.length) {
       mapRef.current.fitBounds(L.geoJson(displayedRoutes).getBounds(), {
         padding: [15, 15],
         animate: true,
-        duration: 0.5
+        duration: 0.5,
       });
     }
-  }, [selectedAirport, displayedRoutes, selectedAirline]);
+  }, [selectedAirport, selectedAirline, displayedRoutes]);
 
   // Reset Airline filter if new airport is selected
   const handleSelectAirport = (airport) => {

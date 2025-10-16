@@ -29,7 +29,10 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
   const groupRef = useRef();
 
   // Memoize routeFeatures to make it stable for Hooks
-  const routeFeatures = useMemo(() => routes?.features || [], [routes?.features]);
+  const routeFeatures = useMemo(
+    () => routes?.features || [],
+    [routes?.features]
+  );
 
   // Get airports from store
   const { airports, loaded, initData } = useFlightAtlasStore();
@@ -92,6 +95,7 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
 
   return (
     <FeatureGroup ref={groupRef}>
+
       {/* Render all routes as ArcLine components */}
       {routeFeatures.map((f, idx) => {
         const coords = f.geometry.coordinates;
@@ -104,10 +108,24 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
             key={`${f.properties.src_airport}-${f.properties.dst_airport}-${f.properties.airline_code}-${idx}`}
             src={srcCoord}
             dst={dstCoord}
+            color={
+              highlightedAirport &&
+                (highlightedAirport !== selectedAirport) &&
+                routeFeatures
+                ? "#cce7f8ff"
+                : "#64b5f7ff"
+            }
+            weight={highlightedAirport &&
+              (highlightedAirport !== selectedAirport) &&
+              routeFeatures
+              ? 1.0
+              : 2.0
+            }
             onClick={() => {
               setSelectedRoute(f)
             }
             }
+            interactive={true}
           />
         );
       })}
@@ -132,7 +150,7 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
                 src={srcCoord}
                 dst={dstCoord}
                 color="#02508fff"
-                weight={3}
+                weight={3.0}
                 opacity={1.0}
                 interactive={false}
               />

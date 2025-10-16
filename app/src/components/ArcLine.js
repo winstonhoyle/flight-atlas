@@ -26,9 +26,6 @@ const ArcLine = ({ src, dst, onClick, color, weight, opacity, interactive }) => 
     // Exit early if coordinates are missing
     if (!src || !dst) return;
 
-    // Detect if device supports touch
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-
     /**
      * Determine the line weight based on zoom and device
      * Allows override if `weight` prop is provided
@@ -37,7 +34,6 @@ const ArcLine = ({ src, dst, onClick, color, weight, opacity, interactive }) => 
       if (weight !== undefined) return weight; // override
       const zoom = map.getZoom();
       let base = zoom >= 10 ? 6 : zoom >= 7 ? 4 : 2;
-      if (isTouchDevice) base += 4;
       return base;
     };
 
@@ -50,7 +46,7 @@ const ArcLine = ({ src, dst, onClick, color, weight, opacity, interactive }) => 
         color: color || "#64b5f7ff",
         opacity: opacity !== undefined ? opacity : 1.0,
         wrap: false,
-        interactive: interactive !== undefined ? interactive : true,
+        interactive: interactive,
         bubblingMouseEvents: true,
       }).addTo(map);
 
@@ -83,26 +79,25 @@ const ArcLine = ({ src, dst, onClick, color, weight, opacity, interactive }) => 
       }
 
       // Only apply default hover styles if color/weight not explicitly passed
-      if (color === undefined && weight === undefined) {
-        line.on("mouseover", () => {
-          line.setStyle({
-            weight: getLineWeight() + 2,
-            color: "#02508fff",
-            opacity: 1.0,
-            wrap: false,
-          });
-          line.bringToFront();
-          console.log("ArcLine Highlighted Line");
+      line.on("mouseover", () => {
+        console.log("Mouseover Line Event");
+        line.setStyle({
+          weight: getLineWeight() + 2,
+          color: "#02508fff",
+          opacity: 1.0,
+          wrap: false,
         });
-        line.on("mouseout", () => {
-          line.setStyle({
-            weight: getLineWeight(),
-            color: "#64b5f7ff",
-            opacity: 1.0,
-            wrap: false,
-          });
+        line.bringToFront();
+        console.log("ArcLine Highlighted Line");
+      });
+      line.on("mouseout", () => {
+        line.setStyle({
+          weight: getLineWeight(),
+          color: "#64b5f7ff",
+          opacity: 1.0,
+          wrap: false,
         });
-      }
+      });
     });
 
     /**
