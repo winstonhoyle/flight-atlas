@@ -29,7 +29,6 @@ const MapComponent = () => {
   const [showWelcome, setShowWelcome] = useState(false);              // Bool
   const [highlightedAirport, setHighlightedAirport] = useState(null); // JSON Object seperate from selected Airport because you can hover over a different airport
 
-
   // Auto-show welcome page on first visit
   useEffect(() => {
     const hasVisited = localStorage.getItem("hasVisited");
@@ -47,7 +46,6 @@ const MapComponent = () => {
   // Default map position
   const DEFAULT_CENTER = [39.8283, -98.5795]; // center of continental US
   const DEFAULT_ZOOM = 4;
-
 
   // -------------------------
   // Load airport & airline data
@@ -75,6 +73,7 @@ const MapComponent = () => {
     if (!routes) return null;
     // If airline is selected, filter routes
     if (selectedAirline) {
+      console.log("Updating Displayed Routes");
       return {
         ...routes,
         features: routes.features.filter(
@@ -144,6 +143,7 @@ const MapComponent = () => {
   const filteredAirportsForMap = React.useMemo(() => {
     if (!allRoutes || !allRoutes.features) return airports;
 
+    console.log("Updating Filtered Airports for the map");
 
     const airportCodes = new Set();
     (displayedRoutes || allRoutes).features.forEach((f) => {
@@ -167,6 +167,7 @@ const MapComponent = () => {
   // Reset selections when a new airport is chosen
   // -------------------------
   useEffect(() => {
+    console.log("Resetting selections of new airport")
     setSelectedAirline("");
     setSelectedRoute(null);
   }, [selectedAirport]);
@@ -176,16 +177,15 @@ const MapComponent = () => {
   // Fit bounds whenever the routes or airline changes
   // -------------------------
   useEffect(() => {
-    if (displayedRoutes) {
-      console.log("Fitting Bounds")
+    if (selectedAirport && displayedRoutes) {
+      console.log("Fitting Bound of Displayed routes");
       mapRef.current.fitBounds(L.geoJson(displayedRoutes).getBounds(), {
         padding: [15, 15],
         animate: true,
         duration: 0.5
-      })
+      });
     }
-    setHighlightedAirport(null);
-  }, [selectedAirline, displayedRoutes, setHighlightedAirport]);
+  }, [selectedAirport, displayedRoutes, selectedAirline]);
 
   // Reset Airline filter if new airport is selected
   const handleSelectAirport = (airport) => {
@@ -247,7 +247,7 @@ const MapComponent = () => {
                 onSelectAirport={handleSelectAirport}
                 highlightedAirport={highlightedAirport}
                 setHighlightedAirport={setHighlightedAirport}
-                radius={12}
+                radius={15}
                 opacity={0.0}
                 stroke={false}
                 interactive={true}

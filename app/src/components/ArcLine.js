@@ -92,6 +92,7 @@ const ArcLine = ({ src, dst, onClick, color, weight, opacity, interactive }) => 
             wrap: false,
           });
           line.bringToFront();
+          console.log("ArcLine Highlighted Line");
         });
         line.on("mouseout", () => {
           line.setStyle({

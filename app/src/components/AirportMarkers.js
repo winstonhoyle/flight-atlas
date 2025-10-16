@@ -63,6 +63,7 @@ const AirportMarkers = ({ airports, onSelectAirport, highlightedAirport, setHigh
                     e.target.closePopup();
                     setHighlightedAirport(null);
                   }, 150);
+                  console.log("Mouseout for Airport Markers event ended");
                 },
               }}
             >

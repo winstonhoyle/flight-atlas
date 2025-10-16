@@ -113,16 +113,16 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
       })}
 
       {/* Highlighted routes for hovered airport */}
-      {highlightedAirport && highlightedAirport !== selectedAirport &&
+      {highlightedAirport && (highlightedAirport !== selectedAirport) &&
         routeFeatures
           .filter(f =>
             f.properties.src_airport === highlightedAirport.properties.IATA ||
             f.properties.dst_airport === highlightedAirport.properties.IATA
           )
+
           .map((f, idx) => {
             const coords = f.geometry.coordinates;
             if (!coords || coords.length < 2) return null;
-
             const srcCoord = new L.LatLng(coords[0][1], coords[0][0]);
             const dstCoord = new L.LatLng(coords[1][1], coords[1][0]);
 
@@ -146,7 +146,7 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
         highlightedAirport={highlightedAirport}
         setHighlightedAirport={setHighlightedAirport}
         interactive={false}
-        />
+      />
 
       {/* Invisible markers but larger radius */}
       <AirportMarkers
@@ -154,11 +154,11 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
         onSelectAirport={onSelectAirport}
         highlightedAirport={highlightedAirport}
         setHighlightedAirport={setHighlightedAirport}
-        radius={17}
+        radius={15}
         opacity={0.0}
         stroke={false}
-        interactive={true} 
-        />
+        interactive={true}
+      />
     </FeatureGroup>
   );
 };
