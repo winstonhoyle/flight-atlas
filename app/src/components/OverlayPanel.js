@@ -64,15 +64,16 @@ const OverlayPanel = ({
       const airportMatch = airports.find(
         (a) => a.properties.IATA === dstCode
       );
-
       const name = airportMatch?.properties?.Name || "Unknown Airport";
+      const destinationsCount = airportMatch.properties.destinations;
       return {
         value: dstCode,
         label: `${name} (${dstCode})`,
+        destinationsCount,
       };
-    });
+    }).sort((a, b) => b.destinationsCount - a.destinationsCount);
 
-    // Step 3: Always prepend the "All Airports" option
+    // Always prepend the "All Airports" option
     return [{ value: "", label: "All Airports" }, ...destinationOptions];
   }, [routes, airports]);
 
