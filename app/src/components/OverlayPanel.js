@@ -1,21 +1,25 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Select from "react-select";
 import { useFlightAtlasStore } from "../store/useFlightAtlasStore";
 
 const OverlayPanel = ({
 
-  // Props for Airport Select component
-  selectedAirport,      // JSON OBject, for logic: if selected airport return all the airlines plus their # of routes, if not selected return all the airlines 
-  setSelectedAirport,   // GeoJSON Point object of airport
+  // Props for Airport Select Combobox
+  selectedAirport,       // GeoJSON Point object of airport
+  setSelectedAirport,    // Setting the state of selectedAirport
 
-  // Props for the Airline Select component
-  setSelectedAirline,   // Function to change state of the selectedAirline
-  selectedAirline,      // Airline Code (AA, DL, UA, etc) `null` if no airline is selected
-  filteredAirlines,     // List of Airline Codes, either {"code": "UA", "name": "United Airlines"} or {"code": "UA", "name": "United Airlines", "count":30}
+  // Props for the Airline Select Combobox
+  setSelectedAirline,    // Function to change state of the selectedAirline
+  selectedAirline,       // Strine: Airline Code (AA, DL, UA, etc) `null` if no airline is selected
+  filteredAirlines,      // List of Airline Codes, either {"code": "UA", "name": "United Airlines"} or {"code": "UA", "name": "United Airlines", "count":30}
 
   // Props for Button
-  handleBack,           // Function to Handle going back, it resets the state of pretty much everything
-  routes,               // Routes: only useful for conditional of Back button, back button exist with a selected Route or a selectedAirport
+  handleBack,            // Function to Handle going back, it resets the state of pretty much everything
+  routes,                // Routes: only useful for conditional of Back button, back button exist with a selected Route or a selectedAirport
+
+  // Props for Optional Destination Combobox
+  destinationAirport,    // GeoJSON Point object of airport
+  setDestinationAirport, // Setting the state of destinationAirport
 
   // Props for waiting and/or failing
   loading,
@@ -41,6 +45,36 @@ const OverlayPanel = ({
     }
   )),
   ]
+
+  // --- Destination options (valid destinations) ---
+  const destinationAirportOptions = useMemo(() => {
+    if (!routes?.features?.length || !airports?.length) {
+      return [{ value: "", label: "All Airports" }];
+    }
+
+    // Get all unique destination airport codes
+    const uniqueDstCodes = new Set(
+      routes.features
+        .map((f) => f.properties?.dst_airport)
+        .filter(Boolean)
+    );
+
+    // Map each destination code to its full airport info (from airports store)
+    const destinationOptions = Array.from(uniqueDstCodes).map((dstCode) => {
+      const airportMatch = airports.find(
+        (a) => a.properties.IATA === dstCode
+      );
+
+      const name = airportMatch?.properties?.Name || "Unknown Airport";
+      return {
+        value: dstCode,
+        label: `${name} (${dstCode})`,
+      };
+    });
+
+    // Step 3: Always prepend the "All Airports" option
+    return [{ value: "", label: "All Airports" }, ...destinationOptions];
+  }, [routes, airports]);
 
   // Format Airlines for Select combobox
   const selectAirlineOptions = [{ value: "", label: "All Airlines" },
@@ -103,11 +137,18 @@ const OverlayPanel = ({
           <Select
             value={
               selectedAirport
-                ? selectAirportOptions.find(o => o.value === selectedAirport.properties.IATA)
-                : selectAirportOptions[0]
+                ? selectAirportOptions.find(
+                  (o) => o.value === selectedAirport.properties.IATA
+                )
+                : null // null shows placeholder
             }
             onChange={(e) => {
               if (e) {
+                if (destinationAirport) {
+                  handleBack();
+                  return;
+                }
+                console.log("Selecting an Airport via Overlay Panel");
                 setSelectedAirport(e ? airports.find(a => a.properties.IATA === e.value) : null)
               } else {
                 handleBack();
@@ -118,8 +159,28 @@ const OverlayPanel = ({
             placeholder="Search or select an airport..."
           />
 
+          {/* Destination Airport search */}
+          {selectedAirport && (<Select
+            value={
+              destinationAirport
+                ? destinationAirportOptions.find(
+                  (o) => o.value === destinationAirport.properties.IATA
+                )
+                : null // null shows placeholder
+            }
+            onChange={(e) => {
+              if (e) {
+                console.log("Selecting Destination Airport via Overlay Panel");
+                setDestinationAirport(e ? airports.find(a => a.properties.IATA === e.value) : null)
+              } else { handleBack(); }
+            }}
+            options={destinationAirportOptions}
+            isClearable
+            placeholder="Search or select an destination airport..."
+          />)}
+
           {/* Airline dropdown */}
-          <Select
+          {!destinationAirport && (<Select
             value={
               selectedAirline
                 ? selectAirlineOptions.find(o => o.value === selectedAirline)
@@ -127,14 +188,15 @@ const OverlayPanel = ({
             }
             onChange={(e) => {
               if (e) {
-                setSelectedAirline(e ? e.value : "")
                 console.log("Changing Airline");
+                setSelectedAirline(e ? e.value : "")
+
               } else { handleBack(); }
             }}
             options={selectAirlineOptions}
             isClearable
             placeholder="Search or select an airline..."
-          />
+          />)}
 
           {/* Back button */}
           {(selectedAirport || routes) && (
