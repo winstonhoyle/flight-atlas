@@ -73,6 +73,8 @@ const AirportMarkers = ({ airports, onSelectAirport, highlightedAirport, setHigh
                 autoPan={false}       // prevents the map from moving
                 closeButton={false}   // remove default close button
                 keepInView={true}
+                className="airport-popup"
+
               >
                 <div>
                   <strong>{airport.properties.Name}</strong>

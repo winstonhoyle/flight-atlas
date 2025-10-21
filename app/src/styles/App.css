@@ -59,3 +59,8 @@ html, body, #root, .App {
   pointer-events: auto;
   z-index: 1000;
 }
+
+/* Hover over AirportMarkers fix */
+.leaflet-popup-content-wrapper.airport-popup {
+  pointer-events: none;
+}
