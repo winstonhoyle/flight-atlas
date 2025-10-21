@@ -12,13 +12,12 @@ import "leaflet.geodesic";
  * Props:
  * - src: LatLng object for the start of the line
  * - dst: LatLng object for the end of the line
- * - onClick: optional callback triggered when line is clicked
  * - color: optional line color (overrides default)
  * - weight: optional line thickness (overrides default zoom-based weight)
  * - opacity: optional line opacity (default 1.0)
  * - interactive: boolean to enable/disable mouse events on line
  */
-const ArcLine = ({ src, dst, onClick, color, weight, opacity, interactive }) => {
+const ArcLine = ({ src, dst, color, weight, opacity }) => {
   // Access the current Leaflet map instance
   const map = useMap();
 
@@ -46,7 +45,7 @@ const ArcLine = ({ src, dst, onClick, color, weight, opacity, interactive }) => 
         color: color || "#64b5f7ff",
         opacity: opacity !== undefined ? opacity : 1.0,
         wrap: false,
-        interactive: interactive,
+        interactive: false,
         bubblingMouseEvents: true,
       }).addTo(map);
 
@@ -63,42 +62,6 @@ const ArcLine = ({ src, dst, onClick, color, weight, opacity, interactive }) => 
       const dstShifted = L.latLng(dst.lat, dst.lng + shift);
       lines.push(drawLine(srcShifted, dstShifted));
     }
-
-    // Add event handlers to each line
-    lines.forEach((line) => {
-      if (onClick) {
-        line.on("click", (e) => {
-          e.originalEvent.stopPropagation();// prevent map-level click events
-          map.fitBounds(line.getBounds(), {// zoom to line bounds
-            padding: [15, 15],
-            animate: true,
-            duration: 0.5
-          });
-          onClick(e);
-        });
-      }
-
-      // Only apply default hover styles if color/weight not explicitly passed
-      line.on("mouseover", () => {
-        console.log("Mouseover Line Event");
-        line.setStyle({
-          weight: getLineWeight() + 2,
-          color: "#02508fff",
-          opacity: 1.0,
-          wrap: false,
-        });
-        line.bringToFront();
-        console.log("ArcLine Highlighted Line");
-      });
-      line.on("mouseout", () => {
-        line.setStyle({
-          weight: getLineWeight(),
-          color: "#64b5f7ff",
-          opacity: 1.0,
-          wrap: false,
-        });
-      });
-    });
 
     /**
      * Update line thickness dynamically on map zoom
@@ -121,7 +84,7 @@ const ArcLine = ({ src, dst, onClick, color, weight, opacity, interactive }) => 
       lines.forEach((line) => line.remove());
       map.off("zoomend", handleZoom);
     };
-  }, [src, dst, map, onClick, color, weight, opacity, interactive]);
+  }, [src, dst, map, color, weight, opacity]);
 
   return null;
 };

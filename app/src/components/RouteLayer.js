@@ -18,13 +18,14 @@ import { useFlightAtlasStore } from "../store/useFlightAtlasStore";
  *
  * Props:
  * - routes: GeoJSON Object of routes sometimes filtered sometimes all routes
- * - setSelectedRoute: function to update selectedRoute state
  * - selectedAirport: GeoJSON Object of the selected airport
  * - onSelectAirport: function to run code when the airport is selected, it will cause a rerender of this component
  * - highlightedAirport: GeoJSON airport object of a highlighted Airport
  * - setHighlightedAirport: function to update highlighted airport state
+ * - destinationAirport: GeoJSON Point object of airport
+ * - setDestinationAirport: function to update destinationAirport
  */
-const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport, highlightedAirport, setHighlightedAirport }) => {
+const RouteLayer = ({ routes, selectedAirport, onSelectAirport, highlightedAirport, setHighlightedAirport, destinationAirport, setDestinationAirport }) => {
 
   const groupRef = useRef();
 
@@ -121,11 +122,6 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
               ? 1.0
               : 2.0
             }
-            onClick={() => {
-              setSelectedRoute(f)
-            }
-            }
-            interactive={true}
           />
         );
       })}
@@ -152,10 +148,35 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
                 color="#02508fff"
                 weight={3.0}
                 opacity={1.0}
-                interactive={false}
               />
             );
           })}
+
+      {destinationAirport && (() => {
+        console.log('Creating destination Airport');
+        const route = routeFeatures.find(
+          (f) =>
+            f.properties.src_airport === selectedAirport.properties.IATA &&
+            f.properties.dst_airport === destinationAirport.properties.IATA
+        );
+
+        if (!route || !route.geometry?.coordinates || route.geometry.coordinates.length < 2) return null;
+
+        const coords = route.geometry.coordinates;
+        const srcCoord = new L.LatLng(coords[0][1], coords[0][0]);
+        const dstCoord = new L.LatLng(coords[1][1], coords[1][0]);
+
+        return (
+          <ArcLine
+            key={`selected-route-${selectedAirport.properties.IATA}-${destinationAirport.properties.IATA}`}
+            src={srcCoord}
+            dst={dstCoord}
+            color="#032a4bff"
+            weight={4.0}
+            opacity={1.0}
+          />
+        );
+      })()}
 
       {/* Render all airports as markers */}
       <AirportMarkers
@@ -163,6 +184,8 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
         onSelectAirport={onSelectAirport}
         highlightedAirport={highlightedAirport}
         setHighlightedAirport={setHighlightedAirport}
+        selectedAirport={selectedAirport}
+        setDestinationAirport={setDestinationAirport}
         interactive={false}
       />
 
@@ -172,6 +195,8 @@ const RouteLayer = ({ routes, setSelectedRoute, selectedAirport, onSelectAirport
         onSelectAirport={onSelectAirport}
         highlightedAirport={highlightedAirport}
         setHighlightedAirport={setHighlightedAirport}
+        selectedAirport={selectedAirport}
+        setDestinationAirport={setDestinationAirport}
         radius={15}
         opacity={0.0}
         stroke={false}

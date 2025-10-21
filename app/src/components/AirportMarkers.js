@@ -15,12 +15,14 @@ import { getColorByDestinations } from "../utils/colorUtils";
  * - onSelectAirport: callback triggered when an airport is clicked
  * - highlightedAirport: current airport highlighted on hover
  * - setHighlightedAirport: function to update highlighted airport state
+ * - setDestinationAirport: function to update destination airport state
+ * - selectedAirport: GeoJSON Airport object
  * - radius: int value for how big the radius of marker is
  * - stroke: float value for how bit the radius is
  * - opacity: float value for transparent the marker
  * - interactive: bool value if marker layer is interactive
  */
-const AirportMarkers = ({ airports, onSelectAirport, highlightedAirport, setHighlightedAirport, radius, stroke, opacity, interactive }) => {
+const AirportMarkers = ({ airports, onSelectAirport, highlightedAirport, setHighlightedAirport, setDestinationAirport, selectedAirport, radius, stroke, opacity, interactive }) => {
 
   return (
     <>
@@ -44,13 +46,34 @@ const AirportMarkers = ({ airports, onSelectAirport, highlightedAirport, setHigh
               color={stroke === false ? "transparent" : "#000"}
               interactive={!!interactive}
               eventHandlers={{
-                // Trigger parent callback on click
+                // If selected airport, make a connection via setting the destinationAirport
                 click: (e) => {
-                  onSelectAirport(airport);
+
+                  // If an airport is selected and the clicked airport is different,
+                  // treat this click as selecting a destination airport
+                  if (
+                    selectedAirport &&
+                    highlightedAirport?.properties?.IATA !== selectedAirport?.properties?.IATA
+                  ) {
+                    console.log("Selecting a Destination Airport");
+                    setDestinationAirport(airport);
+                    return;
+                  }
+
+                  // If no airport is selected yet, treat this click as selecting a new origin airport
+                  if (!selectedAirport) {
+                    console.log("Selecting an Airport");
+                    onSelectAirport(airport);
+                  }
                 },
+
                 // Hover popup
                 mouseover: (e) => {
                   e.target.openPopup();
+                  // Don't highlight the selected airport
+                  if (highlightedAirport && selectedAirport && highlightedAirport === selectedAirport) {
+                    return;
+                  }
 
                   // Only update highlightedAirport if different
                   if (!highlightedAirport || highlightedAirport.properties.IATA !== airport.properties.IATA) {
