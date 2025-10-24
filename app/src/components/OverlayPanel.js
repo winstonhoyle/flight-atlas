@@ -11,7 +11,7 @@ const OverlayPanel = ({
   // Props for the Airline Select Combobox
   setSelectedAirline,    // Function to change state of the selectedAirline
   selectedAirline,       // Strine: Airline Code (AA, DL, UA, etc) `null` if no airline is selected
-  filteredAirlines,      // List of Airline Codes, either {"code": "UA", "name": "United Airlines"} or {"code": "UA", "name": "United Airlines", "count":30}
+  filteredAirlines,      // List of Airline Codes, either {"code": "UA", "name": "United Airlines"} or {"code": "UA", "name": "United Airlines", "destinations":30}
 
   // Props for Button
   handleBack,            // Function to Handle going back, it resets the state of pretty much everything
@@ -83,7 +83,7 @@ const OverlayPanel = ({
     {
       value: a.code,
       label: selectedAirport
-        ? `${a.name} (${a.count ?? 0})`
+        ? `${a.name} (${a.destinations ?? 0})`
         : `${a.name} (${a.code})`,
     }
   )),
@@ -145,11 +145,12 @@ const OverlayPanel = ({
             }
             onChange={(e) => {
               if (e) {
-                if (destinationAirport) {
-                  handleBack();
-                  return;
-                }
                 console.log("Selecting an Airport via Overlay Panel");
+                // If any other selections are set, clear them
+                if (destinationAirport) setDestinationAirport(null);
+                if (selectedAirline) setSelectedAirline("");
+
+                // Now set selected airport
                 setSelectedAirport(e ? airports.find(a => a.properties.IATA === e.value) : null)
               } else {
                 handleBack();

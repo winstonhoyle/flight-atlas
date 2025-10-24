@@ -7,26 +7,37 @@ import { fetchAirports, fetchAirlines } from "../services/api";
 export const useFlightAtlasStore = create(
     persist(
         (set, get) => ({
-            airports: [],    // Array to hold all airport data
-            airlines: [],    // Array to hold all airline data
-            loaded: false,   // Flag indicating whether the data has been loaded
-            error: null,     // Store any error messages from API calls
+            airports: [],     // Array of all airport features
+            airlines: {},     // Dictionary of airlines (e.g. { "AA": "American Airlines" })
+            loaded: false,    // Flag indicating data load completion
+            error: null,      // For any API or validation errors
 
+            // -------------------------
+            // Initialize global data
+            // -------------------------
             initData: async () => {
                 const { loaded } = get();
 
-                // Check last refresh
+                // Use localStorage for cache freshness
                 const lastRefresh = localStorage.getItem("flight-atlas-last-refresh");
                 const now = Date.now();
 
-                // If loaded and refreshed in the last 24h, skip
+                // Skip refresh if recently loaded within 24 hours
                 if (loaded && lastRefresh && now - parseInt(lastRefresh, 10) < 24 * 60 * 60 * 1000) {
                     return;
                 }
 
                 try {
+                    // Fetch both datasets concurrently
                     const [airports, airlines] = await Promise.all([fetchAirports(), fetchAirlines()]);
+
+                    console.log("Airlines loaded:", Object.keys(airlines).length, "entries");
+                    console.log("Airports loaded:", airports.length, "features");
+
+                    // Update state
                     set({ airports, airlines, loaded: true });
+
+                    // Save refresh timestamp
                     localStorage.setItem("flight-atlas-last-refresh", now.toString());
                 } catch (err) {
                     set({ error: err.message });
@@ -40,7 +51,6 @@ export const useFlightAtlasStore = create(
             // -------------------------
             name: "flight-atlas-cache",
             partialize: (state) => ({
-                // Only persist specific parts of the state
                 airports: state.airports,
                 airlines: state.airlines,
                 loaded: state.loaded,

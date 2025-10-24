@@ -78,6 +78,9 @@ def build_point_geojson(rows: list):
             geom = row["geometry"].replace("POINT (", "").replace(")", "")
             lon, lat = map(float, geom.split())
             point = geojson.Point((lon, lat))
+            iata = row["iata"]
+            if len(iata) != 3:
+                continue
             feature = geojson.Feature(
                 geometry=point,
                 properties={

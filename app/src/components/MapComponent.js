@@ -1,23 +1,29 @@
-import React, { useState, useEffect, useRef } from "react";
-import { MapContainer, TileLayer, Pane } from "react-leaflet";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { MapContainer, TileLayer, Pane, FeatureGroup } from "react-leaflet";
 import L from "leaflet";
+import "leaflet.geodesic";
 
-
-import AirportMarkers from "./AirportMarkers";
+import AirportMarker from "./AirportMarker";
 import Legend from "./Legend";
 import OverlayPanel from "./OverlayPanel";
 import RouteInfoPanel from "./RouteInfoPanel";
-import RouteLayer from "./RouteLayer";
 import WelcomePopup from "./WelcomePopup";
 
-
 import { useRoutes } from "../hooks/useRoutes";
-import { useFilteredAirlines } from "../hooks/useFilteredAirlines";
 import { useFlightAtlasStore } from "../store/useFlightAtlasStore";
 
 
 import "leaflet/dist/leaflet.css";
 
+
+// TODO LIST
+// Fix url params after selected airport but with selected Airline /GSO/DL
+// Fix Popups
+// Fix All selectedAirline functionality without selectedAirport
+// Fix smaller airports rendering on top
+// potentially remove all airports without a 3 digit IATA code
+// Fix Geodesic lines across the ocean
 
 const MapComponent = () => {
   // -------------------------
@@ -25,10 +31,17 @@ const MapComponent = () => {
   // -------------------------
   const [selectedAirport, setSelectedAirport] = useState(null);       // JSON Object
   const [selectedAirline, setSelectedAirline] = useState("");         // Airline Code (AA, DL, F9, etc.)
-  const [selectedRoute, setSelectedRoute] = useState(null);           // JSON Object
+  const [filteredAirports, setFilteredAirports] = useState([])        // List of Airport GeoJSON Objects
+  const [filteredAirlines, setFilteredAirlines] = useState([])        // List of Airline maps
   const [showWelcome, setShowWelcome] = useState(false);              // Bool
   const [highlightedAirport, setHighlightedAirport] = useState(null); // JSON Object seperate from selected Airport because you can hover over an airport but it's not the selected one 
   const [destinationAirport, setDestinationAirport] = useState(null); // JSON Object seperate from selected Airport and Highlighted Airport because it's now a Destination airport, used to draw a line from selected Airport
+
+  // -------------------------
+  // Router vars
+  // -------------------------
+  const navigate = useNavigate();
+  const { paramSelectAirportCode, subParam, paramAirlineCode } = useParams();
 
   // Auto-show welcome page on first visit
   useEffect(() => {
@@ -39,10 +52,13 @@ const MapComponent = () => {
     }
   }, []);
 
-
   // Reference to the Leaflet map instance
   const mapRef = useRef(null);
 
+  // Reference for airports and routes
+  const routesLayerRef = useRef(null);
+
+  const didInitFromURL = useRef(false);
 
   // Default map position
   const DEFAULT_CENTER = [39.8283, -98.5795]; // center of continental US
@@ -62,202 +78,361 @@ const MapComponent = () => {
   // -------------------------
   // Load flight routes for the selected airport
   // -------------------------
-  const { routes, allRoutes, loading, error } = useRoutes(selectedAirport, selectedAirline);
+  const { routes, loading, error } = useRoutes(selectedAirport, selectedAirline);
 
   // -------------------------
-  // Set the selected route every time destinationAirport changes
+  // Sync URL when selections change
   // -------------------------
   useEffect(() => {
-    if (!destinationAirport || !selectedAirport) return;
+    let path = "/";
 
-    console.log("Setting Route when Destination Airport is defined");
+    if (selectedAirline && !selectedAirport) {
+      // Airline-only view
+      path = `/airline/${selectedAirline}`;
+    } else if (selectedAirport) {
+      path = `/${selectedAirport.properties.IATA}`;
+      if (destinationAirport) path += `/${destinationAirport.properties.IATA}`;
+      else if (selectedAirline) path += `/${selectedAirline}`;
+    }
 
-    const route = routes.features.find(
-      (f) =>
-        f.properties.src_airport === selectedAirport.properties.IATA &&
-        f.properties.dst_airport === destinationAirport.properties.IATA
+    const currentPath = window.location.pathname;
+    if (currentPath !== path) {
+      navigate(path, { replace: true });
+    }
+  }, [selectedAirport, destinationAirport, selectedAirline, navigate]);
+
+  // -------------------------
+  // Auto-select based on URL params
+  // -------------------------
+  useEffect(() => {
+    if (didInitFromURL.current) return;
+    if (!loaded || !airports?.length) return;
+
+    // --- Handle Airline-only route ---
+    if (paramAirlineCode) {
+      const code = paramAirlineCode.toUpperCase();
+      if (airlines[code]) {
+        console.log(`Found Airline ${airlines[code]} (${code}) from URL Path`);
+        setSelectedAirport(null);
+        setDestinationAirport(null);
+        setSelectedAirline(code);
+      }
+      didInitFromURL.current = true;
+      return;
+    }
+
+    // --- Handle Airport selection ---
+    if (paramSelectAirportCode) {
+      const code = paramSelectAirportCode.toUpperCase();
+      const airport = airports.find(a => a.properties.IATA === code);
+      if (airport) {
+        console.log(`Found Destination Airport ${airport.properties.IATA} from URL Path`);
+        setSelectedAirport(airport);
+      }
+    }
+
+    // --- Handle subParam (destination or airline) ---
+    if (subParam) {
+      const code = subParam.toUpperCase();
+
+      if (code.length === 3) {
+        const destAirport = airports.find(a => a.properties.IATA === code);
+        if (destAirport) {
+          console.log(`Found Destination Airport ${destAirport.properties.IATA} from URL Path`);
+          setDestinationAirport(destAirport);
+          setSelectedAirline("");
+          didInitFromURL.current = true;
+          return;
+        }
+      }
+
+      if (code.length === 2 && airlines[code]) {
+        console.log(`Found Airline ${airlines[code]} (${code}) from URL Path`);
+        setSelectedAirline(code);
+        setDestinationAirport(null);
+        didInitFromURL.current = true;
+        return;
+      }
+    }
+
+    // Fallback
+    setDestinationAirport(null);
+    setSelectedAirline("");
+    didInitFromURL.current = true;
+  }, [loaded, airports, airlines, paramSelectAirportCode, subParam, paramAirlineCode]);
+
+  // -------------------------
+  // Drawing routes and filtering airports, showing only airports that the routes go to
+  // -------------------------
+  useEffect(() => {
+
+    const layer = routesLayerRef.current;
+    // Ensure both the ref and data exist
+    if (!layer || !routes?.features?.length) return;
+
+    console.log("Drawing Routes and filtering by airports and airlines");
+
+    // Clear previous routes
+    layer.clearLayers();
+
+    // Add each route as a Leaflet layer, store airline_code metadata
+    routes.features.forEach((f) => {
+      const coords = f.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      const line = L.geodesic(coords, {
+        color: "#64b5f7ff",
+        weight: 2,
+        opacity: 1.0,
+        interactive: false,
+      });
+      line.featureProps = f.properties; // keep a reference
+      layer.addLayer(line);
+    });
+
+
+    // Zoom to bounds
+    if (mapRef.current) {
+      const bounds = layer.getBounds();
+      if (bounds.isValid()) mapRef.current.fitBounds(bounds, { padding: [15, 15] });
+    }
+
+    // --- Filter airports ---
+    const airportCodes = new Set();
+    const airlineDestinations = new Map();
+    routes.features.forEach((f) => {
+
+      // Define vars
+      const airline = f.properties.airline_code;
+      const dst = f.properties.dst_airport;
+      const src = f.properties.src_airport;
+
+      // Add airports to the set
+      airportCodes.add(src);
+      airportCodes.add(dst);
+
+      // Add airline to set
+      if (!airlineDestinations.has(airline)) {
+        airlineDestinations.set(airline, new Set());
+      }
+      airlineDestinations.get(airline).add(dst);
+    });
+
+    // Define and set filtered airports
+    const newFilteredAirports = airports.filter((airport) =>
+      airportCodes.has(airport.properties.IATA)
     );
+    setFilteredAirports(newFilteredAirports);
 
-    setSelectedRoute(route || null);
+    // Build filtered airlines with counts
+    const newFilteredAirlines = Array.from(airlineDestinations.entries())
+      .map(([code, destinationsSet]) => ({
+        code,
+        name: airlines[code] || "Unknown Airline",
+        destinations: destinationsSet.size,
+      }))
+      .sort((a, b) => b.destinations - a.destinations);
 
-    if (route && mapRef.current) {
-      console.log("Fitting Route Bounds");
-      mapRef.current.fitBounds(L.geoJson(route).getBounds(), {
-        padding: [25, 25],
-        animate: true,
-        duration: 0.5,
+    setFilteredAirlines(newFilteredAirlines);
+
+    console.log(`Filtered to ${layer.getLayers().length} routes`)
+    console.log(`Filtered to ${newFilteredAirports.length} airports`);
+    console.log(`Filtered ${newFilteredAirlines.length} airlines`);
+  }, [routes]);
+
+  // -------------------------
+  // Update visibility when airline changes
+  // -------------------------
+  useEffect(() => {
+
+    const layer = routesLayerRef.current;
+    if (!layer) return;
+
+    // Clear all if selected airport and selected airline are null
+    if (!selectedAirport && !selectedAirline) {
+      // setFilteredAirports to all airports and clear routes
+      console.log("No airport/airline, showing all routes");
+      layer.clearLayers();
+      setFilteredAirports(airports);
+      return;
+    }
+
+    console.log("Updating route and airport visibility by airline:", selectedAirline);
+
+    // Not just update routes but update airports too
+    const visibleAirports = new Set();
+
+    // Loop through each layer
+    layer.eachLayer((l) => {
+
+      // Get vars
+      const airlineCode = l.featureProps?.airline_code;
+      const shouldShow = !selectedAirline || selectedAirline === airlineCode;
+
+      // Efficiently toggle visibility without re-adding/removing
+      if (shouldShow) {
+        visibleAirports.add(l.featureProps?.src_airport);
+        visibleAirports.add(l.featureProps?.dst_airport);
+        if (!mapRef.current.hasLayer(l)) mapRef.current.addLayer(l);
+      } else {
+        if (mapRef.current.hasLayer(l)) mapRef.current.removeLayer(l);
+      }
+    });
+
+    // Define and set filtered airports
+    const visibleAirportList = airports.filter((a) =>
+      visibleAirports.has(a.properties.IATA)
+    );
+    setFilteredAirports(visibleAirportList);
+
+    // Optionally zoom to visible routes only
+    if (selectedAirline && mapRef.current) {
+      const visibleLayers = [];
+      layer.eachLayer((l) => {
+        if (l.featureProps?.airline_code === selectedAirline) {
+          visibleLayers.push(l);
+        }
+      });
+      if (visibleLayers.length) {
+        const bounds = L.featureGroup(visibleLayers).getBounds();
+        if (bounds.isValid()) mapRef.current.fitBounds(bounds, { padding: [15, 15] });
+      }
+    }
+
+  }, [selectedAirline, routes]);
+
+  // -------------------------
+  // Highlight Arc if hovered over airport
+  // -------------------------
+  useEffect(() => {
+    const layer = routesLayerRef.current;
+    if (!layer || routesLayerRef.current.getLayers().length === 0) return;
+
+    // No highlighted airport → reset all routes to normal
+    if (!highlightedAirport) {
+      console.log("Resetting line styles (no highlighted airport)"); // This is trigged one mouseout events
+      layer.eachLayer((l) => {
+        l.setStyle({
+          color: "#64b5f7ff",
+          weight: 2,
+          opacity: 1.0,
+        });
+      });
+      return;
+    }
+
+    const highlightedIATA = highlightedAirport.properties.IATA;
+
+    // Logic for if selectedAirport, only rendering to and from the selected airport
+    if (selectedAirport) {
+      const selectedIATA = selectedAirport.properties.IATA;
+      const sameAirport = highlightedIATA === selectedIATA;
+      layer.eachLayer((l) => {
+        const props = l.featureProps;
+        if (!props) return;
+
+        const src = props.src_airport;
+        const dst = props.dst_airport;
+
+        const isMatch = sameAirport
+          ? src === selectedIATA || dst === selectedIATA // highlight all routes from selectedAirport
+          : (src === selectedIATA && dst === highlightedIATA) ||
+          (dst === selectedIATA && src === highlightedIATA); // highlight only that pair
+
+        l.setStyle({
+          color: isMatch ? "#004c97" : "#64b5f7ff",
+          weight: isMatch ? 4 : 2,
+          opacity: isMatch ? 1.0 : 0.5,
+        });
+
+        if (isMatch) l.bringToFront();
+      });
+      // Logic for if there are multiple routes from all different airports, highlight only routes from the highlighted airport
+    } else {
+
+      layer.eachLayer((l) => {
+        const props = l.featureProps;
+        if (!props) return;
+
+        // Get boolean, if highlighted airport matches any src/dst airport of route, isMatch is `true`
+        const isMatch = props.src_airport === highlightedIATA || props.dst_airport === highlightedIATA;
+
+        l.setStyle({
+          color: isMatch ? "#004c97" : "#64b5f7ff",
+          weight: isMatch ? 4 : 2,
+          opacity: isMatch ? 1.0 : 0.5,
+        });
+        if (isMatch) l.bringToFront();
       });
     }
-  }, [destinationAirport, selectedAirport, routes]);
+
+  }, [highlightedAirport]);
 
   // -------------------------
-  // Compute displayed routes (filtered by selected airline)
-  // -------------------------
-  const displayedRoutes = React.useMemo(() => {
-    if (!routes) return null;
-    // If airline is selected, filter routes
-    if (selectedAirline) {
-      console.log("Updating Displayed Routes");
-      return {
-        ...routes,
-        features: routes.features.filter(
-          (f) => f.properties.airline_code === selectedAirline
-        ),
-      };
-    }
-
-
-    return routes;
-  }, [routes, selectedAirline]);
-
-
-  // -------------------------
-  // Event Handler for back button
+  // HandleBack
   // -------------------------
   const handleBack = () => {
 
-    console.log("Handling Back")
-
-    // No return as destinationAirport and selectRoute go hand-and-hand
+    // If destination airport is selected, meaning selectedAirport is not null but selectedAirline could or could not be defined
     if (destinationAirport) {
       console.log("Clearing Destination Airport");
       setDestinationAirport(null);
 
-      // Fit bounds to current routes
-      if (selectedAirport && routes) {
-        console.log("Fitting Routes Bounds");
-        mapRef.current.fitBounds(L.geoJson(routes).getBounds(), {
-          padding: [15, 15],
-          animate: true,
-          duration: 0.5
-        })
-      };
-    }
+      // Fit bounds
+      const bounds = routesLayerRef.current.getBounds();
+      if (bounds.isValid()) mapRef.current.fitBounds(bounds, { padding: [15, 15] });
 
-    // Clear route first
-    if (selectedRoute) {
-      console.log("Clearing Selected Route");
-      setSelectedRoute(null);
-
-      // Fit bounds to current routes
-      if (selectedAirport && routes) {
-        console.log("Fitting Routes Bounds");
-        mapRef.current.fitBounds(L.geoJson(routes).getBounds(), {
-          padding: [15, 15],
-          animate: true,
-          duration: 0.5
-        })
-      };
       return;
     }
-    // If airline is selected, clear it
-    if (selectedAirline) {
-      console.log("Clearing Selected Airline");
+
+    // If selectedAirport is defined and selectedAirline, meaning clear airline and show all the routes
+    if (selectedAirport && selectedAirline) {
+      console.log("Clearing airline when airport is selected");
       setSelectedAirline("");
 
-      // Fit bounds to current routes
-      if (selectedAirport && routes) {
-        console.log("Fitting Routes Bounds");
-        mapRef.current.fitBounds(L.geoJson(routes).getBounds(), {
-          padding: [15, 15],
-          animate: true,
-          duration: 0.5
-        })
-      };
+      // Fit bounds
+      const bounds = routesLayerRef.current.getBounds();
+      if (bounds.isValid()) mapRef.current.fitBounds(bounds, { padding: [15, 15] });
+
       return;
     }
 
-    // If airport is selected, clear it and reset map view
-    if (selectedAirport) {
-      console.log("Clearing Selected Airport");
+    // If selectedAirport is defined, but not selectedAirline
+    if (selectedAirport && !selectedAirline) {
+      console.log("Clearing selected airport, no selected airline");
       setSelectedAirport(null);
+      setSelectedAirline("");
+      setFilteredAirlines(Object.entries(airlines || {}).map(([code, name]) => ({
+        code,
+        name,
+      })));
 
-      // Reset map
-      mapRef.current.setView(DEFAULT_CENTER, DEFAULT_ZOOM, {
-        animate: true,
-        duration: 0.5
-      });
-      return;
-    }
-  };
+      // Fit bounds
+      mapRef.current.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
 
-
-  // -------------------------
-  // Filter airports to only show those involved in currently loaded routes
-  // -------------------------
-  const filteredAirportsForMap = React.useMemo(() => {
-    if (!allRoutes || !allRoutes.features) return airports;
-
-    console.log("Updating Filtered Airports for the map");
-
-    const airportCodes = new Set();
-    (displayedRoutes || allRoutes).features.forEach((f) => {
-      airportCodes.add(f.properties.src_airport);
-      airportCodes.add(f.properties.dst_airport);
-    });
-
-
-    return airports.filter((a) => airportCodes.has(a.properties.IATA));
-  }, [allRoutes, displayedRoutes, airports]);
-
-
-  // -------------------------
-  // Filter airlines based on current airport routes
-  // -------------------------
-  // Function that returns only the selected airlines
-  const allFilteredAirlines = useFilteredAirlines(allRoutes, airlines, selectedAirport);
-
-
-  // -------------------------
-  // Reset selections when a new airport is chosen
-  // -------------------------
-  useEffect(() => {
-    console.log("Resetting selections of new airport")
-    setSelectedAirline("");
-    setSelectedRoute(null);
-  }, [selectedAirport]);
-
-
-  // -------------------------
-  // Fit bounds whenever the routes or airline changes
-  // -------------------------
-  useEffect(() => {
-
-    // Reset Highlighted Airport
-    setHighlightedAirport(null);
-
-    // Wait for selectedRoute to be ready before fitting bounds
-    if (selectedRoute) {
-      console.log("Fitting Select Route Bounds");
-      mapRef.current.fitBounds(L.geoJson(selectedRoute).getBounds(), {
-        padding: [15, 15],
-        animate: true,
-        duration: 0.5,
-      })
       return;
     }
 
-    // Wait for displayedRoutes to be ready before fitting bounds
-    if (displayedRoutes?.features?.length) {
-      console.log("Fitting Displayed Routes Bounds");
-      mapRef.current.fitBounds(L.geoJson(displayedRoutes).getBounds(), {
-        padding: [15, 15],
-        animate: true,
-        duration: 0.5,
-      });
+    // If selectedAirline is defined but not airport meaning only showing routes of that airline then clear showing all routes again
+    if (selectedAirline && !selectedAirport) {
+      console.log("Clearing selected airline, No airport was selected");
+
+      // Clear selected airline and format Filtered airlines back to original
+      setSelectedAirline("");
+      setFilteredAirlines(
+        Object.entries(airlines || {}).map(([code, name]) => ({
+          code,
+          name,
+        }))
+      );
+      // Clear Layers
+      routesLayerRef.current.clearLayers()
+
+      // Zoom to default
+      mapRef.current.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+
       return;
     }
 
-
-  }, [selectedAirport, selectedAirline, displayedRoutes, selectedRoute]);
-
-  // Reset Airline filter if new airport is selected
-  const handleSelectAirport = (airport) => {
-    console.log("Reset Selected Airline")
-    setSelectedAirport(airport);
-    setSelectedAirline("");
-  };
-
+  }
 
   // -------------------------
   // Render
@@ -278,58 +453,32 @@ const MapComponent = () => {
           url='https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'
         />
 
-
         {/* Routes */}
         <Pane name="routesPane" style={{ zIndex: 400 }}>
-          {displayedRoutes && (
-            <RouteLayer
-              key={`route-layer-${Date.now()}`}
-              routes={displayedRoutes}
-              selectedAirport={selectedAirport}
-              onSelectAirport={handleSelectAirport}
-              highlightedAirport={highlightedAirport}
-              setHighlightedAirport={setHighlightedAirport}
-              destinationAirport={destinationAirport}
-              setDestinationAirport={setDestinationAirport}
-            />
-          )}
+          <FeatureGroup ref={routesLayerRef} />
         </Pane>
 
-
-        {/*Airports and invisible markers but larger radius */}
+        {/* Airports */}
         <Pane name="airportsPane" style={{ zIndex: 500 }}>
-          {!selectedAirport && (
-            <>
-              <AirportMarkers
-                airports={filteredAirportsForMap}
-                onSelectAirport={handleSelectAirport}
-                highlightedAirport={highlightedAirport}
-                setHighlightedAirport={setHighlightedAirport}
-                interactive={false}
-                setDestinationAirport={setDestinationAirport}
+          {(filteredAirports.length ? filteredAirports : airports || []).map(
+            (airport) => (
+              <AirportMarker
+                key={airport.properties.IATA}
+                airport={airport}
                 selectedAirport={selectedAirport}
-              />
-              <AirportMarkers
-                airports={filteredAirportsForMap}
-                onSelectAirport={handleSelectAirport}
+                setSelectedAirport={setSelectedAirport}
                 highlightedAirport={highlightedAirport}
-                setHighlightedAirport={setHighlightedAirport}
-                radius={15}
-                opacity={0.0}
-                stroke={false}
-                interactive={true}
                 setDestinationAirport={setDestinationAirport}
-                selectedAirport={selectedAirport}
+                setHighlightedAirport={setHighlightedAirport}
               />
-            </>
+            )
           )}
         </Pane>
-
 
         {/* Legend */}
         <Legend />
 
-        {destinationAirport && (
+        {destinationAirport && routes?.features && (
           <RouteInfoPanel
             selectedAirport={selectedAirport}
             destinationAirport={destinationAirport}
@@ -342,15 +491,22 @@ const MapComponent = () => {
       </MapContainer>
 
 
-      {/* Overlay controls */}
+      {/* Overlay controls*/}
       <OverlayPanel
         selectedAirport={selectedAirport}
         setSelectedAirport={setSelectedAirport}
         setSelectedAirline={setSelectedAirline}
         selectedAirline={selectedAirline}
-        filteredAirlines={allFilteredAirlines.length ? allFilteredAirlines : airlines}
+        filteredAirlines={
+          filteredAirlines && filteredAirlines.length
+            ? filteredAirlines
+            : Object.entries(airlines || {}).map(([code, name]) => ({
+              code,
+              name,
+            }))
+        }
         handleBack={handleBack}
-        routes={displayedRoutes}
+        routes={routes}
         destinationAirport={destinationAirport}
         setDestinationAirport={setDestinationAirport}
         loading={loading}

@@ -39,10 +39,14 @@ export const fetchAirlines = async () => {
         () => fetchJSON("/airlines"),
         isAirlinesSchema
     );
-    return Object.entries(data).map(([code, name]) => ({
-        code,
-        name: String(name).replace(/[\r\n]+/g, " ").trim(),
-    }));
+
+    // Clean up string values but preserve dictionary structure
+    const cleaned = {};
+    for (const [code, name] of Object.entries(data)) {
+        cleaned[code] = String(name).replace(/[\r\n]+/g, " ").trim();
+    }
+
+    return cleaned; // return an object, not an array
 };
 
 export const fetchAirports = async () => {
