@@ -20,6 +20,7 @@ const OverlayPanel = ({
   // Props for Optional Destination Combobox
   destinationAirport,    // GeoJSON Point object of airport
   setDestinationAirport, // Setting the state of destinationAirport
+  setSelectedRoute,      // Setting the state of selectedRoute
 
   // Props for waiting and/or failing
   loading,
@@ -174,6 +175,7 @@ const OverlayPanel = ({
               if (e) {
                 console.log("Selecting Destination Airport via Overlay Panel");
                 setDestinationAirport(e ? airports.find(a => a.properties.IATA === e.value) : null)
+                setSelectedRoute([selectedAirport.properties.IATA, e.value])
               } else { handleBack(); }
             }}
             options={destinationAirportOptions}
@@ -192,7 +194,6 @@ const OverlayPanel = ({
               if (e) {
                 console.log("Changing Airline");
                 setSelectedAirline(e ? e.value : "")
-
               } else { handleBack(); }
             }}
             options={selectAirlineOptions}

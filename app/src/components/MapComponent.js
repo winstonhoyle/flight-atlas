@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { MapContainer, TileLayer, Pane, FeatureGroup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet.geodesic";
+import * as turf from "@turf/turf";
 
 import AirportMarker from "./AirportMarker";
 import Legend from "./Legend";
@@ -25,14 +26,23 @@ import "leaflet/dist/leaflet.css";
 // potentially remove all airports without a 3 digit IATA code
 // Fix Geodesic lines across the ocean
 
+// BUGS / Fixes
+
+// Smaller airports rendering on top of larger airprots
+
+// Select Route not highlighted
+
+// Hover not working well, lagging, glitching
+
 const MapComponent = () => {
   // -------------------------
   // Component State
   // -------------------------
   const [selectedAirport, setSelectedAirport] = useState(null);       // JSON Object
   const [selectedAirline, setSelectedAirline] = useState("");         // Airline Code (AA, DL, F9, etc.)
-  const [filteredAirports, setFilteredAirports] = useState([])        // List of Airport GeoJSON Objects
-  const [filteredAirlines, setFilteredAirlines] = useState([])        // List of Airline maps
+  const [filteredAirports, setFilteredAirports] = useState([]);       // List of Airport GeoJSON Objects
+  const [filteredAirlines, setFilteredAirlines] = useState([]);       // List of Airline maps
+  const [selectedRoute, setSelectedRoute] = useState([]);             // List of [srcIATA, dstIATA], ex: ["GSO", "IAD"]
   const [showWelcome, setShowWelcome] = useState(false);              // Bool
   const [highlightedAirport, setHighlightedAirport] = useState(null); // JSON Object seperate from selected Airport because you can hover over an airport but it's not the selected one 
   const [destinationAirport, setDestinationAirport] = useState(null); // JSON Object seperate from selected Airport and Highlighted Airport because it's now a Destination airport, used to draw a line from selected Airport
@@ -58,7 +68,16 @@ const MapComponent = () => {
   // Reference for airports and routes
   const routesLayerRef = useRef(null);
 
+  // Reference for highlighted routes
+  const highlightLayerRef = useRef(null);
+
+  // Reference for a highlighted airport
+  const highlightedAirportRef = useRef(null);
+
   const didInitFromURL = useRef(false);
+
+  // Leaflet canvas renderer
+  const canvasRendererRef = useRef(L.canvas({ padding: 0.5 }));
 
   // Default map position
   const DEFAULT_CENTER = [39.8283, -98.5795]; // center of continental US
@@ -176,18 +195,31 @@ const MapComponent = () => {
     layer.clearLayers();
 
     // Add each route as a Leaflet layer, store airline_code metadata
+    const lines = [];
+
+    // Line vars
+    // if more than 200 routes, thinner line
+    const routesLength = (routes.features.length > 200) ? 1 : 2
+    const lineColor = "#64b5f7ff";
+
     routes.features.forEach((f) => {
       const coords = f.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-      const line = L.geodesic(coords, {
-        color: "#64b5f7ff",
-        weight: 2,
-        opacity: 1.0,
-        interactive: false,
-      });
+      // Draw polylines for preformance, geodesic for long routes
+      const distance = turf.distance(
+        turf.point([coords[0][1], coords[0][0]]),
+        turf.point([coords[coords.length - 1][1], coords[coords.length - 1][0]]),
+        { units: "miles" }
+      );
+      const useGeodesic = distance > 1000;
+      const line = useGeodesic
+        ? L.geodesic(coords, { color: lineColor, weight: routesLength, opacity: 1.0, interactive: false })
+        : L.polyline(coords, { color: lineColor, weight: routesLength, opacity: 1.0, interactive: false, renderer: canvasRendererRef.current });
       line.featureProps = f.properties; // keep a reference
-      layer.addLayer(line);
+      lines.push(line);
     });
 
+    // Add all lines at one moment
+    lines.forEach(l => layer.addLayer(l));
 
     // Zoom to bounds
     if (mapRef.current) {
@@ -223,19 +255,21 @@ const MapComponent = () => {
     setFilteredAirports(newFilteredAirports);
 
     // Build filtered airlines with counts
-    const newFilteredAirlines = Array.from(airlineDestinations.entries())
-      .map(([code, destinationsSet]) => ({
-        code,
-        name: airlines[code] || "Unknown Airline",
-        destinations: destinationsSet.size,
-      }))
-      .sort((a, b) => b.destinations - a.destinations);
+    if (!selectedAirline) {
+      const newFilteredAirlines = Array.from(airlineDestinations.entries())
+        .map(([code, destinationsSet]) => ({
+          code,
+          name: airlines[code] || "Unknown Airline",
+          destinations: destinationsSet.size,
+        }))
+        .sort((a, b) => b.destinations - a.destinations);
 
-    setFilteredAirlines(newFilteredAirlines);
+      setFilteredAirlines(newFilteredAirlines);
+      console.log(`Filtered ${newFilteredAirlines.length} airlines`);
+    }
 
     console.log(`Filtered to ${layer.getLayers().length} routes`)
     console.log(`Filtered to ${newFilteredAirports.length} airports`);
-    console.log(`Filtered ${newFilteredAirlines.length} airlines`);
   }, [routes]);
 
   // -------------------------
@@ -303,21 +337,18 @@ const MapComponent = () => {
   // Highlight Arc if hovered over airport
   // -------------------------
   useEffect(() => {
-    const layer = routesLayerRef.current;
-    if (!layer || routesLayerRef.current.getLayers().length === 0) return;
+    const routesLayer = routesLayerRef.current;
+    const highlightLayer = highlightLayerRef.current;
 
-    // No highlighted airport → reset all routes to normal
-    if (!highlightedAirport) {
-      console.log("Resetting line styles (no highlighted airport)"); // This is trigged one mouseout events
-      layer.eachLayer((l) => {
-        l.setStyle({
-          color: "#64b5f7ff",
-          weight: 2,
-          opacity: 1.0,
-        });
-      });
-      return;
-    }
+    if (!routesLayer || routesLayer.getLayers().length === 0) return;
+    if (!routesLayer || !highlightLayer) return;
+    if (highlightLayer && selectedRoute) return;
+
+    // Clear previous highlights
+    highlightLayer.clearLayers();
+
+    // Nothing highlighted → done
+    if (!highlightedAirport) return;
 
     const highlightedIATA = highlightedAirport.properties.IATA;
 
@@ -325,7 +356,7 @@ const MapComponent = () => {
     if (selectedAirport) {
       const selectedIATA = selectedAirport.properties.IATA;
       const sameAirport = highlightedIATA === selectedIATA;
-      layer.eachLayer((l) => {
+      routesLayer.eachLayer((l) => {
         const props = l.featureProps;
         if (!props) return;
 
@@ -337,34 +368,98 @@ const MapComponent = () => {
           : (src === selectedIATA && dst === highlightedIATA) ||
           (dst === selectedIATA && src === highlightedIATA); // highlight only that pair
 
-        l.setStyle({
-          color: isMatch ? "#004c97" : "#64b5f7ff",
-          weight: isMatch ? 4 : 2,
-          opacity: isMatch ? 1.0 : 0.5,
-        });
+        if (isMatch) {
+          // draw a new SVG polyline on top
+          const highlight = L.polyline(l.getLatLngs(), {
+            color: "#004c97",
+            weight: 4,
+            opacity: 1.0,
+            interactive: false,
+            renderer: L.svg(),       // ensure SVG, not canvas
+          });
+          highlightLayer.addLayer(highlight);
+        }
 
-        if (isMatch) l.bringToFront();
       });
       // Logic for if there are multiple routes from all different airports, highlight only routes from the highlighted airport
     } else {
 
-      layer.eachLayer((l) => {
+      routesLayer.eachLayer((l) => {
         const props = l.featureProps;
         if (!props) return;
 
         // Get boolean, if highlighted airport matches any src/dst airport of route, isMatch is `true`
         const isMatch = props.src_airport === highlightedIATA || props.dst_airport === highlightedIATA;
 
-        l.setStyle({
-          color: isMatch ? "#004c97" : "#64b5f7ff",
-          weight: isMatch ? 4 : 2,
-          opacity: isMatch ? 1.0 : 0.5,
-        });
-        if (isMatch) l.bringToFront();
+        if (isMatch) {
+          // draw a new SVG polyline on top
+          const highlight = L.polyline(l.getLatLngs(), {
+            color: "#004c97",
+            weight: 4,
+            opacity: 1.0,
+            interactive: false,
+            renderer: L.svg(),       // ensure SVG, not canvas
+          });
+          highlightLayer.addLayer(highlight);
+        }
       });
     }
 
   }, [highlightedAirport]);
+
+
+  useEffect(() => {
+
+    // If no selectedRoute, skip
+    if (!selectedRoute || selectedRoute.length < 2) return;
+
+    console.log(`Highlighting Airport from ${selectedRoute[0]} to ${selectedRoute[1]}`)
+
+    const routesLayer = routesLayerRef.current;
+    const highlightLayer = highlightLayerRef.current;
+
+    // If no routes or a highlight layer, skip
+    if (!routesLayer || !highlightLayer) return;
+
+    // Clear existing layer
+    highlightLayer.clearLayers();
+
+    // Get Airports
+    const srcAirport = airports.find(a => a.properties.IATA === selectedRoute[0]);
+    const dstAirport = airports.find(a => a.properties.IATA === selectedRoute[1]);
+    if (!srcAirport || !dstAirport) return;
+
+    // Extract coordinates [lat, lng]
+    const srcLatLng = [srcAirport.geometry.coordinates[1], srcAirport.geometry.coordinates[0]];
+    const dstLatLng = [dstAirport.geometry.coordinates[1], dstAirport.geometry.coordinates[0]];
+
+    // Compute great-circle distance in miles
+    const distance = turf.distance(
+      turf.point([srcAirport.geometry.coordinates[0], srcAirport.geometry.coordinates[1]]),
+      turf.point([dstAirport.geometry.coordinates[0], dstAirport.geometry.coordinates[1]]),
+      { units: "miles" }
+    );
+
+    // Decide whether to use geodesic
+    const useGeodesic = distance > 1000;
+
+    // Styling
+    const lineColor = "#004c97";
+    const lineWeight = 4;
+
+    // Build the route
+    const coords = [srcLatLng, dstLatLng];
+    const selectedAirportRoute = useGeodesic
+      ? L.geodesic(coords, { color: lineColor, weight: lineWeight, opacity: 1.0, interactive: false })
+      : L.polyline(coords, { color: lineColor, weight: lineWeight, opacity: 1.0, interactive: false, renderer: L.svg() });
+    highlightLayer.addLayer(selectedAirportRoute);
+
+    if (mapRef.current) {
+      const bounds = L.latLngBounds(coords);
+      if (bounds.isValid()) mapRef.current.fitBounds(bounds, { padding: [30, 30] });
+    }
+
+  }, [selectedRoute])
 
   // -------------------------
   // HandleBack
@@ -375,6 +470,12 @@ const MapComponent = () => {
     if (destinationAirport) {
       console.log("Clearing Destination Airport");
       setDestinationAirport(null);
+      setSelectedRoute([]);
+
+      // If no selectedRoute, clear if highlightLayer exists
+      if (highlightLayerRef.current) {
+        highlightLayerRef.current.clearLayers();
+      }
 
       // Fit bounds
       const bounds = routesLayerRef.current.getBounds();
@@ -431,8 +532,16 @@ const MapComponent = () => {
 
       return;
     }
-
   }
+
+  // Change of highlighed airport
+  useEffect(() => {
+    const current = highlightedAirportRef.current;
+    console.log(`test ${current}`);
+    if (!current) return;
+    setHighlightedAirport(current);
+    console.log(`Current Highlighed Airport: ${current.properties.IATA}`);
+  }, []);
 
   // -------------------------
   // Render
@@ -458,21 +567,30 @@ const MapComponent = () => {
           <FeatureGroup ref={routesLayerRef} />
         </Pane>
 
+        {/* Highlighted Routes */}
+        <Pane name="highlightPane" style={{ zIndex: 450 }}>
+          <FeatureGroup ref={highlightLayerRef} />
+        </Pane>
+
         {/* Airports */}
         <Pane name="airportsPane" style={{ zIndex: 500 }}>
-          {(filteredAirports.length ? filteredAirports : airports || []).map(
-            (airport) => (
+          {console.log("Rendering Airports")}
+          {(filteredAirports.length ? filteredAirports : airports || [])
+            .slice()
+            .sort((a, b) => a.properties.destinations - b.properties.destinations)
+            .map((airport) => (
               <AirportMarker
                 key={airport.properties.IATA}
                 airport={airport}
                 selectedAirport={selectedAirport}
                 setSelectedAirport={setSelectedAirport}
-                highlightedAirport={highlightedAirport}
                 setDestinationAirport={setDestinationAirport}
+                setSelectedRoute={setSelectedRoute}
+                selectedRoute={selectedRoute}
+                highlightedAirportRef={highlightedAirportRef}
                 setHighlightedAirport={setHighlightedAirport}
               />
-            )
-          )}
+            ))}
         </Pane>
 
         {/* Legend */}
@@ -505,6 +623,7 @@ const MapComponent = () => {
               name,
             }))
         }
+        setSelectedRoute={setSelectedRoute}
         handleBack={handleBack}
         routes={routes}
         destinationAirport={destinationAirport}
