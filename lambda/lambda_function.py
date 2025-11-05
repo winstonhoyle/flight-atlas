@@ -109,6 +109,12 @@ def build_line_geojson(
             if airline_code and row.get("airline_code") != airline_code:
                 continue
 
+            # Skip if src_airport or dst_airport is not exactly 3 characters
+            src_airport = row.get("src_airport", "")
+            dst_airport = row.get("dst_airport", "")
+            if len(src_airport) != 3 or len(dst_airport) != 3:
+                continue
+
             dst_geom = row["dst_geometry"].replace("POINT (", "").replace(")", "")
             src_geom = row["src_geometry"].replace("POINT (", "").replace(")", "")
             dst_lon, dst_lat = map(float, dst_geom.split())
@@ -120,8 +126,8 @@ def build_line_geojson(
                 geometry=line,
                 properties={
                     "airline_code": row["airline_code"],
-                    "src_airport": row["src_airport"],
-                    "dst_airport": row["dst_airport"],
+                    "src_airport": src_airport,
+                    "dst_airport": dst_airport,
                 },
             )
             features.append(feature)
@@ -132,7 +138,7 @@ def build_line_geojson(
 
 
 def format_query(
-    path: Literal["/routes", "/airlines", "/airports"],
+    path: Literal["/routes", "/airlines", "/airports", "/available_months"],
     src_airport: str = None,
     airline_code: str = None,
     month: int = None,
@@ -143,19 +149,22 @@ def format_query(
     if path == "/routes":
         base_query = f"SELECT * FROM flights WHERE month = {month}"
         if src_airport:
-            return f"{base_query} AND WHERE src_airport = '{src_airport}'"
+            return f"{base_query} AND src_airport = '{src_airport}'"
         if airline_code:
-            return f"{base_query} AND WHERE airline_code = '{airline_code}'"
+            return f"{base_query} AND airline_code = '{airline_code}'"
 
     if path == "/airlines":
-        base_query = f"SELECT * FROM airlines WHERE MONTH = {month}"
+        base_query = f"SELECT * FROM airlines WHERE month = {month}"
         if airline_code:
-            return base_query + f" AND WHERE airline_code = '{airline_code}'"
+            return base_query + f" AND airline_code = '{airline_code}'"
         else:
             return base_query
 
     if path == "/airports":
-        return f"SELECT * FROM airports WHERE MONTH = {month}"
+        return f"SELECT * FROM airports WHERE month = {month}"
+
+    if path == "/available_months":
+        return "SELECT DISTINCT month, year from airlines"
 
 
 def make_response(status_code: int, body_dict: dict) -> dict:
@@ -275,6 +284,9 @@ def lambda_handler(event, context) -> dict:
                 # Return points geojson
                 if path == "/airports":
                     result_dict = build_point_geojson(rows)
+
+                if path == "/available_months":
+                    return make_response(status_code=200, body_dict=rows)
 
                 # Return data
                 return make_response(status_code=200, body_dict=result_dict)

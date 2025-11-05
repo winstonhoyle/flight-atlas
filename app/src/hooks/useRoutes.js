@@ -9,7 +9,7 @@ import { fetchRoutes } from "../services/api";
  *
  * Returns both the current `routes` (which can be filtered)
  */
-export const useRoutes = (selectedAirport, selectedAirline) => {
+export const useRoutes = (selectedAirport, selectedAirline, selectedMonth) => {
   // -------------------------
   // Local state
   // -------------------------
@@ -52,11 +52,11 @@ export const useRoutes = (selectedAirport, selectedAirline) => {
 
           // Fetch routes for a specific airport using its IATA code
           const iata = selectedAirport.properties.IATA;
-          data = await fetchRoutes({ airportIata: iata }, controller.signal);
+          data = await fetchRoutes({ airportIata: iata, month: selectedMonth }, controller.signal);
         } else if (selectedAirline) {
 
           // Fetch routes for a specific airline using its code
-          data = await fetchRoutes({ airlineCode: selectedAirline }, controller.signal);
+          data = await fetchRoutes({ airlineCode: selectedAirline, month: selectedMonth }, controller.signal);
         }
 
         // If API returned nothing (null or empty)
@@ -87,7 +87,7 @@ export const useRoutes = (selectedAirport, selectedAirline) => {
     // Cleanup: abort ongoing fetch when component unmounts or dependencies change
     return () => abortControllerRef.current?.abort();
 
-  }, [selectedAirport, selectedAirline]); // re-run whenever either selection changes
+  }, [selectedAirport, selectedAirline, selectedMonth]); // re-run whenever either selection changes
 
   return { routes, loading, error };
 };

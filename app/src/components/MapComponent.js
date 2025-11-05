@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { MapContainer, TileLayer, Pane, FeatureGroup } from "react-leaflet";
 import L from "leaflet";
@@ -12,26 +12,17 @@ import RouteInfoPanel from "./RouteInfoPanel";
 import WelcomePopup from "./WelcomePopup";
 
 import { useRoutes } from "../hooks/useRoutes";
+import { useMonths } from "../hooks/useMonths";
 import { useFlightAtlasStore } from "../store/useFlightAtlasStore";
 
 
 import "leaflet/dist/leaflet.css";
 
 
-// TODO LIST
+// ---- Known Issues ---- 
 // Fix url params after selected airport but with selected Airline /GSO/DL
-// Fix Popups
-// Fix All selectedAirline functionality without selectedAirport
-// Fix smaller airports rendering on top
-// Fix Geodesic lines across the ocean
-
-// BUGS / Fixes
-
-// Smaller airports rendering on top of larger airprots
-
-// Select Route not highlighted
-
-// Hover not working well, lagging, glitching
+// Hover Radius
+// Changing the month does not effect destination numbers on airport
 
 const MapComponent = () => {
   // -------------------------
@@ -44,6 +35,9 @@ const MapComponent = () => {
   const [selectedRoute, setSelectedRoute] = useState([]);             // List of [srcIATA, dstIATA], ex: ["GSO", "IAD"]
   const [showWelcome, setShowWelcome] = useState(false);              // Bool
   const [destinationAirport, setDestinationAirport] = useState(null); // JSON Object seperate from selected Airport and Highlighted Airport because it's now a Destination airport, used to draw a line from selected Airport
+  const [selectedMonth, setSelectedMonth] = useState(
+    String(new Date().getMonth() + 1).padStart(2, "0")
+  );
 
   // -------------------------
   // Router vars
@@ -96,7 +90,12 @@ const MapComponent = () => {
   // -------------------------
   // Load flight routes for the selected airport
   // -------------------------
-  const { routes, loading, error } = useRoutes(selectedAirport, selectedAirline);
+  const { routes, loading, error } = useRoutes(selectedAirport, selectedAirline, selectedMonth);
+
+  // -------------------------
+  // Load available months
+  // -------------------------
+  const { months, loading: monthsLoading, error: monthsError } = useMonths();
 
   // -------------------------
   // Sync URL when selections change
@@ -529,6 +528,18 @@ const MapComponent = () => {
   }
 
   // -------------------------
+  // Memoize derived airlines prop
+  // -------------------------
+  const baseAirlines = useMemo(
+    () =>
+      Object.entries(airlines || {}).map(([code, name]) => ({
+        code,
+        name,
+      })),
+    [airlines]
+  );
+
+  // -------------------------
   // Render
   // -------------------------
   return (
@@ -602,18 +613,18 @@ const MapComponent = () => {
         filteredAirlines={
           filteredAirlines && filteredAirlines.length
             ? filteredAirlines
-            : Object.entries(airlines || {}).map(([code, name]) => ({
-              code,
-              name,
-            }))
+            : baseAirlines
         }
         setSelectedRoute={setSelectedRoute}
         handleBack={handleBack}
         routes={routes}
         destinationAirport={destinationAirport}
         setDestinationAirport={setDestinationAirport}
-        loading={loading}
-        error={error}
+        monthOptions={months}
+        selectedMonth={selectedMonth}
+        setSelectedMonth={setSelectedMonth}
+        loading={loading || monthsLoading}
+        error={error || monthsError}
       />
 
 

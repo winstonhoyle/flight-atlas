@@ -113,7 +113,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: infra
-        run: terraform init
+        run: terraform init -upgrade=false -input=false
 
       - name: Terraform Validate
         working-directory: infra
