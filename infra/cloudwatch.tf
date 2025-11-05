@@ -6,7 +6,7 @@ resource "aws_cloudwatch_event_rule" "monthly_schedule" {
 
 resource "aws_cloudwatch_event_target" "monthly_ecs_target" {
   rule      = aws_cloudwatch_event_rule.monthly_schedule.name
-  target_id = "flights-ecs"
+  target_id = "flights-monthly-ecs"
 
   arn      = aws_ecs_cluster.flights_cluster.arn
   role_arn = aws_iam_role.ecs_events_role.arn

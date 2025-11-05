@@ -70,6 +70,7 @@ airline_codes_dict = {
     "Pathfinder Aviation": "PA",
     "Havana Air": "HV",
     "Fly The Whale": "FW",
+    "San Juan Airlines": "SJ",
 }
 
 additional_destinations = {}

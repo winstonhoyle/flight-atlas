@@ -2,13 +2,10 @@ import React from "react";
 import { CircleMarker, Popup } from "react-leaflet";
 import { getColorByDestinations } from "../utils/colorUtils";
 
-const AirportMarker = React.memo(({ airport, selectedAirport, setSelectedAirport, setDestinationAirport, setSelectedRoute, selectedRoute, highlightedAirportRef, setHighlightedAirport }) => {
+const AirportMarker = React.memo(({ airport, selectedAirport, setSelectedAirport, setDestinationAirport, setSelectedRoute, highlightedAirportRef, updateHighlightedRoutes }) => {
     const [lng, lat] = airport.geometry.coordinates;
     const destinations = airport.properties.destinations || 0;
     const color = getColorByDestinations(destinations);
-
-    // disable all interactivity if a route is selected
-    const isDisabled = !!selectedRoute;
 
     return (
         <CircleMarker
@@ -16,13 +13,16 @@ const AirportMarker = React.memo(({ airport, selectedAirport, setSelectedAirport
             center={[lat, lng]}
             radius={3 + Math.min(destinations / 20, 4)}
             pathOptions={{ color: "#000", fillColor: color, fillOpacity: 1, weight: 0.5 }}
-            interactive={isDisabled}
+            interactive={true}
             eventHandlers={{
                 click: () => {
                     const currentHighlight = highlightedAirportRef.current;
 
-                    // If an airport is selected and the clicked airport is different,
-                    // treat this click as selecting a destination airport
+                    if (selectedAirport && !currentHighlight) {
+                        console.log("Click action but no route was highlighted");
+                        return;
+                    }
+
                     if (
                         selectedAirport &&
                         currentHighlight?.properties?.IATA !== selectedAirport?.properties?.IATA
@@ -46,7 +46,7 @@ const AirportMarker = React.memo(({ airport, selectedAirport, setSelectedAirport
                 mouseover: (e) => {
                     e.target.openPopup();
                     highlightedAirportRef.current = airport;
-                    setHighlightedAirport(airport);
+                    updateHighlightedRoutes(airport);
                 },
 
                 mouseout: (e) => {
@@ -55,7 +55,7 @@ const AirportMarker = React.memo(({ airport, selectedAirport, setSelectedAirport
                         e.target.closePopup();
 
                         highlightedAirportRef.current = null;
-                        setHighlightedAirport(null);
+                        updateHighlightedRoutes(null);
 
                     }, 150);
                 },
@@ -64,7 +64,7 @@ const AirportMarker = React.memo(({ airport, selectedAirport, setSelectedAirport
         >
             {/* Popup content for airport */}
             <Popup
-                pane="popupPane"      // display in popup pane
+                pane="popupPane"
                 autoPan={false}
                 closeButton={false}
                 keepInView={true}

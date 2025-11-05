@@ -23,7 +23,6 @@ import "leaflet/dist/leaflet.css";
 // Fix Popups
 // Fix All selectedAirline functionality without selectedAirport
 // Fix smaller airports rendering on top
-// potentially remove all airports without a 3 digit IATA code
 // Fix Geodesic lines across the ocean
 
 // BUGS / Fixes
@@ -44,7 +43,6 @@ const MapComponent = () => {
   const [filteredAirlines, setFilteredAirlines] = useState([]);       // List of Airline maps
   const [selectedRoute, setSelectedRoute] = useState([]);             // List of [srcIATA, dstIATA], ex: ["GSO", "IAD"]
   const [showWelcome, setShowWelcome] = useState(false);              // Bool
-  const [highlightedAirport, setHighlightedAirport] = useState(null); // JSON Object seperate from selected Airport because you can hover over an airport but it's not the selected one 
   const [destinationAirport, setDestinationAirport] = useState(null); // JSON Object seperate from selected Airport and Highlighted Airport because it's now a Destination airport, used to draw a line from selected Airport
 
   // -------------------------
@@ -74,10 +72,11 @@ const MapComponent = () => {
   // Reference for a highlighted airport
   const highlightedAirportRef = useRef(null);
 
+  // TODO fix not really working
   const didInitFromURL = useRef(false);
 
-  // Leaflet canvas renderer
-  const canvasRendererRef = useRef(L.canvas({ padding: 0.5 }));
+  // Leaflet canvas renderer for routes and airports
+  const routesCanvasRendererRef = useRef(L.canvas({ padding: 0.5 }));
 
   // Default map position
   const DEFAULT_CENTER = [39.8283, -98.5795]; // center of continental US
@@ -213,7 +212,7 @@ const MapComponent = () => {
       const useGeodesic = distance > 1000;
       const line = useGeodesic
         ? L.geodesic(coords, { color: lineColor, weight: routesLength, opacity: 1.0, interactive: false })
-        : L.polyline(coords, { color: lineColor, weight: routesLength, opacity: 1.0, interactive: false, renderer: canvasRendererRef.current });
+        : L.polyline(coords, { color: lineColor, weight: routesLength, opacity: 1.0, interactive: false, renderer: routesCanvasRendererRef.current });
       line.featureProps = f.properties; // keep a reference
       lines.push(line);
     });
@@ -289,7 +288,7 @@ const MapComponent = () => {
       return;
     }
 
-    console.log("Updating route and airport visibility by airline:", selectedAirline);
+    console.log("Updating route and airport visibility");
 
     // Not just update routes but update airports too
     const visibleAirports = new Set();
@@ -336,76 +335,71 @@ const MapComponent = () => {
   // -------------------------
   // Highlight Arc if hovered over airport
   // -------------------------
-  useEffect(() => {
+  const updateHighlightedRoutes = (airport) => {
+
     const routesLayer = routesLayerRef.current;
     const highlightLayer = highlightLayerRef.current;
 
-    if (!routesLayer || routesLayer.getLayers().length === 0) return;
-    if (!routesLayer || !highlightLayer) return;
-    if (highlightLayer && selectedRoute) return;
+    // FIX
+    if (airport === null && highlightLayer) {
+      highlightLayer.clearLayers();
+      return;
+    }
+
+    // If no routes can't highlight any route
+    // If not airport nothing to highlight
+    // If selected route, return
+    if (!routesLayer || !airport || selectedRoute?.length === 2) return;
 
     // Clear previous highlights
     highlightLayer.clearLayers();
 
-    // Nothing highlighted → done
-    if (!highlightedAirport) return;
+    const highlightedIATA = airport.properties.IATA;
 
-    const highlightedIATA = highlightedAirport.properties.IATA;
+    console.log(`Highlighting Airport: ${highlightedIATA}`)
 
-    // Logic for if selectedAirport, only rendering to and from the selected airport
     if (selectedAirport) {
       const selectedIATA = selectedAirport.properties.IATA;
       const sameAirport = highlightedIATA === selectedIATA;
       routesLayer.eachLayer((l) => {
         const props = l.featureProps;
         if (!props) return;
-
-        const src = props.src_airport;
-        const dst = props.dst_airport;
-
+        const { src_airport: src, dst_airport: dst } = props;
         const isMatch = sameAirport
-          ? src === selectedIATA || dst === selectedIATA // highlight all routes from selectedAirport
+          ? src === selectedIATA || dst === selectedIATA
           : (src === selectedIATA && dst === highlightedIATA) ||
-          (dst === selectedIATA && src === highlightedIATA); // highlight only that pair
-
+          (dst === selectedIATA && src === highlightedIATA);
         if (isMatch) {
-          // draw a new SVG polyline on top
           const highlight = L.polyline(l.getLatLngs(), {
             color: "#004c97",
             weight: 4,
             opacity: 1.0,
             interactive: false,
-            renderer: L.svg(),       // ensure SVG, not canvas
+            renderer: L.svg(),
           });
           highlightLayer.addLayer(highlight);
         }
-
       });
-      // Logic for if there are multiple routes from all different airports, highlight only routes from the highlighted airport
     } else {
-
       routesLayer.eachLayer((l) => {
         const props = l.featureProps;
         if (!props) return;
-
-        // Get boolean, if highlighted airport matches any src/dst airport of route, isMatch is `true`
-        const isMatch = props.src_airport === highlightedIATA || props.dst_airport === highlightedIATA;
-
+        const isMatch =
+          props.src_airport === highlightedIATA ||
+          props.dst_airport === highlightedIATA;
         if (isMatch) {
-          // draw a new SVG polyline on top
           const highlight = L.polyline(l.getLatLngs(), {
             color: "#004c97",
             weight: 4,
             opacity: 1.0,
             interactive: false,
-            renderer: L.svg(),       // ensure SVG, not canvas
+            renderer: L.svg(),
           });
           highlightLayer.addLayer(highlight);
         }
       });
     }
-
-  }, [highlightedAirport]);
+  };
 
 
   useEffect(() => {
@@ -534,15 +528,6 @@ const MapComponent = () => {
     }
   }
 
-  // Change of highlighed airport
-  useEffect(() => {
-    const current = highlightedAirportRef.current;
-    console.log(`test ${current}`);
-    if (!current) return;
-    setHighlightedAirport(current);
-    console.log(`Current Highlighed Airport: ${current.properties.IATA}`);
-  }, []);
-
   // -------------------------
   // Render
   // -------------------------
@@ -586,9 +571,8 @@ const MapComponent = () => {
                 setSelectedAirport={setSelectedAirport}
                 setDestinationAirport={setDestinationAirport}
                 setSelectedRoute={setSelectedRoute}
-                selectedRoute={selectedRoute}
                 highlightedAirportRef={highlightedAirportRef}
-                setHighlightedAirport={setHighlightedAirport}
+                updateHighlightedRoutes={updateHighlightedRoutes}
               />
             ))}
         </Pane>

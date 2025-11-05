@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from datetime import datetime
 from typing import Literal, Tuple
 
 import boto3
@@ -134,23 +135,27 @@ def format_query(
     path: Literal["/routes", "/airlines", "/airports"],
     src_airport: str = None,
     airline_code: str = None,
+    month: int = None,
 ) -> str:
+    if not month:
+        month = datetime.now().month
+
     if path == "/routes":
-        base_query = "SELECT * FROM flights"
+        base_query = f"SELECT * FROM flights WHERE month = {month}"
         if src_airport:
-            return f"{base_query} WHERE src_airport = '{src_airport}'"
+            return f"{base_query} AND WHERE src_airport = '{src_airport}'"
         if airline_code:
-            return f"{base_query} WHERE airline_code = '{airline_code}'"
+            return f"{base_query} AND WHERE airline_code = '{airline_code}'"
 
     if path == "/airlines":
-        base_query = "SELECT * FROM airlines"
+        base_query = f"SELECT * FROM airlines WHERE MONTH = {month}"
         if airline_code:
-            return base_query + f" WHERE airline_code = '{airline_code}'"
+            return base_query + f" AND WHERE airline_code = '{airline_code}'"
         else:
             return base_query
 
     if path == "/airports":
-        return "SELECT * FROM airports"
+        return f"SELECT * FROM airports WHERE MONTH = {month}"
 
 
 def make_response(status_code: int, body_dict: dict) -> dict:
@@ -187,6 +192,22 @@ def lambda_handler(event, context) -> dict:
         path = event.get("rawPath")
         src_airport = clean_param(params.get("airport"), VALID_AIRPORT)
         airline_code = clean_param(params.get("airline_code"), VALID_AIRLINE)
+        month = params.get("month")
+
+        if month is None:
+            month = datetime.now().month
+        else:
+            try:
+                month = int(month)
+                if not (1 <= month <= 12):
+                    raise ValueError
+            except ValueError:
+                return make_response(
+                    status_code=400,
+                    body_dict={
+                        "error": "Invalid month. Must be an integer between 1 and 12"
+                    },
+                )
 
         # If no codes
         if not src_airport and not airline_code and path == "/routes":
@@ -201,7 +222,7 @@ def lambda_handler(event, context) -> dict:
 
         # Query params handling
         query = format_query(
-            path=path, src_airport=src_airport, airline_code=airline_code
+            path=path, src_airport=src_airport, airline_code=airline_code, month=month
         )
 
         # Create hash key for the query
@@ -243,9 +264,11 @@ def lambda_handler(event, context) -> dict:
                 # Return json
                 if path == "/airlines":
                     result_dict = {
-                        row["airline_code"]: "Delta Air Lines"
-                        if row["name"] == "Delta Connection"
-                        else row["name"]
+                        row["airline_code"]: (
+                            "Delta Air Lines"
+                            if row["name"] == "Delta Connection"
+                            else row["name"]
+                        )
                         for row in rows
                     }
 
