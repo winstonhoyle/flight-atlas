@@ -36,11 +36,13 @@ const OverlayPanel = ({
   const [isOpen, setIsOpen] = useState(true);
 
   // Get airports from store
-  const { airports, loaded, initData } = useFlightAtlasStore();
+  const { airports, initData } = useFlightAtlasStore();
 
+  // Re-fetch airports & airlines whenever the selected month changes
   useEffect(() => {
-    if (!loaded) initData();
-  }, [loaded, initData]);
+    console.log("Refetching airports for month:", selectedMonth);
+    initData(selectedMonth);
+  }, [selectedMonth, initData]);
 
   // Format Airports for Select combobox
   const selectAirportOptions = [{ value: "", label: "All Airports" },
@@ -227,7 +229,7 @@ const OverlayPanel = ({
                 gap: "6px",
                 textAlign: "left",
               }}>
-                
+
                 {/* Month selector */}
                 <label style={{ fontSize: "12px", color: "#666" }}>
                   Data snapshot month (month webscraped, not flight schedule):

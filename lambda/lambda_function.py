@@ -158,10 +158,12 @@ def format_query(
         if airline_code:
             return base_query + f" AND airline_code = '{airline_code}'"
         else:
-            return base_query
+            return base_query + " ORDER BY route_count DESC"
 
     if path == "/airports":
-        return f"SELECT * FROM airports WHERE month = {month}"
+        return (
+            f"SELECT * FROM airports WHERE month = {month} ORDER BY destinations DESC"
+        )
 
     if path == "/available_months":
         return "SELECT DISTINCT month, year from airlines"

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+//import { useNavigate, useParams } from "react-router-dom";
 import { MapContainer, TileLayer, Pane, FeatureGroup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet.geodesic";
@@ -20,9 +20,13 @@ import "leaflet/dist/leaflet.css";
 
 
 // ---- Known Issues ---- 
-// Fix url params after selected airport but with selected Airline /GSO/DL
-// Hover Radius
-// Changing the month does not effect destination numbers on airport
+// PRIORITY: 
+// Points on other side of arcs
+// Highlighted routes don't work if you hover over somewhere else
+
+// ---- Enhancements TODO ---- 
+// Building and Selecting from URL
+// Selecting Airport when Selected Airport event
 
 const MapComponent = () => {
   // -------------------------
@@ -36,14 +40,15 @@ const MapComponent = () => {
   const [showWelcome, setShowWelcome] = useState(false);              // Bool
   const [destinationAirport, setDestinationAirport] = useState(null); // JSON Object seperate from selected Airport and Highlighted Airport because it's now a Destination airport, used to draw a line from selected Airport
   const [selectedMonth, setSelectedMonth] = useState(
-    String(new Date().getMonth() + 1).padStart(2, "0")
-  );
+    String(new Date().getMonth() + 1));
 
   // -------------------------
   // Router vars
   // -------------------------
-  const navigate = useNavigate();
-  const { paramSelectAirportCode, subParam, paramAirlineCode } = useParams();
+
+  // TODO Fix params
+  //const navigate = useNavigate();
+  //const { paramSelectAirportCode, subParam, paramAirlineCode } = useParams();
 
   // Auto-show welcome page on first visit
   useEffect(() => {
@@ -67,10 +72,9 @@ const MapComponent = () => {
   const highlightedAirportRef = useRef(null);
 
   // TODO fix not really working
-  const didInitFromURL = useRef(false);
-
+  //const didInitFromURL = useRef(false);
   // Leaflet canvas renderer for routes and airports
-  const routesCanvasRendererRef = useRef(L.canvas({ padding: 0.5 }));
+  //const routesCanvasRendererRef = useRef(L.canvas({ padding: 0.5 }));
 
   // Default map position
   const DEFAULT_CENTER = [39.8283, -98.5795]; // center of continental US
@@ -83,9 +87,9 @@ const MapComponent = () => {
 
   useEffect(() => {
     if (!loaded) {
-      initData();
+      initData(selectedMonth);
     }
-  }, [loaded, initData]);
+  }, [selectedMonth, loaded, initData]);
 
   // -------------------------
   // Load flight routes for the selected airport
@@ -97,6 +101,8 @@ const MapComponent = () => {
   // -------------------------
   const { months, loading: monthsLoading, error: monthsError } = useMonths();
 
+  // TODO FIX URL PARAMS
+  /*
   // -------------------------
   // Sync URL when selections change
   // -------------------------
@@ -122,8 +128,18 @@ const MapComponent = () => {
   // Auto-select based on URL params
   // -------------------------
   useEffect(() => {
-    if (didInitFromURL.current) return;
-    if (!loaded || !airports?.length) return;
+    console.log("Auto-select triggered");
+    console.log("didInitFromURL:", didInitFromURL.current);
+    console.log("loaded:", loaded);
+    console.log("airports length:", airports?.length || 0);
+
+    // Only run once
+    //if (didInitFromURL.current) return;
+
+    // Wait until data is actually loaded AND airports are available
+    if (!loaded || !airports || !airports.length) return;
+
+    console.log("Auto-select continue");
 
     // --- Handle Airline-only route ---
     if (paramAirlineCode) {
@@ -141,9 +157,11 @@ const MapComponent = () => {
     // --- Handle Airport selection ---
     if (paramSelectAirportCode) {
       const code = paramSelectAirportCode.toUpperCase();
-      const airport = airports.find(a => a.properties.IATA === code);
+      const airport = airports.find((a) => a.properties.IATA === code);
       if (airport) {
-        console.log(`Found Destination Airport ${airport.properties.IATA} from URL Path`);
+        console.log(
+          `Found Destination Airport ${airport.properties.IATA} from URL Path`
+        );
         setSelectedAirport(airport);
       }
     }
@@ -153,9 +171,11 @@ const MapComponent = () => {
       const code = subParam.toUpperCase();
 
       if (code.length === 3) {
-        const destAirport = airports.find(a => a.properties.IATA === code);
+        const destAirport = airports.find((a) => a.properties.IATA === code);
         if (destAirport) {
-          console.log(`Found Destination Airport ${destAirport.properties.IATA} from URL Path`);
+          console.log(
+            `Found Destination Airport ${destAirport.properties.IATA} from URL Path`
+          );
           setDestinationAirport(destAirport);
           setSelectedAirline("");
           didInitFromURL.current = true;
@@ -176,7 +196,34 @@ const MapComponent = () => {
     setDestinationAirport(null);
     setSelectedAirline("");
     didInitFromURL.current = true;
-  }, [loaded, airports, airlines, paramSelectAirportCode, subParam, paramAirlineCode]);
+  }, [loaded, airports, airlines, paramSelectAirportCode, subParam,paramAirlineCode]);
+
+  */
+
+  // Draw Lines Function
+  const drawLine = (coords, useGeodesic, lineWeight) => {
+    const lineColor = "#64b5f7ff";
+
+    if (useGeodesic) {
+      return L.geodesic(coords, {
+        color: lineColor,
+        weight: lineWeight,
+        opacity: 1.0,
+        interactive: false,
+        wrap: false,
+      });
+    }
+
+    // regular polyline can take LatLng objects directly
+    return L.polyline(coords, {
+      color: lineColor,
+      weight: lineWeight,
+      opacity: 1.0,
+      interactive: false,
+      renderer: L.svg(),
+    });
+  };
+
 
   // -------------------------
   // Drawing routes and filtering airports, showing only airports that the routes go to
@@ -198,22 +245,42 @@ const MapComponent = () => {
     // Line vars
     // if more than 200 routes, thinner line
     const routesLength = (routes.features.length > 200) ? 1 : 2
-    const lineColor = "#64b5f7ff";
 
     routes.features.forEach((f) => {
-      const coords = f.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-      // Draw polylines for preformance, geodesic for long routes
+      const rawCoords = f.geometry.coordinates;
+
+      // Convert to L.LatLng objects (lat, lng)
+      const coords = rawCoords.map(([lng, lat]) => [lat, lng]);
+
+      const src = coords[0];                      // [lat, lng]
+      const dst = coords[coords.length - 1];      // [lat, lng]
+
+      // Distance in miles (for future use if you want thresholds)
       const distance = turf.distance(
-        turf.point([coords[0][1], coords[0][0]]),
-        turf.point([coords[coords.length - 1][1], coords[coords.length - 1][0]]),
+        turf.point([src[1], src[0]]),            // [lng, lat]
+        turf.point([dst[1], dst[0]]),
         { units: "miles" }
       );
+
       const useGeodesic = distance > 1000;
-      const line = useGeodesic
-        ? L.geodesic(coords, { color: lineColor, weight: routesLength, opacity: 1.0, interactive: false })
-        : L.polyline(coords, { color: lineColor, weight: routesLength, opacity: 1.0, interactive: false, renderer: routesCanvasRendererRef.current });
-      line.featureProps = f.properties; // keep a reference
-      lines.push(line);
+
+      // Main line
+      const mainLine = drawLine(coords, useGeodesic, routesLength);
+      mainLine.featureProps = f.properties;
+      lines.push(mainLine);
+
+      // Antimeridian check — use longitudes from coords
+      const deltaLng = dst[1] - src[1];           // lng2 - lng1
+      if (Math.abs(deltaLng) > 180) {
+        const shift = Math.sign(deltaLng) * 360;
+
+        // Shift all points, not just endpoints
+        const shiftedCoords = coords.map(([lat, lng]) => [lat, lng + shift]);
+
+        const shiftedLine = drawLine(shiftedCoords, useGeodesic, routesLength);
+        shiftedLine.featureProps = f.properties;
+        lines.push(shiftedLine);
+      }
     });
 
     // Add all lines at one moment
@@ -271,7 +338,7 @@ const MapComponent = () => {
   }, [routes]);
 
   // -------------------------
-  // Update visibility when airline changes
+  // Update Routes when airline changes
   // -------------------------
   useEffect(() => {
 
@@ -329,7 +396,7 @@ const MapComponent = () => {
       }
     }
 
-  }, [selectedAirline, routes]);
+  }, [selectedAirline, routes, selectedAirport]); // TODO REMOVE `selectedAirport` I am testing selecting and airport is selectAirline is defined
 
   // -------------------------
   // Highlight Arc if hovered over airport
@@ -339,7 +406,10 @@ const MapComponent = () => {
     const routesLayer = routesLayerRef.current;
     const highlightLayer = highlightLayerRef.current;
 
-    // FIX
+    // If Selected route, return only highlight selected route
+    if (selectedRoute && selectedRoute.length === 2) return;
+
+    // FIX TODO
     if (airport === null && highlightLayer) {
       highlightLayer.clearLayers();
       return;
@@ -400,7 +470,6 @@ const MapComponent = () => {
     }
   };
 
-
   useEffect(() => {
 
     // If no selectedRoute, skip
@@ -452,7 +521,7 @@ const MapComponent = () => {
       if (bounds.isValid()) mapRef.current.fitBounds(bounds, { padding: [30, 30] });
     }
 
-  }, [selectedRoute])
+  }, [selectedRoute]);
 
   // -------------------------
   // HandleBack
@@ -559,17 +628,17 @@ const MapComponent = () => {
         />
 
         {/* Routes */}
-        <Pane name="routesPane" style={{ zIndex: 400 }}>
+        <Pane name="routesPane">
           <FeatureGroup ref={routesLayerRef} />
         </Pane>
 
         {/* Highlighted Routes */}
-        <Pane name="highlightPane" style={{ zIndex: 450 }}>
+        <Pane name="highlightPane">
           <FeatureGroup ref={highlightLayerRef} />
         </Pane>
 
         {/* Airports */}
-        <Pane name="airportsPane" style={{ zIndex: 500 }}>
+        <Pane name="airportsPane">
           {console.log("Rendering Airports")}
           {(filteredAirports.length ? filteredAirports : airports || [])
             .slice()
@@ -582,11 +651,15 @@ const MapComponent = () => {
                 setSelectedAirport={setSelectedAirport}
                 setDestinationAirport={setDestinationAirport}
                 setSelectedRoute={setSelectedRoute}
+                selectedAirline={selectedAirline}
                 highlightedAirportRef={highlightedAirportRef}
                 updateHighlightedRoutes={updateHighlightedRoutes}
               />
             ))}
         </Pane>
+
+        {/* Empty pane just to register it with Leaflet */}
+        <Pane name="airportTooltipPane" />
 
         {/* Legend */}
         <Legend />

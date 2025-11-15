@@ -1,87 +1,89 @@
 import React from "react";
-import { CircleMarker, Popup } from "react-leaflet";
+import { CircleMarker, Tooltip } from "react-leaflet";
 import { getColorByDestinations } from "../utils/colorUtils";
 
-const AirportMarker = React.memo(({ airport, selectedAirport, setSelectedAirport, setDestinationAirport, setSelectedRoute, highlightedAirportRef, updateHighlightedRoutes }) => {
+const AirportMarker = React.memo(({ airport, selectedAirport, setSelectedAirport, setDestinationAirport, setSelectedRoute, selectedAirline, highlightedAirportRef, updateHighlightedRoutes }) => {
     const [lng, lat] = airport.geometry.coordinates;
     const destinations = airport.properties.destinations || 0;
     const color = getColorByDestinations(destinations);
 
     return (
-        <CircleMarker
-            key={airport.properties.IATA}
-            center={[lat, lng]}
-            radius={3 + Math.min(destinations / 20, 4)}
-            pathOptions={{ color: "#000", fillColor: color, fillOpacity: 1, weight: 0.5 }}
-            interactive={true}
-            eventHandlers={{
-                click: () => {
-                    const currentHighlight = highlightedAirportRef.current;
+        <>
+            {/* Visible marker */}
+            <CircleMarker
+                key={`${airport.properties.IATA}-visible`}
+                center={[lat, lng]}
+                radius={3 + Math.min(destinations / 20, 4)}
+                pathOptions={{ color: "#000", fillColor: color, fillOpacity: 1, weight: 0.5 }}
+                interactive={false}
+            >
+            </CircleMarker>
 
-                    if (selectedAirport && !currentHighlight) {
-                        console.log("Click action but no route was highlighted");
-                        return;
-                    }
+            {/* Invisible marker */}
+            <CircleMarker
+                key={`${airport.properties.IATA}-invisible`}
+                center={[lat, lng]}
+                radius={10}
+                pathOptions={{ color: "#000", fillColor: "#00bfd8ff", fillOpacity: 0.0, weight: 0.0 }}
+                interactive={true}
+                eventHandlers={{
+                    click: () => {
+                        const currentHighlight = highlightedAirportRef.current;
 
-                    if (
-                        selectedAirport &&
-                        currentHighlight?.properties?.IATA !== selectedAirport?.properties?.IATA
-                    ) {
-                        console.log("Selecting a Destination Airport");
-                        setDestinationAirport(airport);
-                        setSelectedRoute([
-                            selectedAirport.properties.IATA,
-                            currentHighlight.properties.IATA,
-                        ]);
-                        return;
-                    }
+                        if (selectedAirport && !currentHighlight) {
+                            console.log("Click action but no route was highlighted");
+                            return;
+                        }
 
-                    // If no airport is selected yet, treat this click as selecting a new origin airport
-                    if (!selectedAirport) {
-                        console.log("Selecting an Airport");
-                        setSelectedAirport(airport);
-                    }
-                },
+                        if (
+                            selectedAirport &&
+                            currentHighlight?.properties?.IATA !== selectedAirport?.properties?.IATA
+                        ) {
+                            console.log("Selecting a Destination Airport");
+                            setDestinationAirport(airport);
+                            setSelectedRoute([
+                                selectedAirport.properties.IATA,
+                                currentHighlight.properties.IATA,
+                            ]);
+                            return;
+                        }
 
-                mouseover: (e) => {
-                    e.target.openPopup();
-                    highlightedAirportRef.current = airport;
-                    updateHighlightedRoutes(airport);
-                },
+                        // If no airport is selected yet, if there isn't a selected airport. Treat this click as selecting a new origin airport
+                        if (!selectedAirline && !selectedAirport) {
+                            console.log("Selecting an Airport");
+                            setSelectedAirport(airport);
+                        }
+                    },
 
-                mouseout: (e) => {
-                    clearTimeout(e.target.closeTimer);
-                    e.target.closeTimer = setTimeout(() => {
-                        e.target.closePopup();
-
+                    mouseover: () => {
+                        highlightedAirportRef.current = airport;
+                        updateHighlightedRoutes(airport);
+                    },
+                    mouseout: () => {
                         highlightedAirportRef.current = null;
                         updateHighlightedRoutes(null);
-
-                    }, 150);
-                },
-            }}
-
-        >
-            {/* Popup content for airport */}
-            <Popup
-                pane="popupPane"
-                autoPan={false}
-                closeButton={false}
-                keepInView={true}
-                className="airport-popup"
-            >
-                <div style={{
-                    textAlign: "center",
-                    pointerEvents: "none",
+                    },
                 }}>
-                    <strong>{airport.properties.Name}</strong>
-                    <br />
-                    IATA: {airport.properties.IATA}
-                    <br />
-                    Destinations: {airport.properties.destinations || 0}
-                </div>
-            </Popup>
-        </CircleMarker>
+
+                {/* Popup content for airport */}
+                <Tooltip
+                    pane="airportTooltipPane"
+                    direction="top"
+                    offset={[0, -6]}
+                    opacity={1}
+                    sticky={true}
+                    className="airport-tooltip"
+                >
+                    <div style={{ textAlign: "center", pointerEvents: "none" }}>
+                        <strong>{airport.properties.Name}</strong>
+                        <br />
+                        IATA: {airport.properties.IATA}
+                        <br />
+                        Destinations: {airport.properties.destinations || 0}
+                    </div>
+                </Tooltip>
+            </CircleMarker>
+        </>
     );
 });
 

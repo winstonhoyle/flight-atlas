@@ -49,12 +49,15 @@ export const fetchAirlines = async () => {
     return cleaned; // return an object, not an array
 };
 
-export const fetchAirports = async () => {
-    const data = await retryFetch(
-        () => fetchJSON("/airports"),
-        isAirportsSchema
-    );
-    return data.features;
+export const fetchAirports = async (month) => {
+  const query = month ? `?month=${encodeURIComponent(month)}` : "";
+
+  const data = await retryFetch(
+    () => fetchJSON(`/airports${query}`),
+    isAirportsSchema
+  );
+
+  return data.features;
 };
 
 export const fetchRoutes = async ({ airportIata, airlineCode, month } = {}) => {
