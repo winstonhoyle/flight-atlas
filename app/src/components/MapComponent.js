@@ -22,7 +22,7 @@ import "leaflet/dist/leaflet.css";
 // ---- Known Issues ---- 
 // PRIORITY: 
 // Points on other side of arcs
-// Highlighted routes don't work if you hover over somewhere else
+// Highlighted routes don't work if you hover over somewhere else -- Fixed?
 
 // ---- Enhancements TODO ---- 
 // Building and Selecting from URL
@@ -246,6 +246,9 @@ const MapComponent = () => {
     // if more than 200 routes, thinner line
     const routesLength = (routes.features.length > 200) ? 1 : 2
 
+    // We'll track bounds only for the primary (non-world-copy) lines
+    let primaryBounds = null;
+
     routes.features.forEach((f) => {
       const rawCoords = f.geometry.coordinates;
 
@@ -264,32 +267,72 @@ const MapComponent = () => {
 
       const useGeodesic = distance > 1000;
 
-      // Main line
+      // -------------------------
+      // 1) Main (primary) line
+      // -------------------------
       const mainLine = drawLine(coords, useGeodesic, routesLength);
       mainLine.featureProps = f.properties;
       lines.push(mainLine);
 
-      // Antimeridian check — use longitudes from coords
-      const deltaLng = dst[1] - src[1];           // lng2 - lng1
+
+      // Extend bounds only with the primary line
+      const lineBounds = mainLine.getBounds();
+      if (lineBounds.isValid()) {
+        primaryBounds = primaryBounds ? primaryBounds.extend(lineBounds) : lineBounds;
+      }
+
+      // -------------------------
+      // 2) World copy at +360°
+      // -------------------------
+      const coordsPlus360 = coords.map(([lat, lng]) => [lat, lng + 360]);
+      const mainLinePlus360 = drawLine(coordsPlus360, useGeodesic, routesLength);
+      mainLinePlus360.featureProps = f.properties;
+      lines.push(mainLinePlus360);
+
+      // -------------------------
+      // 3) World copy at -360°
+      // -------------------------
+      const coordsMinus360 = coords.map(([lat, lng]) => [lat, lng - 360]);
+      const mainLineMinus360 = drawLine(coordsMinus360, useGeodesic, routesLength);
+      mainLineMinus360.featureProps = f.properties;
+      lines.push(mainLineMinus360);
+
+
+      // -------------------------
+      // 3) Extra copies for routes crossing the antimeridian
+      // -------------------------
+      /*const deltaLng = dst[1] - src[1]; // lng2 - lng1
       if (Math.abs(deltaLng) > 180) {
         const shift = Math.sign(deltaLng) * 360;
 
-        // Shift all points, not just endpoints
+        // Shift all points (so the route is drawn the "other way" around the globe)
         const shiftedCoords = coords.map(([lat, lng]) => [lat, lng + shift]);
 
         const shiftedLine = drawLine(shiftedCoords, useGeodesic, routesLength);
         shiftedLine.featureProps = f.properties;
         lines.push(shiftedLine);
-      }
+
+        // Also add a +360° world copy of the shifted line (to the right)
+        const shiftedCoordsPlus360 = shiftedCoords.map(([lat, lng]) => [
+          lat,
+          lng + 360,
+        ]);
+        const shiftedLinePlus360 = drawLine(
+          shiftedCoordsPlus360,
+          useGeodesic,
+          routesLength
+        );
+        shiftedLinePlus360.featureProps = f.properties;
+        lines.push(shiftedLinePlus360);
+      }*/
     });
 
     // Add all lines at one moment
     lines.forEach(l => layer.addLayer(l));
 
-    // Zoom to bounds
-    if (mapRef.current) {
-      const bounds = layer.getBounds();
-      if (bounds.isValid()) mapRef.current.fitBounds(bounds, { padding: [15, 15] });
+    // Zoom to bounds of primary routes only
+    if (mapRef.current && primaryBounds && primaryBounds.isValid()) {
+      mapRef.current.fitBounds(primaryBounds, { padding: [15, 15] });
     }
 
     // --- Filter airports ---
