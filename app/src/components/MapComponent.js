@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-//import { useNavigate, useParams } from "react-router-dom";
 import { MapContainer, TileLayer, Pane, FeatureGroup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet.geodesic";
@@ -46,10 +45,6 @@ const MapComponent = () => {
   // Router vars
   // -------------------------
 
-  // TODO Fix params
-  //const navigate = useNavigate();
-  //const { paramSelectAirportCode, subParam, paramAirlineCode } = useParams();
-
   // Auto-show welcome page on first visit
   useEffect(() => {
     const hasVisited = localStorage.getItem("hasVisited");
@@ -70,11 +65,6 @@ const MapComponent = () => {
 
   // Reference for a highlighted airport
   const highlightedAirportRef = useRef(null);
-
-  // TODO fix not really working
-  //const didInitFromURL = useRef(false);
-  // Leaflet canvas renderer for routes and airports
-  //const routesCanvasRendererRef = useRef(L.canvas({ padding: 0.5 }));
 
   // Default map position
   const DEFAULT_CENTER = [39.8283, -98.5795]; // center of continental US
@@ -101,106 +91,14 @@ const MapComponent = () => {
   // -------------------------
   const { months, loading: monthsLoading, error: monthsError } = useMonths();
 
-  // TODO FIX URL PARAMS
-  /*
-  // -------------------------
-  // Sync URL when selections change
-  // -------------------------
-  useEffect(() => {
-    let path = "/";
-
-    if (selectedAirline && !selectedAirport) {
-      // Airline-only view
-      path = `/airline/${selectedAirline}`;
-    } else if (selectedAirport) {
-      path = `/${selectedAirport.properties.IATA}`;
-      if (destinationAirport) path += `/${destinationAirport.properties.IATA}`;
-      else if (selectedAirline) path += `/${selectedAirline}`;
-    }
-
-    const currentPath = window.location.pathname;
-    if (currentPath !== path) {
-      navigate(path, { replace: true });
-    }
-  }, [selectedAirport, destinationAirport, selectedAirline, navigate]);
+  const routeRenderer = useMemo(
+    () => L.canvas({ padding: 0.5 }), // a bit of padding helps with world copies
+    []
+  );
 
   // -------------------------
-  // Auto-select based on URL params
+  // Draw lines function
   // -------------------------
-  useEffect(() => {
-    console.log("Auto-select triggered");
-    console.log("didInitFromURL:", didInitFromURL.current);
-    console.log("loaded:", loaded);
-    console.log("airports length:", airports?.length || 0);
-
-    // Only run once
-    //if (didInitFromURL.current) return;
-
-    // Wait until data is actually loaded AND airports are available
-    if (!loaded || !airports || !airports.length) return;
-
-    console.log("Auto-select continue");
-
-    // --- Handle Airline-only route ---
-    if (paramAirlineCode) {
-      const code = paramAirlineCode.toUpperCase();
-      if (airlines[code]) {
-        console.log(`Found Airline ${airlines[code]} (${code}) from URL Path`);
-        setSelectedAirport(null);
-        setDestinationAirport(null);
-        setSelectedAirline(code);
-      }
-      didInitFromURL.current = true;
-      return;
-    }
-
-    // --- Handle Airport selection ---
-    if (paramSelectAirportCode) {
-      const code = paramSelectAirportCode.toUpperCase();
-      const airport = airports.find((a) => a.properties.IATA === code);
-      if (airport) {
-        console.log(
-          `Found Destination Airport ${airport.properties.IATA} from URL Path`
-        );
-        setSelectedAirport(airport);
-      }
-    }
-
-    // --- Handle subParam (destination or airline) ---
-    if (subParam) {
-      const code = subParam.toUpperCase();
-
-      if (code.length === 3) {
-        const destAirport = airports.find((a) => a.properties.IATA === code);
-        if (destAirport) {
-          console.log(
-            `Found Destination Airport ${destAirport.properties.IATA} from URL Path`
-          );
-          setDestinationAirport(destAirport);
-          setSelectedAirline("");
-          didInitFromURL.current = true;
-          return;
-        }
-      }
-
-      if (code.length === 2 && airlines[code]) {
-        console.log(`Found Airline ${airlines[code]} (${code}) from URL Path`);
-        setSelectedAirline(code);
-        setDestinationAirport(null);
-        didInitFromURL.current = true;
-        return;
-      }
-    }
-
-    // Fallback
-    setDestinationAirport(null);
-    setSelectedAirline("");
-    didInitFromURL.current = true;
-  }, [loaded, airports, airlines, paramSelectAirportCode, subParam,paramAirlineCode]);
-
-  */
-
-  // Draw Lines Function
   const drawLine = (coords, useGeodesic, lineWeight) => {
     const lineColor = "#64b5f7ff";
 
@@ -211,6 +109,7 @@ const MapComponent = () => {
         opacity: 1.0,
         interactive: false,
         wrap: false,
+        //renderer: routeRenderer,
       });
     }
 
@@ -220,10 +119,26 @@ const MapComponent = () => {
       weight: lineWeight,
       opacity: 1.0,
       interactive: false,
-      renderer: L.svg(),
+      renderer: routeRenderer,
     });
   };
 
+  // -------------------------
+  // Function to render build variations of routes
+  // -------------------------
+  function buildWorldRouteVariants(coords) {
+    const variants = [];
+
+    // Primary coords
+    variants.push(coords);
+
+    // World copies left/right
+    const plus360 = coords.map(([lat, lng]) => [lat, lng + 360]);
+    const minus360 = coords.map(([lat, lng]) => [lat, lng - 360]);
+    variants.push(plus360, minus360);
+
+    return variants;
+  }
 
   // -------------------------
   // Drawing routes and filtering airports, showing only airports that the routes go to
@@ -267,64 +182,22 @@ const MapComponent = () => {
 
       const useGeodesic = distance > 1000;
 
-      // -------------------------
-      // 1) Main (primary) line
-      // -------------------------
-      const mainLine = drawLine(coords, useGeodesic, routesLength);
-      mainLine.featureProps = f.properties;
-      lines.push(mainLine);
+      // Build all variants: base, ±360, and any antimeridian-wrapped variants
+      const variants = buildWorldRouteVariants(coords);
 
+      variants.forEach((variantCoords, idx) => {
+        const line = drawLine(variantCoords, useGeodesic, routesLength);
+        line.featureProps = f.properties;
+        lines.push(line);
 
-      // Extend bounds only with the primary line
-      const lineBounds = mainLine.getBounds();
-      if (lineBounds.isValid()) {
-        primaryBounds = primaryBounds ? primaryBounds.extend(lineBounds) : lineBounds;
-      }
-
-      // -------------------------
-      // 2) World copy at +360°
-      // -------------------------
-      const coordsPlus360 = coords.map(([lat, lng]) => [lat, lng + 360]);
-      const mainLinePlus360 = drawLine(coordsPlus360, useGeodesic, routesLength);
-      mainLinePlus360.featureProps = f.properties;
-      lines.push(mainLinePlus360);
-
-      // -------------------------
-      // 3) World copy at -360°
-      // -------------------------
-      const coordsMinus360 = coords.map(([lat, lng]) => [lat, lng - 360]);
-      const mainLineMinus360 = drawLine(coordsMinus360, useGeodesic, routesLength);
-      mainLineMinus360.featureProps = f.properties;
-      lines.push(mainLineMinus360);
-
-
-      // -------------------------
-      // 3) Extra copies for routes crossing the antimeridian
-      // -------------------------
-      /*const deltaLng = dst[1] - src[1]; // lng2 - lng1
-      if (Math.abs(deltaLng) > 180) {
-        const shift = Math.sign(deltaLng) * 360;
-
-        // Shift all points (so the route is drawn the "other way" around the globe)
-        const shiftedCoords = coords.map(([lat, lng]) => [lat, lng + shift]);
-
-        const shiftedLine = drawLine(shiftedCoords, useGeodesic, routesLength);
-        shiftedLine.featureProps = f.properties;
-        lines.push(shiftedLine);
-
-        // Also add a +360° world copy of the shifted line (to the right)
-        const shiftedCoordsPlus360 = shiftedCoords.map(([lat, lng]) => [
-          lat,
-          lng + 360,
-        ]);
-        const shiftedLinePlus360 = drawLine(
-          shiftedCoordsPlus360,
-          useGeodesic,
-          routesLength
-        );
-        shiftedLinePlus360.featureProps = f.properties;
-        lines.push(shiftedLinePlus360);
-      }*/
+        // Only the first variant (base) contributes to bounds
+        if (idx === 0) {
+          const b = line.getBounds();
+          if (b.isValid()) {
+            primaryBounds = primaryBounds ? primaryBounds.extend(b) : b;
+          }
+        }
+      });
     });
 
     // Add all lines at one moment
