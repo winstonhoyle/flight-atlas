@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from datetime import datetime
 from typing import Literal, Tuple
 
 import boto3
@@ -78,6 +79,9 @@ def build_point_geojson(rows: list):
             geom = row["geometry"].replace("POINT (", "").replace(")", "")
             lon, lat = map(float, geom.split())
             point = geojson.Point((lon, lat))
+            iata = row["iata"]
+            if len(iata) != 3:
+                continue
             feature = geojson.Feature(
                 geometry=point,
                 properties={
@@ -105,6 +109,12 @@ def build_line_geojson(
             if airline_code and row.get("airline_code") != airline_code:
                 continue
 
+            # Skip if src_airport or dst_airport is not exactly 3 characters
+            src_airport = row.get("src_airport", "")
+            dst_airport = row.get("dst_airport", "")
+            if len(src_airport) != 3 or len(dst_airport) != 3:
+                continue
+
             dst_geom = row["dst_geometry"].replace("POINT (", "").replace(")", "")
             src_geom = row["src_geometry"].replace("POINT (", "").replace(")", "")
             dst_lon, dst_lat = map(float, dst_geom.split())
@@ -116,8 +126,8 @@ def build_line_geojson(
                 geometry=line,
                 properties={
                     "airline_code": row["airline_code"],
-                    "src_airport": row["src_airport"],
-                    "dst_airport": row["dst_airport"],
+                    "src_airport": src_airport,
+                    "dst_airport": dst_airport,
                 },
             )
             features.append(feature)
@@ -128,26 +138,35 @@ def build_line_geojson(
 
 
 def format_query(
-    path: Literal["/routes", "/airlines", "/airports"],
+    path: Literal["/routes", "/airlines", "/airports", "/available_months"],
     src_airport: str = None,
     airline_code: str = None,
+    month: int = None,
 ) -> str:
+    if not month:
+        month = datetime.now().month
+
     if path == "/routes":
-        base_query = "SELECT * FROM flights"
+        base_query = f"SELECT * FROM flights WHERE month = {month}"
         if src_airport:
-            return f"{base_query} WHERE src_airport = '{src_airport}'"
+            return f"{base_query} AND src_airport = '{src_airport}'"
         if airline_code:
-            return f"{base_query} WHERE airline_code = '{airline_code}'"
+            return f"{base_query} AND airline_code = '{airline_code}'"
 
     if path == "/airlines":
-        base_query = "SELECT * FROM airlines"
+        base_query = f"SELECT * FROM airlines WHERE month = {month}"
         if airline_code:
-            return base_query + f" WHERE airline_code = '{airline_code}'"
+            return base_query + f" AND airline_code = '{airline_code}'"
         else:
-            return base_query
+            return base_query + " ORDER BY route_count DESC"
 
     if path == "/airports":
-        return "SELECT * FROM airports"
+        return (
+            f"SELECT * FROM airports WHERE month = {month} ORDER BY destinations DESC"
+        )
+
+    if path == "/available_months":
+        return "SELECT DISTINCT month, year from airlines"
 
 
 def make_response(status_code: int, body_dict: dict) -> dict:
@@ -184,6 +203,22 @@ def lambda_handler(event, context) -> dict:
         path = event.get("rawPath")
         src_airport = clean_param(params.get("airport"), VALID_AIRPORT)
         airline_code = clean_param(params.get("airline_code"), VALID_AIRLINE)
+        month = params.get("month")
+
+        if month is None:
+            month = datetime.now().month
+        else:
+            try:
+                month = int(month)
+                if not (1 <= month <= 12):
+                    raise ValueError
+            except ValueError:
+                return make_response(
+                    status_code=400,
+                    body_dict={
+                        "error": "Invalid month. Must be an integer between 1 and 12"
+                    },
+                )
 
         # If no codes
         if not src_airport and not airline_code and path == "/routes":
@@ -198,7 +233,7 @@ def lambda_handler(event, context) -> dict:
 
         # Query params handling
         query = format_query(
-            path=path, src_airport=src_airport, airline_code=airline_code
+            path=path, src_airport=src_airport, airline_code=airline_code, month=month
         )
 
         # Create hash key for the query
@@ -240,15 +275,20 @@ def lambda_handler(event, context) -> dict:
                 # Return json
                 if path == "/airlines":
                     result_dict = {
-                        row["airline_code"]: "Delta Air Lines"
-                        if row["name"] == "Delta Connection"
-                        else row["name"]
+                        row["airline_code"]: (
+                            "Delta Air Lines"
+                            if row["name"] == "Delta Connection"
+                            else row["name"]
+                        )
                         for row in rows
                     }
 
                 # Return points geojson
                 if path == "/airports":
                     result_dict = build_point_geojson(rows)
+
+                if path == "/available_months":
+                    return make_response(status_code=200, body_dict=rows)
 
                 # Return data
                 return make_response(status_code=200, body_dict=result_dict)

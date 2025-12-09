@@ -8,14 +8,12 @@ import { fetchRoutes } from "../services/api";
  *  - a selected airline (returns all routes operated by that airline).
  *
  * Returns both the current `routes` (which can be filtered)
- * and `allRoutes` (the full dataset), along with loading and error state.
  */
-export const useRoutes = (selectedAirport, selectedAirline) => {
+export const useRoutes = (selectedAirport, selectedAirline, selectedMonth) => {
   // -------------------------
   // Local state
   // -------------------------
   const [routes, setRoutes] = useState(null);        // filtered routes shown on map
-  const [allRoutes, setAllRoutes] = useState(null);  // all fetched routes (unfiltered)
   const [loading, setLoading] = useState(false);     // loading spinner indicator
   const [error, setError] = useState(null);          // error message if fetch fails
 
@@ -28,10 +26,12 @@ export const useRoutes = (selectedAirport, selectedAirline) => {
     // -------------------------
     // If neither an airport nor an airline is selected, clear routes and return early.
     if (!selectedAirport && !selectedAirline) {
-      setAllRoutes(null);
       setRoutes(null);
       return;
     }
+
+    // If selected airport and selected airline, return nothing, no need to handle this request
+    if (selectedAirport && selectedAirline) {return;}
 
     // -------------------------
     // Async fetch function
@@ -52,11 +52,11 @@ export const useRoutes = (selectedAirport, selectedAirline) => {
 
           // Fetch routes for a specific airport using its IATA code
           const iata = selectedAirport.properties.IATA;
-          data = await fetchRoutes({ airportIata: iata }, controller.signal);
+          data = await fetchRoutes({ airportIata: iata, month: selectedMonth }, controller.signal);
         } else if (selectedAirline) {
 
           // Fetch routes for a specific airline using its code
-          data = await fetchRoutes({ airlineCode: selectedAirline }, controller.signal);
+          data = await fetchRoutes({ airlineCode: selectedAirline, month: selectedMonth }, controller.signal);
         }
 
         // If API returned nothing (null or empty)
@@ -69,7 +69,6 @@ export const useRoutes = (selectedAirport, selectedAirline) => {
         const geojson = data.features ? data : { type: "FeatureCollection", features: data };
 
         // Save both full and filtered copies of route data
-        setAllRoutes(geojson);
         setRoutes(geojson);
       } catch (err) {
 
@@ -88,7 +87,7 @@ export const useRoutes = (selectedAirport, selectedAirline) => {
     // Cleanup: abort ongoing fetch when component unmounts or dependencies change
     return () => abortControllerRef.current?.abort();
 
-  }, [selectedAirport, selectedAirline]); // re-run whenever either selection changes
+  }, [selectedAirport, selectedAirline, selectedMonth]); // re-run whenever either selection changes
 
-  return { routes, allRoutes, setRoutes, setAllRoutes, loading, error };
+  return { routes, loading, error };
 };

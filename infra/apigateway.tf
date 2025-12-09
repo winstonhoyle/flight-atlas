@@ -35,12 +35,20 @@ resource "aws_apigatewayv2_route" "airports" {
   target    = "integrations/${aws_apigatewayv2_integration.flights_integration.id}"
 }
 
+resource "aws_apigatewayv2_route" "available_months" {
+  api_id    = aws_apigatewayv2_api.flights_api.id
+  route_key = "GET /available_months"
+  target    = "integrations/${aws_apigatewayv2_integration.flights_integration.id}"
+}
+
 resource "aws_apigatewayv2_deployment" "flights_deployment" {
   api_id = aws_apigatewayv2_api.flights_api.id
 
   depends_on = [
     aws_apigatewayv2_route.routes,
     aws_apigatewayv2_route.airlines,
+    aws_apigatewayv2_route.airports,
+    aws_apigatewayv2_route.available_months,
     aws_apigatewayv2_integration.flights_integration
   ]
 }

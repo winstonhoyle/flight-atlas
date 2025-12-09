@@ -3,47 +3,53 @@ import { persist } from "zustand/middleware";
 
 import { fetchAirports, fetchAirlines } from "../services/api";
 
-// Create a global store using zustand
 export const useFlightAtlasStore = create(
     persist(
-        (set, get) => ({
-            airports: [],    // Array to hold all airport data
-            airlines: [],    // Array to hold all airline data
-            loaded: false,   // Flag indicating whether the data has been loaded
-            error: null,     // Store any error messages from API calls
+        (set) => ({
+            airports: [],
+            airlines: {},
+            loaded: false,
+            error: null,
 
-            initData: async () => {
-                const { loaded } = get();
+            // Always fetch fresh data and overwrite old state
+            initData: async (month) => {
 
-                // Check last refresh
-                const lastRefresh = localStorage.getItem("flight-atlas-last-refresh");
-                const now = Date.now();
+                const effectiveMonth =
+                    month || String(new Date().getMonth() + 1);
 
-                // If loaded and refreshed in the last 24h, skip
-                if (loaded && lastRefresh && now - parseInt(lastRefresh, 10) < 24 * 60 * 60 * 1000) {
-                    return;
-                }
+                set({ loaded: false, error: null });
 
                 try {
-                    const [airports, airlines] = await Promise.all([fetchAirports(), fetchAirlines()]);
-                    set({ airports, airlines, loaded: true });
-                    localStorage.setItem("flight-atlas-last-refresh", now.toString());
-                } catch (err) {
-                    set({ error: err.message });
-                }
-            }
+                    const [airports, airlines] = await Promise.all([
+                        fetchAirports(effectiveMonth),
+                        fetchAirlines(),
+                    ]);
 
+                    console.log(
+                        "Airlines loaded:",
+                        Object.keys(airlines).length,
+                        "entries"
+                    );
+                    console.log("Airports loaded:", airports.length, "features");
+
+                    // Always overwrite persisted values
+                    set({
+                        airports,
+                        airlines,
+                        loaded: true,
+                    });
+                } catch (err) {
+                    set({ error: err.message, loaded: false });
+                }
+            },
         }),
         {
-            // -------------------------
-            // Persist configuration
-            // -------------------------
             name: "flight-atlas-cache",
+
+            // We persist the data, but never trust it — initData always refreshes
             partialize: (state) => ({
-                // Only persist specific parts of the state
                 airports: state.airports,
                 airlines: state.airlines,
-                loaded: state.loaded,
             }),
         }
     )

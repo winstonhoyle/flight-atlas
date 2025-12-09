@@ -53,7 +53,8 @@ airline_codes_dict = {
     "American Eagle": "AA",
     "Delta Connection": "DL",
     "United Express": "UA",
-    "Yute Commuter Service": "4Y",
+    "Sun Country Airlines": "SY",
+    "Yute Commuter Service": "7H",
     "Alaska Air Transit": "JN",
     "Iliamna Air Taxi": "V8",
     "Katmai Air": "KT",
@@ -70,6 +71,7 @@ airline_codes_dict = {
     "Pathfinder Aviation": "PA",
     "Havana Air": "HV",
     "Fly The Whale": "FW",
+    "San Juan Airlines": "SJ",
 }
 
 additional_destinations = {}

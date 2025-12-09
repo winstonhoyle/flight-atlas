@@ -1,4 +1,7 @@
-html, body, #root, .App {
+html,
+body,
+#root,
+.App {
   height: 100%;
   width: 100%;
   margin: 0;
@@ -19,7 +22,8 @@ html, body, #root, .App {
 /* Make header mobile-safe */
 .App-header {
   background-color: #282c34;
-  height: 100%; /* use 100% instead of 100vh */
+  height: 100%;
+  /* use 100% instead of 100vh */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -33,8 +37,13 @@ html, body, #root, .App {
 }
 
 @keyframes App-logo-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Map container fills dynamic viewport height */
@@ -44,14 +53,31 @@ html, body, #root, .App {
   position: relative;
 }
 
-/* Fix popup z-index */
-.leaflet-popup-pane {
-  z-index: 1200 !important;
+/* Base Leaflet panes*/
+.leaflet-tile-pane {
+  z-index: 200;
 }
 
-/* Tooltips above routes */
-.leaflet-tooltip-pane {
-  z-index: 1150 !important;
+.leaflet-overlay-pane {
+  z-index: 300;
+}
+
+/* custom panes */
+.leaflet-routesPane-pane {
+  z-index: 400;
+}
+
+.leaflet-highlightPane-pane {
+  z-index: 450;
+}
+
+.leaflet-airportsPane-pane {
+  z-index: 500;
+}
+
+/* Airport tooltip pane ABOVE airports */
+.leaflet-airportTooltipPane-pane {
+  z-index: 1200 !important;
 }
 
 /* Legend fix */
@@ -60,7 +86,10 @@ html, body, #root, .App {
   z-index: 1000;
 }
 
-/* Hover over AirportMarkers fix */
-.leaflet-popup-content-wrapper.airport-popup {
-  pointer-events: none;
+/* Optional tooltip styling */
+.airport-tooltip {
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: center;
+  padding: 4px 6px;
 }

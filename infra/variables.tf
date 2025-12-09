@@ -1,41 +1,57 @@
+# ------------------------------
+# General AWS Configuration
+# ------------------------------
 variable "region" {
-  type    = string
-  default = "us-west-1"
+  description = "AWS region for deployment"
+  type        = string
+  default     = "us-west-1"
 }
 
-# S3 Bucket names
+# ------------------------------
+# S3 Buckets
+# ------------------------------
 variable "routes_bucket_name" {
-  type    = string
-  default = "bucket-flight-atlas-routes"
+  description = "S3 bucket for flight routes data"
+  type        = string
+  default     = "bucket-flight-atlas-routes"
 }
 
 variable "results_bucket_name" {
-  type    = string
-  default = "bucket-flight-atlas-query-results"
+  description = "S3 bucket for Athena query results"
+  type        = string
+  default     = "bucket-flight-atlas-query-results"
 }
 
-# Athena db
+# ------------------------------
+# Athena Configuration
+# ------------------------------
 variable "athena_database_name" {
-  type    = string
-  default = "flights_db"
+  description = "Athena database name"
+  type        = string
+  default     = "flights_db"
 }
 
-# Athena db table names
 variable "athena_routes_table_name" {
-  type    = string
-  default = "flights"
+  description = "Athena routes table name"
+  type        = string
+  default     = "flights"
 }
 
 variable "athena_airports_table_name" {
-  type    = string
-  default = "airports"
+  description = "Athena airports table name"
+  type        = string
+  default     = "airports"
 }
 
 variable "athena_airlines_table_name" {
-  type    = string
-  default = "airlines"
+  description = "Athena airlines table name"
+  type        = string
+  default     = "airlines"
 }
 
+# ------------------------------
+# ECS and Lambda
+# ------------------------------
 # Dummy image so `terraform plan` works this is build with github actions and pushes
 # actual updated image for the ecs monthly job
 variable "ecs_image" {
@@ -44,14 +60,15 @@ variable "ecs_image" {
   default     = "public.ecr.aws/amazonlinux/amazonlinux:latest"
 }
 
-# Lambda zip path, need to build before running
 variable "lambda_zip_path" {
   description = "Path to the Lambda ZIP file"
   type        = string
   default     = "../lambda/lambda_package.zip"
 }
 
-# Cloudfare vars
+# ------------------------------
+# Cloudflare Configuration
+# ------------------------------
 variable "cloudflare_api_token" {
   description = "Cloudflare API token with DNS:Edit & Zone:Read"
   type        = string
@@ -62,4 +79,3 @@ variable "cloudflare_zone_io_id" {
   description = "Cloudflare Zone ID for flightatlas.io"
   type        = string
 }
-

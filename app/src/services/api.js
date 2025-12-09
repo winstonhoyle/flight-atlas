@@ -28,7 +28,7 @@ const retryFetch = async (fetchFn, validateFn, maxAttempts = 5, delay = 500) => 
         } catch (err) {
             console.warn(`Attempt ${attempt + 1} failed: ${err.message}`);
         }
-        if (attempt < maxAttempts - 1) await new Promise(r => setTimeout(r, delay));
+        if (attempt < maxAttempts - 1) await new Promise((r) => setTimeout(r, delay));
     }
     throw new Error("Exceeded maximum attempts with invalid schema.");
 };
@@ -39,24 +39,34 @@ export const fetchAirlines = async () => {
         () => fetchJSON("/airlines"),
         isAirlinesSchema
     );
-    return Object.entries(data).map(([code, name]) => ({
-        code,
-        name: String(name).replace(/[\r\n]+/g, " ").trim(),
-    }));
+
+    // Clean up string values but preserve dictionary structure
+    const cleaned = {};
+    for (const [code, name] of Object.entries(data)) {
+        cleaned[code] = String(name).replace(/[\r\n]+/g, " ").trim();
+    }
+
+    return cleaned; // return an object, not an array
 };
 
-export const fetchAirports = async () => {
-    const data = await retryFetch(
-        () => fetchJSON("/airports"),
-        isAirportsSchema
-    );
-    return data.features;
+export const fetchAirports = async (month) => {
+  const query = month ? `?month=${encodeURIComponent(month)}` : "";
+
+  const data = await retryFetch(
+    () => fetchJSON(`/airports${query}`),
+    isAirportsSchema
+  );
+
+  return data.features;
 };
 
-export const fetchRoutes = async ({ airportIata, airlineCode } = {}) => {
+export const fetchRoutes = async ({ airportIata, airlineCode, month } = {}) => {
+
+    const currentMonth = String(new Date().getMonth() + 1).padStart(2, "0");
     const params = new URLSearchParams();
     if (airportIata) params.set("airport", airportIata);
     if (airlineCode) params.set("airline_code", airlineCode);
+    params.set("month", month ?? currentMonth);
 
     const url = `/routes?${params.toString()}`;
     const maxAttempts = 10;
@@ -82,4 +92,28 @@ export const fetchRoutes = async ({ airportIata, airlineCode } = {}) => {
 
     console.warn(`fetchRoutes: exhausted ${maxAttempts} attempts for ${url}`);
     return null;
+};
+
+export const fetchMonths = async () => {
+    const data = await fetchJSON("/available_months");
+
+    if (!Array.isArray(data) || !data.every((d) => d.month && d.year)) {
+        throw new Error("Invalid /available_months response schema.");
+    }
+
+    const monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ];
+
+    const months = data.map(({ month, year }) => ({
+        label: `${monthNames[parseInt(month, 10) - 1]} ${year}`,
+        month: month.padStart(2, "0"),
+        year: parseInt(year, 10),
+    }));
+
+    return months.sort((a, b) => {
+        if (a.year === b.year) return parseInt(b.month) - parseInt(a.month);
+        return b.year - a.year;
+    });
 };

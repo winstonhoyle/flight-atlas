@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Select from "react-select";
 import { useFlightAtlasStore } from "../store/useFlightAtlasStore";
 
@@ -11,7 +11,7 @@ const OverlayPanel = ({
   // Props for the Airline Select Combobox
   setSelectedAirline,    // Function to change state of the selectedAirline
   selectedAirline,       // Strine: Airline Code (AA, DL, UA, etc) `null` if no airline is selected
-  filteredAirlines,      // List of Airline Codes, either {"code": "UA", "name": "United Airlines"} or {"code": "UA", "name": "United Airlines", "count":30}
+  filteredAirlines,      // List of Airline Codes, either {"code": "UA", "name": "United Airlines"} or {"code": "UA", "name": "United Airlines", "destinations":30}
 
   // Props for Button
   handleBack,            // Function to Handle going back, it resets the state of pretty much everything
@@ -20,6 +20,12 @@ const OverlayPanel = ({
   // Props for Optional Destination Combobox
   destinationAirport,    // GeoJSON Point object of airport
   setDestinationAirport, // Setting the state of destinationAirport
+  setSelectedRoute,      // Setting the state of selectedRoute
+
+  // Props for month events
+  monthOptions,          // Lists of months, example: [{"label": "October 2025, "month": 10, "year": 2025},{"label": "November 2025, "month": 11, "year": 2025}]
+  selectedMonth,         // String ("10", "11", "12")
+  setSelectedMonth,      // Function to set state of `selectedMonth`
 
   // Props for waiting and/or failing
   loading,
@@ -30,11 +36,13 @@ const OverlayPanel = ({
   const [isOpen, setIsOpen] = useState(true);
 
   // Get airports from store
-  const { airports, loaded, initData } = useFlightAtlasStore();
+  const { airports, initData } = useFlightAtlasStore();
 
+  // Re-fetch airports & airlines whenever the selected month changes
   useEffect(() => {
-    if (!loaded) initData();
-  }, [loaded, initData]);
+    console.log("Refetching airports for month:", selectedMonth);
+    initData(selectedMonth);
+  }, [selectedMonth, initData]);
 
   // Format Airports for Select combobox
   const selectAirportOptions = [{ value: "", label: "All Airports" },
@@ -83,7 +91,7 @@ const OverlayPanel = ({
     {
       value: a.code,
       label: selectedAirport
-        ? `${a.name} (${a.count ?? 0})`
+        ? `${a.name} (${a.destinations ?? 0})`
         : `${a.name} (${a.code})`,
     }
   )),
@@ -145,11 +153,12 @@ const OverlayPanel = ({
             }
             onChange={(e) => {
               if (e) {
-                if (destinationAirport) {
-                  handleBack();
-                  return;
-                }
                 console.log("Selecting an Airport via Overlay Panel");
+                // If any other selections are set, clear them
+                if (destinationAirport) setDestinationAirport(null);
+                if (selectedAirline) setSelectedAirline("");
+
+                // Now set selected airport
                 setSelectedAirport(e ? airports.find(a => a.properties.IATA === e.value) : null)
               } else {
                 handleBack();
@@ -173,6 +182,7 @@ const OverlayPanel = ({
               if (e) {
                 console.log("Selecting Destination Airport via Overlay Panel");
                 setDestinationAirport(e ? airports.find(a => a.properties.IATA === e.value) : null)
+                setSelectedRoute([selectedAirport.properties.IATA, e.value])
               } else { handleBack(); }
             }}
             options={destinationAirportOptions}
@@ -191,13 +201,122 @@ const OverlayPanel = ({
               if (e) {
                 console.log("Changing Airline");
                 setSelectedAirline(e ? e.value : "")
-
               } else { handleBack(); }
             }}
             options={selectAirlineOptions}
             isClearable
             placeholder="Search or select an airline..."
           />)}
+
+          {/* Month dropdown + API preview */}
+          <div style={{ fontSize: "13px", marginTop: "6px", width: "100%" }}>
+            <details style={{ cursor: "pointer" }}>
+              <summary
+                style={{
+                  color: "#0078ff",
+                  fontWeight: 500,
+                  textAlign: "right",
+                  listStyle: "none",
+                  cursor: "pointer",
+                }}
+              >
+                ⚙️ Advanced
+              </summary>
+              <div style={{
+                marginTop: "6px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px",
+                textAlign: "left",
+              }}>
+
+                {/* Month selector */}
+                <label style={{ fontSize: "12px", color: "#666" }}>
+                  Data snapshot month (month webscraped, not flight schedule):
+                </label>
+                <Select
+                  value={
+                    monthOptions.find((o) => o.month === selectedMonth) || monthOptions[0]
+                  }
+                  onChange={(e) => {
+                    if (e) {
+                      console.log("Changing Month", e.month);
+                      setSelectedMonth(e.month);
+                    }
+                  }}
+                  options={monthOptions}
+
+                  placeholder={"Select month..."}
+                  getOptionLabel={(o) => o.label}
+                  getOptionValue={(o) => o.month}
+                  isClearable={false}
+                  styles={{
+                    container: (base) => ({ ...base, fontSize: "12px" }),
+                    control: (base) => ({
+                      ...base,
+                      minHeight: "28px",
+                      borderColor: "#ccc",
+                      boxShadow: "none",
+                    }),
+                    valueContainer: (base) => ({
+                      ...base,
+                      padding: "0 6px",
+                    }),
+                    dropdownIndicator: (base) => ({
+                      ...base,
+                      padding: "2px",
+                    }),
+                  }}
+                />
+
+                {/* API request preview box */}
+                <div
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: "11px",
+                    background: "#f5f5f5",
+                    padding: "6px 8px",
+                    borderRadius: "4px",
+                    color: "#0078ff",
+                    cursor: "pointer",
+                    wordBreak: "break-all",
+                  }}
+                  onClick={() => {
+                    const url = (() => {
+                      const params = new URLSearchParams();
+                      if (selectedMonth && !selectedAirline && !selectedAirport)
+                        return `https://api.flightatlas.io/airports?month=${selectedMonth}`;
+                      if (selectedAirport?.properties?.IATA)
+                        params.set("airport", selectedAirport.properties.IATA);
+                      if (selectedAirline)
+                        params.set("airline_code", selectedAirline);
+                      if (selectedMonth)
+                        params.set("month", selectedMonth);
+                      const qs = params.toString();
+                      return `https://api.flightatlas.io/routes${qs ? `?${qs}` : ""}`;
+                    })();
+
+                    window.open(url, "_blank");
+                  }}
+                  title="Click to open this API request in a new tab"
+                >
+                  {(() => {
+                    const params = new URLSearchParams();
+                    if (selectedMonth && !selectedAirline && !selectedAirport)
+                      return `https://api.flightatlas.io/airports?month=${selectedMonth}`;
+                    if (selectedAirport?.properties?.IATA)
+                      params.set("airport", selectedAirport.properties.IATA);
+                    if (selectedAirline)
+                      params.set("airline_code", selectedAirline);
+                    if (selectedMonth)
+                      params.set("month", selectedMonth);
+                    const qs = params.toString();
+                    return `https://api.flightatlas.io/routes${qs ? `?${qs}` : ""}`;
+                  })()}
+                </div>
+              </div>
+            </details>
+          </div>
 
           {/* Back button */}
           {(selectedAirport || routes) && (
@@ -225,4 +344,4 @@ const OverlayPanel = ({
   );
 };
 
-export default OverlayPanel;
+export default React.memo(OverlayPanel);

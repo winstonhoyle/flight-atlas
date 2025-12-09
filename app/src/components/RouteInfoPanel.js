@@ -4,27 +4,29 @@
  * including source/destination airports and airlines operating the route.
  * 
  * Props:
- * - route: the selected route object
- * - routes: all available route features (GeoJSON or similar)
- * - airports: list of airport objects
- * - airlines: list of airline objects
- * - onClose: callback to close the panel
+ * - selectedAirport: GeoJSON Point of Selected Airport
+ * - destinationAirport: GeoJSON Point of Destination Airport
+ * - airports: list of GeoJSON Points of Airports
+ * - airlines: Map of all airlines {"AA": "American airlines", "DL": "Delta", ...}
+ * - handleBack: Function to handle back button
  */
 
 const RouteInfoPanel = ({ selectedAirport, destinationAirport, routes, airlines, handleBack }) => {
 
     console.log("Updating or Creating Route Info Panel");
-
     // Find all airlines that operate on this route
     const airlinesOnRoute = routes.features
         // Filter routes that match the current select and destination
-        .filter(f => f.properties.src_airport === selectedAirport.properties.IATA && f.properties.dst_airport === destinationAirport.properties.IATA)
+        .filter(f =>
+            f.properties.src_airport === selectedAirport.properties.IATA &&
+            f.properties.dst_airport === destinationAirport.properties.IATA
+        )
         // Map to airline data
         .map(f => {
-            const airlineData = airlines.find(a => a.code === f.properties.airline_code);
+            const code = f.properties.airline_code;
             return {
-                code: f.properties.airline_code,
-                name: airlineData?.name || "Unknown"
+                code: code,
+                name: airlines[code] || "Unknown Airline",
             };
         })
         // Remove duplicate airlines by code
