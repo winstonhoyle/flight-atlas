@@ -208,7 +208,7 @@ __marimo__/
 
 *.zip
 *.tfstate*
-*.terraform*
+.terraform/
 *.ipynb
 
 # Node.js dependencies
@@ -248,3 +248,4 @@ Thumbs.db # Windows
 *.swp
 
 terraform.tfvars
+app/public/sitemap.xml

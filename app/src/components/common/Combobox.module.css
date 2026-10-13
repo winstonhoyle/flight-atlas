@@ -1,0 +1,81 @@
+.container {
+  font-size: var(--fa-font-size-2xs);
+}
+
+.sm {
+  font-size: var(--fa-font-size-3xs);
+}
+
+.control {
+  min-height: 2.5rem;
+  border: 1px solid var(--fa-color-text-muted);
+  border-radius: var(--fa-radius-md);
+  background: var(--fa-color-surface);
+  cursor: pointer;
+}
+
+.sm .control {
+  min-height: 2rem;
+}
+
+.controlFocused {
+  outline: 2px solid var(--fa-color-focus);
+  outline-offset: 2px;
+}
+
+.valueContainer {
+  padding: 0 var(--fa-space-1);
+  gap: var(--fa-space-05);
+}
+
+.placeholder {
+  color: var(--fa-color-text-muted);
+}
+
+.indicators {
+  padding-right: var(--fa-space-05);
+}
+
+.indicator {
+  display: flex;
+  padding: var(--fa-space-05);
+  color: var(--fa-color-text-muted);
+  font-size: var(--fa-icon-md);
+}
+
+.indicator:hover {
+  color: var(--fa-color-text);
+}
+
+.menu {
+  margin-top: var(--fa-space-05);
+  border: 1px solid var(--fa-color-border);
+  border-radius: var(--fa-radius-md);
+  background: var(--fa-color-surface);
+  box-shadow: var(--fa-shadow-2);
+  z-index: var(--fa-z-menu);
+}
+
+.menuList {
+  max-height: 18rem;
+  padding: var(--fa-space-05) 0;
+}
+
+.option {
+  padding: var(--fa-space-1) var(--fa-space-105);
+  cursor: pointer;
+}
+
+.optionFocused {
+  background: var(--fa-color-primary-tint);
+}
+
+.optionSelected {
+  font-weight: var(--fa-font-weight-bold);
+  color: var(--fa-color-primary);
+}
+
+.empty {
+  padding: var(--fa-space-1) var(--fa-space-105);
+  color: var(--fa-color-text-muted);
+}

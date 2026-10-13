@@ -50,20 +50,27 @@ variable "athena_airlines_table_name" {
 }
 
 # ------------------------------
-# ECS and Lambda
+# Container images
 # ------------------------------
-# Dummy image so `terraform plan` works this is build with github actions and pushes
-# actual updated image for the ecs monthly job
-variable "ecs_image" {
-  description = "ECS container image URI"
+variable "image_tag" {
+  description = "Tag for the ECS and Lambda images (local for dev, git SHA on deploy)"
   type        = string
-  default     = "public.ecr.aws/amazonlinux/amazonlinux:latest"
+  default     = "local"
 }
 
-variable "lambda_zip_path" {
-  description = "Path to the Lambda ZIP file"
-  type        = string
-  default     = "../lambda/lambda_package.zip"
+# ------------------------------
+# API rate limiting
+# ------------------------------
+variable "api_throttle_rate_limit" {
+  description = "Steady-state requests per second allowed across the whole API"
+  type        = number
+  default     = 50
+}
+
+variable "api_throttle_burst_limit" {
+  description = "Maximum burst of concurrent requests allowed across the whole API"
+  type        = number
+  default     = 100
 }
 
 # ------------------------------

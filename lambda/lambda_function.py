@@ -33,6 +33,17 @@ s3 = boto3.client("s3", region_name=REGION)
 dynamo = boto3.resource("dynamodb", region_name=REGION)
 dynamo_table = dynamo.Table("flights-query-cache")
 
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "*",
+    "Access-Control-Allow-Methods": "GET,OPTIONS",
+}
+
+
+def parse_wkt_point(wkt: str) -> Tuple[float, float]:
+    lon, lat = map(float, wkt.replace("POINT (", "").replace(")", "").split())
+    return lon, lat
+
 
 def run_athena_query(query):
     """Run Athena query and return the output S3 path."""
@@ -76,8 +87,7 @@ def build_point_geojson(rows: list):
     features = []
     for row in rows:
         try:
-            geom = row["geometry"].replace("POINT (", "").replace(")", "")
-            lon, lat = map(float, geom.split())
+            lon, lat = parse_wkt_point(row["geometry"])
             point = geojson.Point((lon, lat))
             iata = row["iata"]
             if len(iata) != 3:
@@ -115,10 +125,8 @@ def build_line_geojson(
             if len(src_airport) != 3 or len(dst_airport) != 3:
                 continue
 
-            dst_geom = row["dst_geometry"].replace("POINT (", "").replace(")", "")
-            src_geom = row["src_geometry"].replace("POINT (", "").replace(")", "")
-            dst_lon, dst_lat = map(float, dst_geom.split())
-            src_lon, src_lat = map(float, src_geom.split())
+            dst_lon, dst_lat = parse_wkt_point(row["dst_geometry"])
+            src_lon, src_lat = parse_wkt_point(row["src_geometry"])
 
             line = geojson.LineString([[src_lon, src_lat], [dst_lon, dst_lat]])
 
@@ -169,40 +177,38 @@ def format_query(
         return "SELECT DISTINCT month, year from airlines"
 
 
+# Data changes monthly; 202s and errors must not be cached.
+CACHE_OK = "public, max-age=3600, stale-while-revalidate=86400"
+CACHE_NONE = "no-store"
+
+
 def make_response(status_code: int, body_dict: dict) -> dict:
     return {
         "statusCode": status_code,
         "headers": {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "*",
-            "Access-Control-Allow-Methods": "GET,OPTIONS",
+            "Cache-Control": CACHE_OK if status_code == 200 else CACHE_NONE,
+            **CORS_HEADERS,
         },
         "body": json.dumps(body_dict),
     }
 
 
 def lambda_handler(event, context) -> dict:
+    """Handle requests for routes by airport or airline."""
     try:
-        """Handle requests for routes by airport or airline."""
-
         # If `OPTIONS`, else is `GET``
         if event.get("httpMethod") == "OPTIONS":
-            return {
-                "statusCode": 200,
-                "headers": {
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Allow-Methods": "GET,OPTIONS",
-                },
-                "body": "",
-            }
+            return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
 
         # Lambda event vars
         params = event.get("queryStringParameters") or {}
         path = event.get("rawPath")
-        src_airport = clean_param(params.get("airport"), VALID_AIRPORT)
-        airline_code = clean_param(params.get("airline_code"), VALID_AIRLINE)
+        try:
+            src_airport = clean_param(params.get("airport"), VALID_AIRPORT)
+            airline_code = clean_param(params.get("airline_code"), VALID_AIRLINE)
+        except ValueError as e:
+            return make_response(status_code=400, body_dict={"error": str(e)})
         month = params.get("month")
 
         if month is None:
@@ -316,6 +322,8 @@ def lambda_handler(event, context) -> dict:
             status_code=202, body_dict={"status": "started", "query_id": query_id}
         )
 
-    except Exception as e:
+    except Exception:
         logger.exception("Lambda failed")
-        return make_response(status_code=500, body_dict={"error": str(e)})
+        return make_response(
+            status_code=500, body_dict={"error": "Internal server error"}
+        )

@@ -1,0 +1,17 @@
+.container {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+}
+
+.map {
+  width: 100%;
+  height: 100%;
+}
+
+.infoButton {
+  position: absolute;
+  right: var(--fa-space-105);
+  bottom: calc(3rem + env(safe-area-inset-bottom));
+  z-index: var(--fa-z-floating);
+}

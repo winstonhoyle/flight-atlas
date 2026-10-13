@@ -1,0 +1,125 @@
+/*
+  Design tokens. See DESIGN.md.
+
+  Two layers. The palette holds USWDS system colors by their USWDS names. The roles below it
+  name the job a color does, and components read only roles. tools/palette_check.py measures
+  the roles for contrast and color-blind separation, so run it after changing either layer.
+*/
+
+@font-face {
+  font-family: "Public Sans";
+  src: url("../assets/fonts/public-sans-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Roboto Mono";
+  src: url("../assets/fonts/roboto-mono-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+
+  /* Palette: USWDS system colors */
+  --uswds-white: #ffffff;
+  --uswds-gray-5: #f0f0f0;
+  --uswds-gray-cool-10: #dfe1e2;
+  --uswds-gray-cool-60: #565c65;
+  --uswds-gray-90: #1b1b1b;
+  --uswds-blue-5: #eff6fb;
+  --uswds-blue-60v: #005ea2;
+  --uswds-blue-warm-70v: #1a4480;
+  --uswds-blue-40v: #2491ff;
+  --uswds-red-60v: #b50909;
+  --uswds-orange-60v: #8c471c;
+
+  /* Palette: brand, measured from the logo. The logo and wordmark only. */
+  --brand-green-dark: #2a5f2a;
+  --brand-green: #509a38;
+  --brand-red: #ec2722;
+  --brand-silver: #c2c3c3;
+
+  /* Palette: viridis, an ordered ramp that stays ordered under every color-vision type */
+  --viridis-1: #fde725;
+  --viridis-2: #5ec962;
+  --viridis-3: #21918c;
+  --viridis-4: #3b528b;
+  --viridis-5: #440154;
+
+  /* Roles: surfaces and text */
+  --fa-color-surface: var(--uswds-white);
+  --fa-color-surface-muted: var(--uswds-gray-5);
+  --fa-color-border: var(--uswds-gray-cool-10);
+  --fa-color-text: var(--uswds-gray-90);
+  --fa-color-text-muted: var(--uswds-gray-cool-60);
+  --fa-color-scrim: rgb(27 27 27 / 50%);
+
+  /* Roles: interactive */
+  --fa-color-primary: var(--uswds-blue-60v);
+  --fa-color-primary-hover: var(--uswds-blue-warm-70v);
+  --fa-color-on-primary: var(--uswds-white);
+  --fa-color-primary-tint: var(--uswds-blue-5);
+  --fa-color-link: var(--uswds-blue-60v);
+  --fa-color-focus: var(--uswds-blue-40v);
+  --fa-color-error: var(--uswds-red-60v);
+
+  /* Roles: map. Fill carries meaning; the ink stroke separates a marker from the basemap. */
+  --fa-map-route: var(--uswds-blue-60v);
+  --fa-map-route-highlight: var(--uswds-orange-60v);
+  --fa-map-marker-stroke: var(--uswds-gray-90);
+  --fa-map-destinations-1: var(--viridis-1);
+  --fa-map-destinations-2: var(--viridis-2);
+  --fa-map-destinations-3: var(--viridis-3);
+  --fa-map-destinations-4: var(--viridis-4);
+  --fa-map-destinations-5: var(--viridis-5);
+
+  /* Type: the USWDS pair and the USWDS theme size scale */
+  --fa-font-sans: "Public Sans", system-ui, sans-serif;
+  --fa-font-mono: "Roboto Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  --fa-font-size-3xs: 0.8125rem;
+  --fa-font-size-2xs: 0.875rem;
+  --fa-font-size-xs: 0.9375rem;
+  --fa-font-size-sm: 1rem;
+  --fa-font-size-lg: 1.375rem;
+
+  --fa-font-weight-regular: 400;
+  --fa-font-weight-semibold: 600;
+  --fa-font-weight-bold: 700;
+
+  --fa-leading-tight: 1.2;
+  --fa-leading-body: 1.5;
+
+  /* Spacing: USWDS units, 1 unit = 8px */
+  --fa-space-05: 0.25rem;
+  --fa-space-1: 0.5rem;
+  --fa-space-105: 0.75rem;
+  --fa-space-2: 1rem;
+  --fa-space-3: 1.5rem;
+
+  /* Shape and elevation: USWDS radius and shadow scales */
+  --fa-radius-sm: 2px;
+  --fa-radius-md: 0.25rem;
+  --fa-radius-lg: 0.5rem;
+  --fa-radius-pill: 99rem;
+  --fa-shadow-1: 0 1px 4px 0 rgb(0 0 0 / 10%);
+  --fa-shadow-2: 0 4px 8px 0 rgb(0 0 0 / 10%);
+  --fa-shadow-3: 0 8px 16px 0 rgb(0 0 0 / 10%);
+
+  --fa-target-min: 2.75rem;
+  --fa-icon-sm: 1rem;
+  --fa-icon-md: 1.25rem;
+  --fa-duration: 200ms;
+
+  /* Layers above Leaflet's panes (its controls sit at 1000) */
+  --fa-z-panel: 1000;
+  --fa-z-floating: 1100;
+  --fa-z-route-info: 1500;
+  --fa-z-dialog: 2000;
+  --fa-z-menu: 3000;
+}

@@ -18,6 +18,14 @@ from lat_lon_parser import parse
 from shapely.geometry import Point
 from tqdm import tqdm
 
+# Load .env for local runs (no-op on ECS / if python-dotenv is absent).
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 # Logger setup
 logger = logging.getLogger("flight_atlas")
 logger.setLevel(logging.DEBUG)
@@ -42,11 +50,25 @@ S3_PREFIX = os.environ.get("S3_PREFIX", "flights")
 REGION = os.environ.get("REGION", "us-west-1")
 DATABASE = os.environ.get("ATHENA_DB", "flights_db")
 
+# Point OUTPUT_BASE at a local folder to write Parquet locally; Athena is
+# skipped by default for non-s3 output.
+OUTPUT_BASE = os.environ.get("OUTPUT_BASE") or f"s3://{S3_ROUTES_BUCKET}"
+IS_LOCAL_OUTPUT = not OUTPUT_BASE.startswith("s3://")
+RUN_ATHENA = os.environ.get(
+    "RUN_ATHENA", "false" if IS_LOCAL_OUTPUT else "true"
+).lower() in ("1", "true", "yes")
+
+if IS_LOCAL_OUTPUT:
+    os.makedirs(OUTPUT_BASE, exist_ok=True)
+
+USER_AGENT = "FlightAtlasBot/1.0 (https://github.com/winstonhoyle)"
+
 # Create session
 session = requests.Session()
-session.headers.update(
-    {"User-Agent": "FlightAtlasBot/1.0 (https://github.com/winstonhoyle)"}
-)
+session.headers.update({"User-Agent": USER_AGENT})
+
+# Wikimedia rate-limits the wikipedia library's default User-Agent.
+wikipedia.set_user_agent(USER_AGENT)
 
 # Airport code dict because many airlines do not have an IATA code on wikipedia
 airline_codes_dict = {
@@ -77,6 +99,10 @@ airline_codes_dict = {
 additional_destinations = {}
 
 
+def wiki_url(href: str) -> str:
+    return f"https://en.wikipedia.org/wiki/{href.split('/wiki/')[-1]}"
+
+
 def get_airport_information(url: str) -> Tuple[str, Point]:
     r = session.get(url)
     soup = BeautifulSoup(r.text, "html.parser")
@@ -88,7 +114,7 @@ def get_airport_information(url: str) -> Tuple[str, Point]:
         point = Point(lon, lat)
 
         # Get IATA Code
-        iata_href = soup.find("a", {"href": "/wiki/IATA_airport_code"})
+        iata_href = soup.find("a", href=lambda h: h and "/wiki/IATA_airport_code" in h)
         iata_code = re.sub(r"\[\d+\]", "", iata_href.find_next("span").text)
         return iata_code, point
     except Exception as e:
@@ -202,8 +228,7 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame) -> List:
 
                 # If airline doesn't exist get code and `get_airline_code` as it to `airline_codes_dict`
                 else:
-                    airline_href = a.attrs["href"]
-                    airline_url = f"https://en.wikipedia.org{unquote(airline_href)}"
+                    airline_url = wiki_url(unquote(a.attrs["href"]))
                     airline_name = re.sub(r"\[\d+\]", "", td.text.strip())
                     airline_code = get_airline_code(url=airline_url, name=airline_name)
 
@@ -212,8 +237,8 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame) -> List:
                 airport_as = [
                     a
                     for a in td.find_all("a", href=True)
-                    if a["href"].startswith("/wiki/")
-                    and not a["href"].startswith("/wiki/Wikipedia:")
+                    if "/wiki/" in a["href"]
+                    and "/wiki/Wikipedia:" not in a["href"]
                     and "#cite_note" not in a["href"]
                     and "NOTRS" not in a["href"]
                 ]
@@ -230,17 +255,16 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame) -> List:
 
                     # Get iata code, US airports and intl they fly too
                     unquote_href = unquote(href)
-                    url = f"https://en.wikipedia.org{unquote_href}"
-                    if (
-                        url == "https://en.wikipedia.org/wiki/Wikipedia:Citation_needed"
-                        or url
-                        == "https://en.wikipedia.org/wiki/Wikipedia:Verifiability"
+                    url = wiki_url(unquote_href)
+                    if url in (
+                        "https://en.wikipedia.org/wiki/Wikipedia:Citation_needed",
+                        "https://en.wikipedia.org/wiki/Wikipedia:Verifiability",
                     ):
                         continue
 
                     # Ensure airport url is original, lots of redirects on wikipedia
                     page = wikipedia.page(
-                        unquote_href.replace("/wiki/", "").replace("_", " "),
+                        unquote_href.split("/wiki/")[-1].replace("_", " "),
                         auto_suggest=False,
                         redirect=True,
                     )
@@ -306,27 +330,39 @@ headers = [th.text.strip() for th in trs[0].find_all("th")]
 data = []
 points = []
 titles = []
+failed_urls = []
 for tr in tqdm(trs[1:], desc="Parsing Airports"):
-    if not tr.find_all("td")[1].text:
+    tds = tr.find_all("td")
+    if not tds[1].text:
         continue
-    row = []
-    for i, td in enumerate(tr.find_all("td")):
-        if td.find("a") and i == 4:
-            href = unquote(td.find("a").attrs["href"])
-            page = wikipedia.page(
-                href.replace("/wiki/", "").replace("_", " "),
-                auto_suggest=False,
-                redirect=True,
-            )
-            url = unquote(page.url)
-            row.append(url)
-            points.append(get_coordinate(url))
-            titles.append(page.title)
-        elif i == 6:
-            row.append(int(td.text.strip().replace(",", "")))
-        else:
-            row.append(td.text.strip())
+    try:
+        row = []
+        point = None
+        title = None
+        for i, td in enumerate(tds):
+            if td.find("a") and i == 4:
+                href = unquote(td.find("a").attrs["href"])
+                page = wikipedia.page(
+                    href.split("/wiki/")[-1].replace("_", " "),
+                    auto_suggest=False,
+                    redirect=True,
+                )
+                url = unquote(page.url)
+                row.append(url)
+                point = get_coordinate(url)
+                title = page.title
+            elif i == 6:
+                row.append(int(td.text.strip().replace(",", "")))
+            else:
+                row.append(td.text.strip())
+    except Exception as e:
+        airport = tds[4].text.strip() if len(tds) > 4 else tds[1].text.strip()
+        failed_urls.append(airport)
+        logger.error(f"Failed parsing airport, name: {airport}, Exception: {str(e)}")
+        continue
     data.append(row)
+    points.append(point)
+    titles.append(title)
 
 # Create airports geopandas frame
 usa_airports_df = pd.DataFrame(data=data, columns=headers)
@@ -345,13 +381,13 @@ usa_airports_df = usa_airports_df.sort_values(
 # Loop through airports again but querying the destinations at the airport
 # Queried twice because we know the US airports now, before we were building a list
 routes = []
-failed_urls = []
 for i in tqdm(range(len(usa_airports_df)), desc="Parsing Airports"):
     try:
         src_iata = usa_airports_df.iloc[i]["IATA"]
         destinations = get_destinations(src_iata=src_iata, airports_df=usa_airports_df)
         routes.extend(destinations)
     except Exception as e:
+        failed_urls.append(usa_airports_df.iloc[i]["url"])
         logger.error(
             f"Failure getting destinations, url: {usa_airports_df.iloc[i]['url']}, Exception: {str(e)}"
         )
@@ -447,7 +483,7 @@ routes_df["month"] = datetime.now().month
 routes_table = pa.Table.from_pandas(routes_df)
 
 # Write partitioned dataset
-routes_dir = f"s3://{S3_ROUTES_BUCKET}/{S3_PREFIX}/"
+routes_dir = f"{OUTPUT_BASE}/{S3_PREFIX}/"
 logger.info(f"Writing Routes to to {routes_dir}")
 
 ds.write_dataset(
@@ -490,7 +526,7 @@ airports_df["month"] = datetime.now().month
 airport_table = pa.Table.from_pandas(airports_df)
 
 # Write partitioned dataset
-airports_dir = f"s3://{S3_ROUTES_BUCKET}/airports/"
+airports_dir = f"{OUTPUT_BASE}/airports/"
 logger.info(f"Writing airports to {airports_dir}")
 
 # Write dataset partitioned by year/month
@@ -519,7 +555,7 @@ airlines_df["month"] = datetime.now().month
 airlines_table = pa.Table.from_pandas(airlines_df)
 
 # Write partitioned dataset
-airlines_dir = f"s3://{S3_ROUTES_BUCKET}/airlines/"
+airlines_dir = f"{OUTPUT_BASE}/airlines/"
 logger.info(f"Writing Airlines to to {airlines_dir}")
 
 # Write dataset partitioned by year/month
@@ -534,30 +570,33 @@ ds.write_dataset(
     filesystem=None,
 )
 
-logger.info(f"Enable Tables for Athena")
-athena = boto3.client("athena", region_name=REGION)
-athena_output_dir = f"s3://{S3_RESULTS_BUCKET}/"
+if not RUN_ATHENA:
+    logger.info("RUN_ATHENA disabled; skipping Athena MSCK REPAIR step.")
+else:
+    logger.info("Enabling tables for Athena")
+    athena = boto3.client("athena", region_name=REGION)
+    athena_output_dir = f"s3://{S3_RESULTS_BUCKET}/"
 
-for table in ["airports", "flights", "airlines"]:
-    query = f"MSCK REPAIR TABLE {table};"
+    for table in ["airports", "flights", "airlines"]:
+        query = f"MSCK REPAIR TABLE {table};"
 
-    response = athena.start_query_execution(
-        QueryString=query,
-        QueryExecutionContext={"Database": DATABASE},
-        ResultConfiguration={"OutputLocation": athena_output_dir},
-    )
-    query_execution_id = response["QueryExecutionId"]
-    logger.info(f"Athena query ({table}) started: {query_execution_id}")
+        response = athena.start_query_execution(
+            QueryString=query,
+            QueryExecutionContext={"Database": DATABASE},
+            ResultConfiguration={"OutputLocation": athena_output_dir},
+        )
+        query_execution_id = response["QueryExecutionId"]
+        logger.info(f"Athena query ({table}) started: {query_execution_id}")
 
-    while True:
-        status = athena.get_query_execution(QueryExecutionId=query_execution_id)
-        state = status["QueryExecution"]["Status"]["State"]
+        while True:
+            status = athena.get_query_execution(QueryExecutionId=query_execution_id)
+            state = status["QueryExecution"]["Status"]["State"]
 
-        if state in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-            break
-        time.sleep(2)
+            if state in ["SUCCEEDED", "FAILED", "CANCELLED"]:
+                break
+            time.sleep(2)
 
-    if state == "SUCCEEDED":
-        logger.info("MSCK REPAIR TABLE completed successfully!")
-    else:
-        logger.error(f"Query failed or cancelled: {state}")
+        if state == "SUCCEEDED":
+            logger.info("MSCK REPAIR TABLE completed successfully!")
+        else:
+            logger.error(f"Query failed or cancelled: {state}")

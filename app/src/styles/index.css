@@ -1,13 +1,58 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--fa-font-sans);
+  font-size: var(--fa-font-size-sm);
+  line-height: var(--fa-leading-body);
+  color: var(--fa-color-text);
+  background: var(--fa-color-surface);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--fa-color-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
+
+/* Leaflet: Public Sans for its controls, and custom panes stacked routes < highlight < airports < tooltips */
+.leaflet-container {
+  font-family: var(--fa-font-sans);
+}
+
+.leaflet-routesPane-pane {
+  z-index: 400;
+}
+
+.leaflet-highlightPane-pane {
+  z-index: 450;
+}
+
+.leaflet-airportsPane-pane {
+  z-index: 500;
+}
+
+.leaflet-airportTooltipPane-pane {
+  z-index: 1200 !important;
 }

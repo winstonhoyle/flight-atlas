@@ -1,40 +1,56 @@
-# React App
+# Flight Atlas Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+React, TypeScript, and Leaflet map for exploring U.S. flight routes, built with Vite. It reads
+all data from the Flight Atlas API, so there is no local backend to run.
 
-## Available Scripts
+## Prerequisites
 
-In the project directory, you can run:
+- Node.js >= 22
+- npm
 
-### `npm start`
+## Run locally
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+From the repo root:
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+```bash
+make app-dev      # installs dependencies on first run, then starts Vite
+```
 
-### `npm test`
+Or from `app/`: `npm install && npm run dev`.
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+Open http://localhost:3000. The dev server fetches live data from the deployed API
+(`https://api.flightatlas.io`), so the map loads real routes, airports, and airlines with no
+extra setup. Under WSL on a `/mnt/` path, Vite polls for file changes automatically.
 
-### `npm run build`
+## Make targets
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+| Target             | What it does                                         |
+| ------------------ | ---------------------------------------------------- |
+| `make app-install` | `npm ci` (re-runs when `package-lock.json` changes)  |
+| `make app-dev`     | Dev server on port 3000                              |
+| `make app-build`   | Sitemap, type-check, and production build to `dist/` |
+| `make app-preview` | Build, then serve `dist/` locally                    |
+| `make app-check`   | Lint, format check, type-check, and unit tests       |
+| `make app-test`    | Unit tests only                                      |
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Data source
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+Requests go through `src/services/api.ts`, which reads `VITE_API_BASE` and falls back to
+`https://api.flightatlas.io`. To point the app at a different API, create `.env.local`:
 
-### `npm run eject`
+```
+VITE_API_BASE=https://your-api-host
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+`.env.local` is gitignored. See the [API reference](../README.md#-api) for the endpoints
+(`/airports`, `/airlines`, `/routes`, `/available_months`).
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Layout
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+| Path              | Contents                                               |
+| ----------------- | ------------------------------------------------------ |
+| `src/components/` | Map, overlay panel, route info, legend, welcome dialog |
+| `src/hooks/`      | Data hooks: airports/airlines, routes, months          |
+| `src/services/`   | API client                                             |
+| `src/types.ts`    | API response types                                     |
+| `scripts/`        | `generate-sitemap.js`, run before every build          |

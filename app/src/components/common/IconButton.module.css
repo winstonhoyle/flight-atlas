@@ -1,0 +1,41 @@
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  color: var(--fa-color-text-muted);
+  font-size: var(--fa-icon-md);
+  cursor: pointer;
+  transition:
+    background-color var(--fa-duration),
+    color var(--fa-duration);
+}
+
+.iconButton:hover {
+  color: var(--fa-color-text);
+}
+
+.plain {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--fa-radius-md);
+  background: none;
+}
+
+.plain:hover {
+  background: var(--fa-color-surface-muted);
+}
+
+.floating {
+  width: var(--fa-target-min);
+  height: var(--fa-target-min);
+  border-radius: var(--fa-radius-pill);
+  background: var(--fa-color-surface);
+  box-shadow: var(--fa-shadow-2);
+  color: var(--fa-color-primary);
+}
+
+.floating:hover {
+  color: var(--fa-color-primary-hover);
+}

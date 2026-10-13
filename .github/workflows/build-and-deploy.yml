@@ -8,10 +8,6 @@ on:
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
   ECR_REPOSITORY: flight-atlas
-  ECS_CLUSTER: flights-cluster
-  ECS_SERVICE: flight-atlas-service
-  ECS_TASK_FAMILY: flights-scraper
-  LAMBDA_FUNCTION_NAME: flights-query-lambda
 
 permissions:
   id-token: write
@@ -26,13 +22,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
 
       - name: Install dependencies
         working-directory: app
         run: npm ci
+
+      - name: Lint, format, and test frontend
+        working-directory: app
+        run: npm run lint && npm run format:check && npm run test:run
 
       - name: Build frontend
         working-directory: app
@@ -44,21 +46,12 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: flight-atlas
-          directory: ./app/build
-        
-        ### AWS Setup
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
+          directory: ./app/dist
 
   deploy-aws:
     runs-on: ubuntu-latest
     name: Deploy Backend (Lambda, ECS, Terraform)
-    needs: deploy-cloudflare 
+    needs: deploy-cloudflare
 
     steps:
       - name: Checkout code
@@ -71,41 +64,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      #### ECR: build and push ECS image ####
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push image to ECR
-        id: build-image
-        run: |
-          IMAGE_TAG=${GITHUB_SHA::8}
-          IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-          docker build -t $IMAGE_URI ecs/
-          docker push $IMAGE_URI
-          echo "$IMAGE_URI"
-          echo "ecs_image=$IMAGE_URI" >> $GITHUB_ENV
-
-      #### Lambda: build ZIP and update function ####
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.12
-
-      - name: Install dependencies and build ZIP
-        id: build-lambda
-        run: |
-          sh lambda/build.sh
-          echo "lambda_zip_path=$(pwd)/lambda/lambda_package.zip" >> $GITHUB_ENV
-    
-      - name: Update Lambda Function
-        run: |
-          aws lambda update-function-code \
-            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
-            --zip-file fileb://lambda/lambda_package.zip \
-            --region $AWS_REGION
-
-      #### Terraform ####
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -114,6 +72,20 @@ jobs:
       - name: Terraform Init
         working-directory: infra
         run: terraform init -upgrade=false -input=false
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push ECS + Lambda images
+        run: |
+          IMAGE_TAG=${GITHUB_SHA::8}
+          REPO=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
+          docker build --provenance=false --platform linux/amd64 -t $REPO:ecs-$IMAGE_TAG ecs/
+          docker build --provenance=false --platform linux/amd64 -t $REPO:lambda-$IMAGE_TAG lambda/
+          docker push $REPO:ecs-$IMAGE_TAG
+          docker push $REPO:lambda-$IMAGE_TAG
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_ENV
 
       - name: Terraform Validate
         working-directory: infra
@@ -124,7 +96,7 @@ jobs:
         env:
           TF_VAR_cloudflare_zone_io_id: ${{ secrets.CLOUDFLARE_ZONE_IO_ID }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: terraform plan -var "ecs_image=$ecs_image" -var "lambda_zip_path=$lambda_zip_path" -out=tfplan
+        run: terraform plan -var "image_tag=$image_tag" -out=tfplan
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main'
@@ -132,4 +104,4 @@ jobs:
         env:
           TF_VAR_cloudflare_zone_io_id: ${{ secrets.CLOUDFLARE_ZONE_IO_ID }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: terraform apply -var "ecs_image=$ecs_image" -var "lambda_zip_path=$lambda_zip_path" -auto-approve tfplan
+        run: terraform apply -auto-approve tfplan

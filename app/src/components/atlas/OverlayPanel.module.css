@@ -1,0 +1,83 @@
+.overlay {
+  position: absolute;
+  top: var(--fa-space-105);
+  right: var(--fa-space-105);
+  z-index: var(--fa-z-panel);
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-1);
+  width: min(20rem, calc(100vw - 2 * var(--fa-space-105)));
+}
+
+.toggle {
+  align-self: flex-end;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-105);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fa-font-size-sm);
+  font-weight: var(--fa-font-weight-bold);
+  line-height: var(--fa-leading-tight);
+}
+
+.advanced {
+  font-size: var(--fa-font-size-3xs);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--fa-space-05);
+  color: var(--fa-color-link);
+  font-weight: var(--fa-font-weight-semibold);
+  list-style: none;
+  cursor: pointer;
+}
+
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+.advancedBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-1);
+  margin-top: var(--fa-space-1);
+}
+
+.hint {
+  margin: 0;
+  color: var(--fa-color-text-muted);
+}
+
+.apiUrl {
+  display: block;
+  padding: var(--fa-space-05) var(--fa-space-1);
+  border-radius: var(--fa-radius-md);
+  background: var(--fa-color-surface-muted);
+  font-family: var(--fa-font-mono);
+  font-size: var(--fa-font-size-3xs);
+  word-break: break-all;
+}
+
+/* Out of the flex flow while empty, but still rendered so screen readers hear updates. */
+.status:empty {
+  position: absolute;
+}
+
+.status,
+.error {
+  margin: 0;
+  font-size: var(--fa-font-size-2xs);
+}
+
+.error {
+  color: var(--fa-color-error);
+}

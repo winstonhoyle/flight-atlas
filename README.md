@@ -43,7 +43,7 @@ All infrastructure is **fully managed using Terraform**, enabling reproducible d
 
 ### Web Application (Cloudflare + Route 53)
 
-- The frontend is a static **React app** built using Node.js and npm.  
+- The frontend is a static **React + TypeScript app** built with Vite.  
 - Deployed to **Cloudflare Pages** for high availability and global CDN caching.  
 - **Route 53** manages DNS for the primary domain, which points to Cloudflare.  
 - Cloudflare handles final DNS resolution and SSL termination.
@@ -71,8 +71,7 @@ This ensures **fully version-controlled, reproducible infrastructure** with mini
 ### CI/CD Automation (GitHub Actions)
 
 - **GitHub Actions workflows** automate:
-  - Docker image build and push to ECR  
-  - Lambda ZIP packaging and deployment  
+  - ECS scraper and query Lambda container image builds, pushed to ECR (tagged with the git SHA)  
   - Terraform plan and apply for infrastructure changes  
   - Frontend build and deployment to Cloudflare Pages  
 
@@ -112,6 +111,18 @@ This provides **fully automated, end-to-end CI/CD** whenever changes are pushed 
 This setup ensures **scalable, serverless infrastructure** with automated data updates, fast queries, and a responsive frontend.
 
 ## 📡 API
+
+All endpoints are read-only `GET` requests that return JSON. `/airports`, `/airlines`, and
+`/routes` take an optional `month` parameter (`1`–`12`, defaults to the current month).
+
+**Status codes:**
+- `200`: result in the body
+- `202`: the query is still running in Athena (`{"status": "processing", "query_id": "..."}`). Retry the same request after a short delay
+- `400`: missing or invalid parameter
+- `429`: rate limit exceeded. Back off and retry
+
+**Rate limits:** the API is throttled to 50 requests/second sustained (burst 100), shared
+across all clients. Please cache responses: the data only changes once a month.
 
 **Endpoint:** `https://api.flightatlas.io/airports`  
 
@@ -155,18 +166,16 @@ This setup ensures **scalable, serverless infrastructure** with automated data u
 }
 ```
 
-**Endpoint:** `https://api.flightatlas.io/airlines`  
+**Endpoint:** `https://api.flightatlas.io/available_months`  
 
 **Method:** GET  
 
 **Response:**
 ```json
-{
-  "AA": "American Airlines",
-  "DL": "Delta Air Lines",
-  "UA": "United Airlines",
+[
+  { "month": "10", "year": "2026" },
   ...
-}
+]
 ```
 
 **Endpoint:** `https://api.flightatlas.io/routes`  
@@ -174,8 +183,10 @@ This setup ensures **scalable, serverless infrastructure** with automated data u
 **Method:** GET  
 
 **Parameters (at least one required):**
-- `airport` – IATA code of the origin airport (optional if airline_code is provided)
-- `airline_code` IATA code of the airline (optional if airport is provided)
+- `airport`: IATA code of the origin airport (optional if airline_code is provided)
+- `airline_code`: IATA code of the airline (optional if airport is provided)
+
+- `month`: `1`–`12` (optional, defaults to the current month)
 
 Note: At least one of airport or airline_code must be provided; both can also be used together for filtering.
 
@@ -206,18 +217,19 @@ Note: At least one of airport or airline_code must be provided; both can also be
 
 ## 📂 Project Structure
 
-- `app/` – React frontend
-- `infra/` – Terraform code for AWS & Cloudflare
-- `lambda/` – Lambda function code and packaging scripts
-- `ecs/` – Dockerfile and ECS scraper container
+- `app/`: React frontend
+- `infra/`: Terraform code for AWS & Cloudflare
+- `lambda/`: Lambda function code and packaging scripts
+- `ecs/`: Dockerfile and ECS scraper container
 
 ---
 
 ## 🛠️ Getting Started
 
 ### Prerequisites
-- Node.js >= 20
+- Node.js >= 22
 - npm
+- Python 3.14 (for the ECS scraper and Lambda function)
 - Terraform >= 1.13
 - Docker (for building and running the ECS scraper container locally, if needed)
 - AWS CLI configured with appropriate credentials
@@ -239,12 +251,17 @@ CLOUDFLARE_ZONE_IO_ID
 ---
 
 ### Running Locally (Frontend Only)
-```
+```bash
 git clone https://github.com/winstonhoyle/flight-atlas.git
-cd flight-atlas/app
-npm install
-npm run start
+cd flight-atlas
+make app-dev        # http://localhost:3000, against the live API
 ```
+
+See [app/README.md](app/README.md) for the other `make app-*` targets.
+
+`npm run build` first runs `scripts/generate-sitemap.js`, which writes `public/sitemap.xml`
+with one URL per airport and airline from the live API (home page only if the API is
+unreachable). Run it on its own with `npm run sitemap`.
 
 ---
 
@@ -252,16 +269,85 @@ npm run start
 
 1. Set up environment variables listed above
 2. Prepare Terraform variables based on [infra/terraform.tfvars.example](infra/terraform.tfvars.example)
-3. Package Lambda code:
+3. Build and push the ECS + Lambda container images to ECR:
 ```bash
-sh lambda/build.sh
+make containers          # build both images, tagged :local
+make deploy-containers   # push them to ECR
 ```
-4. Initialize Terraform and apply:
+4. Initialize and apply Terraform:
 ```bash
-cd infra
-terraform init
-terraform plan
-terraform apply
+make tf-init
+make tf-plan
+make tf-apply
+```
+
+First-time setup has an ordering step (the image-based Lambda needs its image in ECR
+before apply). See [infra/README.md](infra/README.md).
+
+---
+
+### Running the ECS Scraper
+
+`ecs/create_routes.py` scrapes Wikipedia, writes the `flights`, `airports`, and
+`airlines` Parquet datasets, and repairs the Athena partitions. A full scrape takes
+about 2 hours. Configure it with `ecs/.env` (copy from [`ecs/.env.sample`](ecs/.env.sample)):
+
+| Variable | Purpose |
+| --- | --- |
+| `OUTPUT_BASE` | Output location. Unset → `s3://$S3_ROUTES_BUCKET`; set to a folder (e.g. `./output`) for an offline dry run |
+| `RUN_ATHENA` | `true` runs `MSCK REPAIR TABLE` after writing |
+| `S3_ROUTES_BUCKET`, `S3_RESULTS_BUCKET`, `S3_PREFIX`, `ATHENA_DB`, `REGION` | AWS targets |
+
+Writing to S3 and running Athena need AWS credentials (`aws configure` / `AWS_PROFILE`)
+with access to the buckets, the Glue catalog, and Athena.
+
+**Locally → S3 (updates the live site):**
+```bash
+cd ecs
+cp .env.sample .env          # RUN_ATHENA=true, OUTPUT_BASE unset -> s3://$S3_ROUTES_BUCKET
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python create_routes.py
+```
+
+**Locally in Docker → S3** (updates the live site; mount your AWS creds, the image runs as non-root `appuser`):
+```bash
+make containers              # builds flight-atlas:ecs-local
+docker run --rm \
+  -v "$HOME/.aws:/home/appuser/.aws:ro" \
+  -e AWS_PROFILE=default -e AWS_REGION=us-west-1 \
+  --env-file ecs/.env \
+  flight-atlas:ecs-local
+```
+
+**Offline dry run in Docker** (no AWS; Parquet to `ecs/output/`):
+```bash
+make containers              # builds flight-atlas:ecs-local
+make scrape-dry-run          # runs it with OUTPUT_BASE=/data, RUN_ATHENA=false
+```
+Or the equivalent `docker run`:
+```bash
+docker run --rm \
+  -e OUTPUT_BASE=/data -e RUN_ATHENA=false \
+  -v "$(pwd)/ecs/output:/data" \
+  flight-atlas:ecs-local
+```
+
+Without Docker, run it in a venv instead: `cd ecs && OUTPUT_BASE=./output RUN_ATHENA=false python create_routes.py`.
+
+**On AWS (manual task run).** The EventBridge rule is defined but its monthly trigger is
+disabled for this account, so run the task on demand:
+```bash
+SUBNETS=$(aws ec2 describe-subnets \
+  --filters "Name=tag:Name,Values=ecs-public-*" \
+  --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
+SG=$(aws ec2 describe-security-groups \
+  --filters "Name=group-name,Values=ecs-sg" \
+  --query 'SecurityGroups[0].GroupId' --output text)
+
+aws ecs run-task --cluster flights-cluster --task-definition flights-scraper \
+  --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=ENABLED}"
 ```
 
 ---
