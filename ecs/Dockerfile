@@ -1,18 +1,17 @@
-# Use an official Python base image
-FROM python:3.12-slim
+FROM python:3.14-slim
 
-# Set working directory
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
 WORKDIR /app
 
-# Copy requirements
 COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install dependencies
-RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+COPY create_routes.py wiki_parse.py ./
 
-# Copy the script
-COPY create_routes.py .
+RUN useradd --create-home --uid 1000 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
 
-# Default command to run the script
 CMD ["python", "create_routes.py"]

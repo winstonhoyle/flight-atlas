@@ -1,6 +1,8 @@
-###########################
-# Athena IAM Role
-###########################
+data "aws_caller_identity" "current" {}
+
+############################################################
+# Athena role
+############################################################
 resource "aws_iam_role" "athena_s3_role" {
   name = "athena_s3_role"
 
@@ -48,7 +50,7 @@ resource "aws_iam_role_policy" "athena_s3_access" {
 }
 
 ############################################################
-# ECS Task Execution IAM Role
+# ECS task execution role (image pull, log write)
 ############################################################
 resource "aws_iam_role" "ecs_task_execution_role" {
   name = "ecs_task_execution_role"
@@ -72,7 +74,26 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Custom policy for S3 access
+############################################################
+# ECS task role (application S3 access)
+############################################################
+resource "aws_iam_role" "ecs_task_role" {
+  name = "ecs_task_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+        Effect = "Allow"
+      }
+    ]
+  })
+}
+
 resource "aws_iam_policy" "ecs_task_s3_policy" {
   name        = "flights_ecs_s3_policy"
   description = "Allow ECS Task to read/write S3 flights bucket"
@@ -82,7 +103,7 @@ resource "aws_iam_policy" "ecs_task_s3_policy" {
     Statement = [
       {
         Effect = "Allow",
-        Action = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
         Resource = [
           aws_s3_bucket.flights_bucket.arn,
           "${aws_s3_bucket.flights_bucket.arn}/*"
@@ -93,12 +114,12 @@ resource "aws_iam_policy" "ecs_task_s3_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "ecs_task_s3_attach" {
-  role       = aws_iam_role.ecs_task_execution_role.name
+  role       = aws_iam_role.ecs_task_role.name
   policy_arn = aws_iam_policy.ecs_task_s3_policy.arn
 }
 
 ############################################################
-# Lambda IAM Role & Policy
+# Lambda role & policy
 ############################################################
 resource "aws_iam_role" "lambda_role" {
   name = "flights-athena-lambda-role"
@@ -124,7 +145,6 @@ resource "aws_iam_role_policy" "lambda_policy" {
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
-      # Athena query execution
       {
         Effect = "Allow",
         Action = [
@@ -135,20 +155,17 @@ resource "aws_iam_role_policy" "lambda_policy" {
         ],
         Resource = "*"
       },
-      # S3 access for flights data
       {
         Effect = "Allow",
         Action = [
           "s3:GetObject",
-          "s3:ListBucket",
-          "s3:PutObject"
+          "s3:ListBucket"
         ],
         Resource = [
           "arn:aws:s3:::${aws_s3_bucket.flights_bucket.bucket}",
           "arn:aws:s3:::${aws_s3_bucket.flights_bucket.bucket}/*"
         ]
       },
-      # S3 access for Athena query results
       {
         Effect = "Allow",
         Action = [
@@ -162,7 +179,6 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "arn:aws:s3:::${aws_s3_bucket.athena_query_results.bucket}/*"
         ]
       },
-      # Glue access for Athena
       {
         Effect = "Allow",
         Action = [
@@ -179,7 +195,6 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:table/${aws_glue_catalog_database.flights_db.name}/*"
         ]
       },
-      # Dynamo DB
       {
         Effect = "Allow",
         Action = [
@@ -189,7 +204,6 @@ resource "aws_iam_role_policy" "lambda_policy" {
         ],
         Resource = aws_dynamodb_table.flights_query_cache.arn
       },
-      # Logs
       {
         Effect = "Allow",
         Action = [
@@ -204,7 +218,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
 }
 
 ############################################################
-# ECS Event (Monthy job) IAM Role & Policy
+# EventBridge role for the monthly ECS run
 ############################################################
 resource "aws_iam_role" "ecs_events_role" {
   name = "ecs_events_role"
@@ -227,12 +241,17 @@ resource "aws_iam_role_policy" "ecs_events_policy" {
     Version = "2012-10-17",
     Statement = [
       {
+        Effect   = "Allow",
+        Action   = "ecs:RunTask",
+        Resource = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:task-definition/${aws_ecs_task_definition.flights_task.family}:*"
+      },
+      {
         Effect = "Allow",
-        Action = [
-          "ecs:RunTask",
-          "iam:PassRole"
-        ],
-        Resource = "*"
+        Action = "iam:PassRole",
+        Resource = [
+          aws_iam_role.ecs_task_execution_role.arn,
+          aws_iam_role.ecs_task_role.arn
+        ]
       }
     ]
   })

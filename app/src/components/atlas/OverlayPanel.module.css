@@ -1,0 +1,109 @@
+.panel {
+  position: absolute;
+  top: var(--fa-space-105);
+  right: var(--fa-space-105);
+  z-index: var(--fa-z-panel);
+  display: flex;
+  flex-direction: column;
+  width: 20rem;
+  max-height: calc(100dvh - 2 * var(--fa-space-105));
+  padding: var(--fa-space-105) var(--fa-space-2);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fa-space-1);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fa-font-size-sm);
+  font-weight: var(--fa-font-weight-bold);
+  line-height: var(--fa-leading-tight);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-105);
+  min-height: 0;
+  margin-top: var(--fa-space-105);
+  overflow-y: auto;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-1);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.advancedToggle {
+  margin-left: auto;
+}
+
+.advanced {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-1);
+  font-size: var(--fa-font-size-3xs);
+}
+
+.hint {
+  margin: 0;
+  color: var(--fa-color-text-muted);
+}
+
+.apiUrl {
+  display: block;
+  padding: var(--fa-space-05) var(--fa-space-1);
+  border-radius: var(--fa-radius-md);
+  background: var(--fa-color-surface-muted);
+  font-family: var(--fa-font-mono);
+  font-size: var(--fa-font-size-3xs);
+  word-break: break-all;
+}
+
+.summary {
+  margin: 0;
+  color: var(--fa-color-text-muted);
+  font-size: var(--fa-font-size-2xs);
+}
+
+.snapshot {
+  margin: var(--fa-space-05) 0 0;
+  color: var(--fa-color-text-muted);
+  font-size: var(--fa-font-size-3xs);
+}
+
+/* Not display: none, so screen readers still hear the update when text arrives. */
+.status:empty {
+  position: absolute;
+}
+
+.status,
+.error {
+  margin: 0;
+  font-size: var(--fa-font-size-2xs);
+}
+
+.error {
+  color: var(--fa-color-error);
+}
+
+@media (max-width: 40em) {
+  .panel {
+    left: var(--fa-space-1);
+    right: var(--fa-space-1);
+    top: var(--fa-space-1);
+    width: auto;
+    max-height: 60dvh;
+  }
+}

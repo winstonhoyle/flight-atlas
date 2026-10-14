@@ -1,0 +1,12 @@
+{
+  "version": "2.0",
+  "rawPath": "/airports",
+  "rawQueryString": "",
+  "queryStringParameters": null,
+  "requestContext": {
+    "http": {
+      "method": "GET",
+      "path": "/airports"
+    }
+  }
+}

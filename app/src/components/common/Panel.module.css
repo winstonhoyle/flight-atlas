@@ -1,0 +1,8 @@
+.panel {
+  background: var(--fa-color-surface);
+  color: var(--fa-color-text);
+  border: 1px solid var(--fa-color-border);
+  border-radius: var(--fa-radius-lg);
+  box-shadow: var(--fa-shadow-2);
+  padding: var(--fa-space-105) var(--fa-space-2);
+}

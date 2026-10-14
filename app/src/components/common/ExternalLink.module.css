@@ -1,0 +1,22 @@
+.link {
+  color: var(--fa-color-link);
+  text-underline-offset: 0.15em;
+}
+
+.noWrap {
+  white-space: nowrap;
+}
+
+.icon {
+  margin-left: 0.15em;
+  vertical-align: -0.125em;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

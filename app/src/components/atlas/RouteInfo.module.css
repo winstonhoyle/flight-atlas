@@ -1,0 +1,47 @@
+.route {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-1);
+  padding-top: var(--fa-space-105);
+  border-top: 1px solid var(--fa-color-border);
+  font-size: var(--fa-font-size-2xs);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fa-font-size-sm);
+  font-weight: var(--fa-font-weight-bold);
+  line-height: var(--fa-leading-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+.airlines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.airline {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--fa-space-1);
+  padding: var(--fa-space-05) 0;
+}
+
+.code {
+  color: var(--fa-color-text-muted);
+  font-size: var(--fa-font-size-3xs);
+}
+
+.sources {
+  margin: 0;
+  color: var(--fa-color-text-muted);
+  font-size: var(--fa-font-size-3xs);
+}

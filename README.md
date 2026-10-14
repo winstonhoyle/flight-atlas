@@ -1,117 +1,54 @@
-# 🗺️ Flight Atlas
+# Flight Atlas
 
-**Flight Atlas** is a cloud-native application that maps **direct flight routes between all U.S. airports**.  
-It combines scheduled data ingestion, serverless querying, and a static web frontend for fast and scalable access to flight route information.
+Flight Atlas maps the direct flight routes between U.S. airports, built from Wikipedia's
+airline and destination tables. Live at [flightatlas.io](https://flightatlas.io).
 
-## Try it out: [https://flightatlas.io](https://flightatlas.io)
+![Flight Atlas logo](app/public/logo.svg)
 
-![alt text](app/public/logo.png)
----
+## Architecture
 
+| Part | Service | Folder |
+| --- | --- | --- |
+| Scraper | Python, run locally each month | [`ecs/`](ecs/README.md) |
+| Storage and queries | S3 (Parquet), Glue, Athena | |
+| API | API Gateway, Lambda, DynamoDB query cache | [`lambda/`](lambda/README.md) |
+| Frontend | React, TypeScript, and Leaflet on Cloudflare Pages | [`app/`](app/README.md) |
+| Infrastructure | Terraform: AWS resources and Cloudflare DNS records | [`infra/`](infra/README.md) |
 
-## 🚀 Architecture Overview
+How data moves:
 
-Flight Atlas leverages AWS and Cloudflare services to provide a complete workflow from data ingestion to end-user queries.  
-All infrastructure is **fully managed using Terraform**, enabling reproducible deployments, and **CI/CD is automated with GitHub Actions**.
+1. `make scrape` reads Wikipedia and writes a year/month snapshot of routes, airports, and airlines to S3 as Parquet, then repairs the Athena partitions.
+2. The app calls `api.flightatlas.io`, where API Gateway invokes the Lambda.
+3. The Lambda picks the snapshot, then either reads a finished Athena query's result from S3 (found through the DynamoDB cache) or starts the query and returns `202` until it finishes.
 
+The scraper is packaged for ECS with a monthly EventBridge schedule, but AWS blocks ECS task
+launches for this account, so it runs locally.
 
-### Data Pipeline (ECS + ECR + S3 + Athena)
+GitHub Actions runs on every push to `main`: it lints, tests, and builds the app and deploys it
+to Cloudflare Pages; runs ruff and pytest for the Lambda and the scraper; builds both
+container images, pushes them to ECR tagged with the commit SHA, and applies Terraform.
 
-- **ECS Task (Monthly Job):**  
-  A scheduled ECS task runs once per month to scrape the list of all U.S. airports and their destinations from Wikipedia.
-  - Runs inside a **Docker container** stored in **Amazon ECR**.
-  - Writes structured route data to an **S3 bucket**.
-  - **CloudWatch Events / EventBridge** triggers the ECS task on a monthly schedule.
+## API
 
-- **S3 & Athena Integration:**  
-  - S3 stores the scraped route data.  
-  - **Amazon Athena** allows SQL-style queries directly against the S3 dataset without provisioning a separate database.
+All endpoints are `GET` and return JSON. The data comes in monthly snapshots, listed by
+`/available_months`. `/airports`, `/airlines`, and `/routes` take optional `year` and `month`
+parameters to pick one:
 
----
+- Neither: the newest snapshot.
+- `year` and `month`: that snapshot, or `404` if it doesn't exist.
+- `month` alone: that month's newest year, or the newest snapshot if that month has none.
 
-### Query Layer (Lambda + DynamoDB + API Gateway)
+Status codes:
 
-- **AWS Lambda Function:**  
-  Handles on-demand flight queries from the frontend.  
-  - Checks **DynamoDB** for cached results.  
-  - If not cached, queries **Athena** and stores results in DynamoDB for future requests.
+- `200`: result in the body
+- `202`: the query is still running in Athena (`{"status": "processing", "query_id": "..."}`). Retry the same request after a short delay
+- `400`: missing or invalid parameter
+- `404`: unknown path, or no snapshot for the requested `year` and `month`
+- `429`: rate limit exceeded. Back off and retry
 
-- **API Gateway Endpoint:**  
-  Exposes the Lambda function over HTTPS, serving as the backend API for the frontend.
-
----
-
-### Web Application (Cloudflare + Route 53)
-
-- The frontend is a static **React app** built using Node.js and npm.  
-- Deployed to **Cloudflare Pages** for high availability and global CDN caching.  
-- **Route 53** manages DNS for the primary domain, which points to Cloudflare.  
-- Cloudflare handles final DNS resolution and SSL termination.
-
----
-
-### Infrastructure as Code (Terraform)
-
-Terraform is used to manage **all AWS and Cloudflare resources**, including:
-
-- **ECS infrastructure:** Cluster, tasks, Docker image deployment  
-- **Networking:** VPC, subnets, and security groups  
-- **IAM roles & policies** for ECS, Lambda, and other services  
-- **ACM Certificate** for secure HTTPS traffic  
-- **Lambda functions** and **API Gateway endpoints**  
-- **S3 buckets** for storage of route data  
-- **DynamoDB** for query caching  
-- **CloudWatch / EventBridge** to schedule the monthly ECS scraper task  
-- **Cloudflare Pages deployment** and DNS configuration
-
-This ensures **fully version-controlled, reproducible infrastructure** with minimal manual setup.
-
----
-
-### CI/CD Automation (GitHub Actions)
-
-- **GitHub Actions workflows** automate:
-  - Docker image build and push to ECR  
-  - Lambda ZIP packaging and deployment  
-  - Terraform plan and apply for infrastructure changes  
-  - Frontend build and deployment to Cloudflare Pages  
-
-This provides **fully automated, end-to-end CI/CD** whenever changes are pushed to the repository.
-
----
-
-### Services Summary
-
-| Component        | Service            | Purpose                                              |
-|-----------------|------------------|-----------------------------------------------------|
-| 🐳 Data Scraper   | ECS + ECR         | Runs monthly containerized scraper                  |
-| ☁️ Storage        | S3                | Stores raw and processed route data                |
-| 🔍 Query Engine   | Athena            | Enables SQL access to S3 data                      |
-| ⚡ API Compute    | Lambda            | Handles flight data queries                        |
-| 🧠 Cache          | DynamoDB          | Stores cached query results                         |
-| 🌐 API Gateway    | API Gateway       | Public interface for Lambda                         |
-| 🧭 DNS & Routing | Route 53 + Cloudflare | Domain routing and SSL                           |
-| 💻 Frontend       | Cloudflare Pages  | Static React app hosting                            |
-
----
-
-### 🗓️ Workflow Summary
-
-1. **Monthly ECS Task** scrapes Wikipedia → writes data to **S3**.  
-2. **Athena** indexes the data → ready for queries.  
-3. **Frontend (Cloudflare)** sends request → **API Gateway → Lambda**.  
-4. **Lambda** checks **DynamoDB** cache:  
-   - If cached → return result.  
-   - If not → query **Athena**, store result in DynamoDB, return result.  
-5. **Terraform** ensures all infrastructure is deployed correctly, including Route53 hosted zones, subnets, API Gateway domains, IAM roles, ACM certificate, and scheduled ECS tasks.  
-6. **GitHub Actions** automatically handles builds and deployments for ECS, Lambda, and the frontend.
-
-
----
-
-This setup ensures **scalable, serverless infrastructure** with automated data updates, fast queries, and a responsive frontend.
-
-## 📡 API
+Each IP may make 100 requests in 10 seconds; past that, Cloudflare blocks it for 10 seconds.
+Successful responses are cached for an hour. The data changes once a month, so cache them
+on your side too.
 
 **Endpoint:** `https://api.flightatlas.io/airports`  
 
@@ -155,29 +92,29 @@ This setup ensures **scalable, serverless infrastructure** with automated data u
 }
 ```
 
-**Endpoint:** `https://api.flightatlas.io/airlines`  
+**Endpoint:** `https://api.flightatlas.io/available_months`  
 
 **Method:** GET  
 
 **Response:**
 ```json
-{
-  "AA": "American Airlines",
-  "DL": "Delta Air Lines",
-  "UA": "United Airlines",
+[
+  { "month": "10", "year": "2026" },
   ...
-}
+]
 ```
 
 **Endpoint:** `https://api.flightatlas.io/routes`  
 
 **Method:** GET  
 
-**Parameters (at least one required):**
-- `airport` – IATA code of the origin airport (optional if airline_code is provided)
-- `airline_code` IATA code of the airline (optional if airport is provided)
+**Parameters:**
+- `airport`: IATA code of the origin airport
+- `airline_code`: IATA code of the airline
+- `year`, `month`: the snapshot (optional, see above)
 
-Note: At least one of airport or airline_code must be provided; both can also be used together for filtering.
+At least one of `airport` and `airline_code` is required. With both, the response has that
+airline's routes from that airport.
 
 **Response:**
 ```json
@@ -204,29 +141,47 @@ Note: At least one of airport or airline_code must be provided; both can also be
 }
 ```
 
-## 📂 Project Structure
+## Getting started
 
-- `app/` – React frontend
-- `infra/` – Terraform code for AWS & Cloudflare
-- `lambda/` – Lambda function code and packaging scripts
-- `ecs/` – Dockerfile and ECS scraper container
+Prerequisites: Node.js 22 or later, Python 3.14, Docker, Terraform 1.10 or later, and the AWS
+CLI with credentials for the account.
 
----
+Run the app against the live API:
 
-## 🛠️ Getting Started
+```bash
+git clone https://github.com/winstonhoyle/flight-atlas.git
+cd flight-atlas
+make app-start      # http://localhost:3000, against the live API
+```
 
-### Prerequisites
-- Node.js >= 20
-- npm
-- Terraform >= 1.13
-- Docker (for building and running the ECS scraper container locally, if needed)
-- AWS CLI configured with appropriate credentials
-- Access to Cloudflare account with API token and Pages project
+Check everything locally:
 
----
+```bash
+make app-check      # ESLint, Prettier, TypeScript, and the app's tests
+make py-check       # ruff and pytest for the Lambda and the scraper
+```
 
-### Required Environment Variables
-For deployment (Terraform, ECS, Lambda, Cloudflare Pages, GitHub Actions), you must provide:
+`requirements.txt` at the root pins pytest and ruff; `lambda/` and `ecs/` each have their own
+runtime requirements.
+
+## Deploying
+
+Pushing to `main` deploys everything. To deploy the backend from a laptop, set up Terraform
+as described in [infra/README.md](infra/README.md), then:
+
+```bash
+make containers          # build both images, tagged :local
+make deploy-containers   # push them to ECR
+```
+
+```bash
+make tf-init
+make tf-plan
+make tf-apply
+```
+
+The Lambda's image has to be in ECR before `tf-apply`. CI reads these GitHub secrets:
+
 ```bash
 AWS_ACCESS_KEY_ID
 AWS_SECRET_ACCESS_KEY
@@ -236,45 +191,11 @@ CLOUDFLARE_API_TOKEN
 CLOUDFLARE_ZONE_IO_ID
 ```
 
----
+## Contributing
 
-### Running Locally (Frontend Only)
-```
-git clone https://github.com/winstonhoyle/flight-atlas.git
-cd flight-atlas/app
-npm install
-npm run start
-```
+Fork the repository, make your change on a branch, and open a pull request. `make app-check`
+and `make py-check` match what CI runs.
 
----
+## License
 
-### Deploying the Backend (ECS, Lambda, Terraform)
-
-1. Set up environment variables listed above
-2. Prepare Terraform variables based on [infra/terraform.tfvars.example](infra/terraform.tfvars.example)
-3. Package Lambda code:
-```bash
-sh lambda/build.sh
-```
-4. Initialize Terraform and apply:
-```bash
-cd infra
-terraform init
-terraform plan
-terraform apply
-```
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a new branch (`git checkout -b feature/xyz`)
-3. Make your changes and commit (`git commit -m "Add feature"`)
-4. Push to branch (`git push origin feature/xyz`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the **Apache License 2.0**.  
-See the [LICENSE](LICENSE) file for details.
+[Apache License 2.0](LICENSE).

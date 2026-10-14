@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.env
+.env.*
+output/
+.venv/
+venv/
+tests/
+pyproject.toml

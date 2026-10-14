@@ -1,0 +1,16 @@
+.dialog {
+  max-width: min(25rem, calc(100vw - 2 * var(--fa-space-2)));
+  padding: 0;
+  border: none;
+  border-radius: var(--fa-radius-lg);
+  box-shadow: var(--fa-shadow-3);
+  color: var(--fa-color-text);
+}
+
+.dialog::backdrop {
+  background: var(--fa-color-scrim);
+}
+
+.body {
+  padding: var(--fa-space-3);
+}

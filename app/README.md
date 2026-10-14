@@ -1,40 +1,91 @@
-# React App
+# Flight Atlas app
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+The map at flightatlas.io: React, TypeScript, and Leaflet, built with Vite. All data comes from
+the Flight Atlas API, so a local run needs no backend.
 
-## Available Scripts
+## Prerequisites
 
-In the project directory, you can run:
+- Node.js >= 22
+- npm
 
-### `npm start`
+## Run locally
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+From the repo root:
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+```bash
+make app-start    # installs dependencies on first run, then starts Vite
+```
 
-### `npm test`
+Or from `app/`: `npm install && npm start`.
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+The app opens at http://localhost:3000 with live data from `https://api.flightatlas.io`. On a
+WSL `/mnt/` path, Vite polls for file changes.
 
-### `npm run build`
+## Make targets
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+| Target             | What it does                                         |
+| ------------------ | ---------------------------------------------------- |
+| `make app-install` | `npm ci` (re-runs when `package-lock.json` changes)  |
+| `make app-start`   | Dev server on port 3000                              |
+| `make app-build`   | Sitemap, type-check, and production build to `dist/` |
+| `make app-preview` | Build, then serve `dist/` locally                    |
+| `make app-check`   | Lint, format check, type-check, and tests            |
+| `make app-test`    | Tests only                                           |
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+If the page shows "504 Outdated Optimize Dep" after packages change, restart `make app-start`.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Links
 
-### `npm run eject`
+The URL holds the selection, so every view can be shared and reloaded:
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+| Path              | Shows                                  |
+| ----------------- | -------------------------------------- |
+| `/ATL`            | Routes from an airport                 |
+| `/ATL/BOS`        | One route and the airlines that fly it |
+| `/airline/DL`     | An airline's routes                    |
+| `/ATL/airline/DL` | An airline's routes from one airport   |
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Codes are case-insensitive. An unknown code opens the home map. The page title and canonical
+link follow the selection, and Back/Forward step through it.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## Data source
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+The API answers `202` while a query runs, and the client polls until it finishes; see
+[lambda/README.md](../lambda/README.md#request-flow). Requests go through `src/services/api.ts`, which reads `VITE_API_BASE` and falls back to
+`https://api.flightatlas.io`. To point the app at a different API, create `.env.local`:
+
+```
+VITE_API_BASE=https://your-api-host
+```
+
+`.env.local` is gitignored. The endpoints are in the [API reference](../README.md#api).
+
+## Layout
+
+| Path                     | Contents                                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| `src/components/atlas/`  | The map page: map, overlay panel, route info, legend, markers, welcome dialog             |
+| `src/components/common/` | Domain-free pieces: `Button`, `IconButton`, `Combobox`, `Panel`, `Dialog`, `ExternalLink` |
+| `src/icons/`             | Inline SVG icons                                                                          |
+| `src/hooks/`             | Data hooks (airports and airlines, routes, months) and the URL sync                       |
+| `src/services/api.ts`    | API client, including polling while the API answers `202`                                 |
+| `src/styles/`            | `tokens.css` (every color, size, and space), base styles, Leaflet panes                   |
+| `src/utils/`             | Path parsing, destination bins, great-circle distance                                     |
+| `src/types.ts`           | API response types                                                                        |
+| `scripts/`               | `build-pages.js` and `pages.js`, run after every build                                    |
+
+Each component is three files side by side: `Name.tsx`, `Name.module.css`, and `Name.test.tsx`
+when it has tests. Colors, type, spacing, and component rules are in [DESIGN.md](../DESIGN.md).
+
+After `vite build`, `scripts/build-pages.js` fetches every airport and airline from the live
+API and writes `dist/sitemap.xml` plus one HTML page per airport and airline (`dist/ATL/index.html`,
+`dist/airline/DL/index.html`). Each is a copy of `dist/index.html` with its own title,
+description, canonical link, Open Graph tags, JSON-LD (`Airport` or `Airline`), and a one-line
+summary inside `#root`, so search engines and link previews see real content before JavaScript
+runs. If the API is down, only the sitemap's home page is written.
+
+## Tests
+
+Vitest with Testing Library in jsdom covers the API client, path parsing, destination bins,
+distance, and the combobox, dialog, link, legend, and route info components. The Leaflet map has
+no automated tests.

@@ -1,0 +1,18 @@
+.tooltip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--fa-space-05) var(--fa-space-1);
+  border-color: var(--fa-color-border);
+  border-radius: var(--fa-radius-md);
+  box-shadow: var(--fa-shadow-1);
+  color: var(--fa-color-text);
+  font-family: var(--fa-font-sans);
+  font-size: var(--fa-font-size-3xs);
+  line-height: var(--fa-leading-tight);
+  pointer-events: none;
+}
+
+.name {
+  font-weight: var(--fa-font-weight-bold);
+}

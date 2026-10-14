@@ -1,0 +1,8 @@
+build/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+tests/
+events/
+pyproject.toml

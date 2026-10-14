@@ -1,57 +1,102 @@
+# ------------------------------
+# General AWS Configuration
+# ------------------------------
 variable "region" {
-  type    = string
-  default = "us-west-1"
+  description = "AWS region for deployment"
+  type        = string
+  default     = "us-west-1"
 }
 
-# S3 Bucket names
+# ------------------------------
+# S3 Buckets
+# ------------------------------
 variable "routes_bucket_name" {
-  type    = string
-  default = "bucket-flight-atlas-routes"
+  description = "S3 bucket for flight routes data"
+  type        = string
+  default     = "bucket-flight-atlas-routes"
 }
 
 variable "results_bucket_name" {
-  type    = string
-  default = "bucket-flight-atlas-query-results"
+  description = "S3 bucket for Athena query results"
+  type        = string
+  default     = "bucket-flight-atlas-query-results"
 }
 
-# Athena db
+# ------------------------------
+# Athena Configuration
+# ------------------------------
 variable "athena_database_name" {
-  type    = string
-  default = "flights_db"
+  description = "Athena database name"
+  type        = string
+  default     = "flights_db"
 }
 
-# Athena db table names
 variable "athena_routes_table_name" {
-  type    = string
-  default = "flights"
+  description = "Athena routes table name"
+  type        = string
+  default     = "flights"
 }
 
 variable "athena_airports_table_name" {
-  type    = string
-  default = "airports"
+  description = "Athena airports table name"
+  type        = string
+  default     = "airports"
 }
 
 variable "athena_airlines_table_name" {
-  type    = string
-  default = "airlines"
-}
-
-# Dummy image so `terraform plan` works this is build with github actions and pushes
-# actual updated image for the ecs monthly job
-variable "ecs_image" {
-  description = "ECS container image URI"
+  description = "Athena airlines table name"
   type        = string
-  default     = "public.ecr.aws/amazonlinux/amazonlinux:latest"
+  default     = "airlines"
 }
 
-# Lambda zip path, need to build before running
-variable "lambda_zip_path" {
-  description = "Path to the Lambda ZIP file"
+# ------------------------------
+# Container images
+# ------------------------------
+variable "image_tag" {
+  description = "Tag for the ECS and Lambda images (local for dev, git SHA on deploy)"
   type        = string
-  default     = "../lambda/lambda_package.zip"
+  default     = "local"
 }
 
-# Cloudfare vars
+# ------------------------------
+# API rate limiting
+# ------------------------------
+variable "api_throttle_rate_limit" {
+  description = "Steady-state requests per second allowed across the whole API"
+  type        = number
+  default     = 50
+}
+
+variable "api_throttle_burst_limit" {
+  description = "Maximum burst of concurrent requests allowed across the whole API"
+  type        = number
+  default     = 100
+}
+
+variable "api_rate_limit_per_ip" {
+  description = "Requests one IP may make to the API in 10 seconds before Cloudflare blocks it for 10 seconds"
+  type        = number
+  default     = 100
+}
+
+# ------------------------------
+# Alerts
+# ------------------------------
+variable "alert_email" {
+  description = "Where API alarms and budget alerts go"
+  type        = string
+  default     = "hoylejwinston@gmail.com"
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly AWS spend in USD; email at 80% actual and 100% forecast"
+  type        = string
+  default     = "10"
+}
+
+# ------------------------------
+# Cloudflare Configuration
+# ------------------------------
 variable "cloudflare_api_token" {
   description = "Cloudflare API token with DNS:Edit & Zone:Read"
   type        = string
@@ -62,4 +107,3 @@ variable "cloudflare_zone_io_id" {
   description = "Cloudflare Zone ID for flightatlas.io"
   type        = string
 }
-

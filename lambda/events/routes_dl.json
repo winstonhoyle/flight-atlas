@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "rawPath": "/routes",
+  "rawQueryString": "airline_code=DL",
+  "queryStringParameters": {
+    "airline_code": "DL"
+  },
+  "requestContext": {
+    "http": {
+      "method": "GET",
+      "path": "/routes"
+    }
+  }
+}

@@ -1,18 +1,12 @@
 repos:
-  # Python formatting with Black
-  - repo: https://github.com/psf/black
-    rev: 23.7.0
+  # Python lint and formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.0
     hooks:
-      - id: black
-        language_version: python3.12
+      - id: ruff-check
+        args: [--fix]
         files: ^(lambda|ecs)/.*\.py$
-
-  # Python import sorting with isort
-  - repo: https://github.com/PyCQA/isort
-    rev: 6.0.0
-    hooks:
-      - id: isort
-        language_version: python3.12
+      - id: ruff-format
         files: ^(lambda|ecs)/.*\.py$
 
   # Terraform formatting
@@ -27,7 +21,7 @@ repos:
     hooks:
       - id: npm-lock-sync
         name: Check npm lockfile consistency
-        entry: bash -c 'npm install --package-lock-only --ignore-scripts --no-audit --no-fund && git diff --exit-code package-lock.json || (echo "❌ package-lock.json out of sync! Run npm install and recommit." && exit 1)'
+        entry: bash -c 'cd app && npm install --package-lock-only --ignore-scripts --no-audit --no-fund && git diff --exit-code package-lock.json || (echo "app/package-lock.json is out of sync. Run npm install in app/ and commit again." && exit 1)'
         language: system
         pass_filenames: false
-        files: ^app/
+        files: ^app/package(-lock)?\.json$
