@@ -46,8 +46,9 @@ Status codes:
 - `404`: unknown path, or no snapshot for the requested `year` and `month`
 - `429`: rate limit exceeded. Back off and retry
 
-The API allows 50 requests per second with bursts of 100, shared across all clients. The data
-changes once a month, so cache responses.
+Each IP may make 100 requests in 10 seconds; past that, Cloudflare blocks it for 10 seconds.
+Successful responses are cached for an hour. The data changes once a month, so cache them
+on your side too.
 
 **Endpoint:** `https://api.flightatlas.io/airports`  
 

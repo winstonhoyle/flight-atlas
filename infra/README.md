@@ -14,6 +14,7 @@ in the `flightatlas-terraform-state` S3 bucket with S3 native locking.
 | `data.tf` | S3 buckets, Glue database and tables, DynamoDB query cache |
 | `api.tf` | API Gateway HTTP API, routes, throttling, custom domain, ACM certificate |
 | `dns.tf` | Route 53 zone and records, Cloudflare `www` and `api` records |
+| `edge.tf` | Cloudflare SSL mode, `www` redirect, API rate limit and cache rules |
 | `iam.tf` | Roles and policies for Athena, ECS, the Lambda, and EventBridge |
 
 Cloudflare Pages itself is not in Terraform; CI deploys the app to it.
@@ -23,7 +24,7 @@ Cloudflare Pages itself is not in Terraform; CI deploys the app to it.
 - Terraform 1.10 or later (the S3 lockfile needs it; CI uses 1.13.3)
 - The AWS CLI, signed in to the account, region `us-west-1`
 - Docker, to build and push the images with the [root `Makefile`](../Makefile)
-- A Cloudflare API token with `DNS:Edit` and `Zone:Read`, and the `flightatlas.io` zone ID
+- A Cloudflare API token for the `flightatlas.io` zone with Zone Read and these Edit permissions: DNS, Zone Settings, Zone WAF, Cache Rules, and Single Redirect. CI uses the same token from the `CLOUDFLARE_API_TOKEN` secret
 
 ## Credentials
 
@@ -90,17 +91,22 @@ first of each month. AWS blocks ECS task launches for this account (`RunTask` re
 
 ## DNS
 
-Route 53 hosts the `flightatlas.io` zone, the ACM validation records, and the `api` alias to
-API Gateway. Cloudflare holds `www`, a CNAME to `flight-atlas.pages.dev`, and `api`, a CNAME to
-the API Gateway domain.
+Cloudflare is authoritative for `flightatlas.io`. It holds the apex (Pages), `www`, `api`, and
+the ACM validation record for `api`. `www` and `api` go through Cloudflare's proxy: `www`
+redirects to the apex, and `api` reaches the API Gateway custom domain over HTTPS with SSL
+mode Full (strict). The Route 53 zone in `dns.tf` has the same `api` and validation records
+but answers no queries.
 
-## Rate limiting
+## Rate limiting and caching
 
-The `$default` stage throttles the whole API to `api_throttle_rate_limit` requests per second
-with bursts up to `api_throttle_burst_limit` (defaults 50 and 100). Requests over the limit get
-`429` before they reach the Lambda. The limit is shared by every client, so one client can use
-it up. HTTP APIs can't use AWS WAF; per-client limits need a proxy in front, such as
-`proxied = true` on the Cloudflare `api` record plus a Cloudflare rate-limiting rule.
+Two limits apply to the API:
+
+- Cloudflare blocks an IP for 10 seconds after `api_rate_limit_per_ip` requests (default 100) in 10 seconds.
+- The API Gateway `$default` stage throttles all traffic together to `api_throttle_rate_limit` requests per second with bursts up to `api_throttle_burst_limit` (defaults 50 and 100), and answers `429` above that.
+
+The default `execute-api` URL is disabled, so every request comes through `api.flightatlas.io`
+and Cloudflare. Cloudflare caches responses for as long as their `Cache-Control` allows: an hour
+for `200`, and never for `202` or errors.
 
 ## Recovering a Lambda whose image was deleted
 

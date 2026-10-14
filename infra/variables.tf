@@ -73,6 +73,12 @@ variable "api_throttle_burst_limit" {
   default     = 100
 }
 
+variable "api_rate_limit_per_ip" {
+  description = "Requests one IP may make to the API in 10 seconds before Cloudflare blocks it for 10 seconds"
+  type        = number
+  default     = 100
+}
+
 # ------------------------------
 # Cloudflare Configuration
 # ------------------------------

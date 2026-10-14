@@ -5,6 +5,9 @@ resource "aws_apigatewayv2_api" "flights_api" {
   name          = "flight-atlas"
   protocol_type = "HTTP"
 
+  # Only the custom domain answers, so every request passes Cloudflare's rate limit.
+  disable_execute_api_endpoint = true
+
   cors_configuration {
     allow_origins = ["*"]
     allow_methods = ["GET", "OPTIONS"]
