@@ -11,7 +11,19 @@ resource "cloudflare_zone_settings_override" "flightatlas_io" {
   zone_id = var.cloudflare_zone_io_id
 
   settings {
-    ssl = "strict"
+    ssl                      = "strict"
+    always_use_https         = "on"
+    min_tls_version          = "1.2"
+    automatic_https_rewrites = "on"
+
+    # Also covers api.flightatlas.io, which Pages' _headers doesn't reach. No preload: hard to undo.
+    security_header {
+      enabled            = true
+      max_age            = 31536000
+      include_subdomains = true
+      nosniff            = true
+      preload            = false
+    }
   }
 }
 

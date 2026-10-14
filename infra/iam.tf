@@ -256,3 +256,38 @@ resource "aws_iam_role_policy" "ecs_events_policy" {
     ]
   })
 }
+
+############################################################
+# GitHub Actions deploy role (OIDC, main branch only)
+############################################################
+# The provider is shared with Mapping-WMATA-Fares, which manages it.
+data "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
+}
+
+resource "aws_iam_role" "github_actions" {
+  name = "github-actions-flight-atlas-deploy-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect    = "Allow",
+        Principal = { Federated = data.aws_iam_openid_connect_provider.github.arn },
+        Action    = "sts:AssumeRoleWithWebIdentity",
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com",
+            "token.actions.githubusercontent.com:sub" = "repo:winstonhoyle/flight-atlas:ref:refs/heads/main"
+          }
+        }
+      }
+    ]
+  })
+}
+
+# CI runs terraform apply over IAM, VPC, ECS, Lambda and S3, so it needs broad rights (same as wmata).
+resource "aws_iam_role_policy_attachment" "github_actions_deploy" {
+  role       = aws_iam_role.github_actions.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}

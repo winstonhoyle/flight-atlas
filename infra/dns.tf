@@ -53,3 +53,39 @@ resource "cloudflare_record" "api_custom_domain" {
   ttl        = 1
   depends_on = [aws_apigatewayv2_domain_name.api_domain, cloudflare_zone_settings_override.flightatlas_io]
 }
+
+# Proxied so the zone's HTTPS redirect and HSTS reach the apex. Imported from the dashboard-made record.
+resource "cloudflare_record" "apex" {
+  zone_id = var.cloudflare_zone_io_id
+  name    = "@"
+  type    = "CNAME"
+  content = "flight-atlas.pages.dev"
+  proxied = true
+  ttl     = 1
+}
+
+# The domain sends no email; these tell receivers to reject anything claiming to be from it.
+resource "cloudflare_record" "null_mx" {
+  zone_id  = var.cloudflare_zone_io_id
+  name     = "@"
+  type     = "MX"
+  content  = "."
+  priority = 0
+  ttl      = 3600
+}
+
+resource "cloudflare_record" "spf" {
+  zone_id = var.cloudflare_zone_io_id
+  name    = "@"
+  type    = "TXT"
+  content = "v=spf1 -all"
+  ttl     = 3600
+}
+
+resource "cloudflare_record" "dmarc" {
+  zone_id = var.cloudflare_zone_io_id
+  name    = "_dmarc"
+  type    = "TXT"
+  content = "v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s"
+  ttl     = 3600
+}
