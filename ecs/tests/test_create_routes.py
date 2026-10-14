@@ -1,5 +1,3 @@
-"""The scraper's own logic, with Wikipedia replaced by saved pages and fake page lookups."""
-
 from pathlib import Path
 
 import pandas as pd

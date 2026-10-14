@@ -24,7 +24,6 @@
   line-height: var(--fa-leading-tight);
 }
 
-/* Scrolls inside the panel when route details outgrow the screen. */
 .body {
   display: flex;
   flex-direction: column;
@@ -72,7 +71,7 @@
   word-break: break-all;
 }
 
-/* Out of the flex flow while empty, but still rendered so screen readers hear updates. */
+/* Not display: none, so screen readers still hear the update when text arrives. */
 .status:empty {
   position: absolute;
 }

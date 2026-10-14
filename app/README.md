@@ -1,7 +1,7 @@
-# Flight Atlas Frontend
+# Flight Atlas app
 
-React, TypeScript, and Leaflet map for exploring U.S. flight routes, built with Vite. It reads
-all data from the Flight Atlas API, so there is no local backend to run.
+The map at flightatlas.io: React, TypeScript, and Leaflet, built with Vite. All data comes from
+the Flight Atlas API, so a local run needs no backend.
 
 ## Prerequisites
 
@@ -18,9 +18,8 @@ make app-start    # installs dependencies on first run, then starts Vite
 
 Or from `app/`: `npm install && npm start`.
 
-Open http://localhost:3000. The dev server fetches live data from the deployed API
-(`https://api.flightatlas.io`), so the map loads real routes, airports, and airlines with no
-extra setup. Under WSL on a `/mnt/` path, Vite polls for file changes automatically.
+The app opens at http://localhost:3000 with live data from `https://api.flightatlas.io`. On a
+WSL `/mnt/` path, Vite polls for file changes.
 
 ## Make targets
 
@@ -37,7 +36,7 @@ If the page shows "504 Outdated Optimize Dep" after packages change, restart `ma
 
 ## Links
 
-The selection lives in the URL, so every view can be shared and reloaded:
+The URL holds the selection, so every view can be shared and reloaded:
 
 | Path              | Shows                                  |
 | ----------------- | -------------------------------------- |
@@ -58,8 +57,7 @@ Requests go through `src/services/api.ts`, which reads `VITE_API_BASE` and falls
 VITE_API_BASE=https://your-api-host
 ```
 
-`.env.local` is gitignored. See the [API reference](../README.md#-api) for the endpoints
-(`/airports`, `/airlines`, `/routes`, `/available_months`).
+`.env.local` is gitignored. The endpoints are in the [API reference](../README.md#api).
 
 ## Layout
 
@@ -78,8 +76,12 @@ VITE_API_BASE=https://your-api-host
 Each component is three files side by side: `Name.tsx`, `Name.module.css`, and `Name.test.tsx`
 when it has tests. Colors, type, spacing, and component rules are in [DESIGN.md](../DESIGN.md).
 
+`npm run build` first runs `scripts/generate-sitemap.js`, which writes `public/sitemap.xml` with
+a URL for every airport and airline from the live API, or only the home page if the API is
+down. `npm run sitemap` runs it alone.
+
 ## Tests
 
-Vitest with Testing Library in jsdom. Plain functions (API parsing, paths, bins, distance) and
-components (combobox, dialog, links, legend, route info) are covered; the Leaflet map itself is
-checked by hand or with Playwright screenshots.
+Vitest with Testing Library in jsdom covers the API client, path parsing, destination bins,
+distance, and the combobox, dialog, link, legend, and route info components. The Leaflet map has
+no automated tests.

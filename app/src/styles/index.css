@@ -36,7 +36,6 @@ body {
   }
 }
 
-/* Leaflet: Public Sans for its controls, and custom panes stacked routes < highlight < airports < tooltips */
 .leaflet-container {
   font-family: var(--fa-font-sans);
 }

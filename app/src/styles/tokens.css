@@ -1,11 +1,3 @@
-/*
-  Design tokens. See DESIGN.md.
-
-  Two layers. The palette holds USWDS system colors by their USWDS names. The roles below it
-  name the job a color does, and components read only roles. DESIGN.md lists the contrast and
-  color-blind rules every role meets.
-*/
-
 @font-face {
   font-family: "Public Sans";
   src: url("../assets/fonts/public-sans-latin-wght-normal.woff2") format("woff2");
@@ -37,13 +29,13 @@
   --uswds-blue-40v: #2491ff;
   --uswds-red-60v: #b50909;
 
-  /* Palette: brand, measured from the logo. The logo and wordmark only. */
+  /* Palette: brand, logo only */
   --brand-green-dark: #2a5f2a;
   --brand-green: #509a38;
   --brand-red: #ec2722;
   --brand-silver: #c2c3c3;
 
-  /* Palette: the original map colors */
+  /* Palette: map */
   --map-route: #64b5f7;
   --map-highlight: #004c97;
   --map-red: #ff0000;
@@ -79,7 +71,7 @@
   --fa-map-destinations-4: var(--map-light-green);
   --fa-map-destinations-5: var(--map-green);
 
-  /* Type: the USWDS pair and the USWDS theme size scale */
+  /* Type */
   --fa-font-sans: "Public Sans", system-ui, sans-serif;
   --fa-font-mono: "Roboto Mono", ui-monospace, Menlo, Consolas, monospace;
 
@@ -96,14 +88,14 @@
   --fa-leading-tight: 1.2;
   --fa-leading-body: 1.5;
 
-  /* Spacing: USWDS units, 1 unit = 8px */
+  /* Spacing: USWDS units */
   --fa-space-05: 0.25rem;
   --fa-space-1: 0.5rem;
   --fa-space-105: 0.75rem;
   --fa-space-2: 1rem;
   --fa-space-3: 1.5rem;
 
-  /* Shape and elevation: USWDS radius and shadow scales */
+  /* Shape and elevation */
   --fa-radius-sm: 2px;
   --fa-radius-md: 0.25rem;
   --fa-radius-lg: 0.5rem;
@@ -113,14 +105,21 @@
   --fa-shadow-3: 0 8px 16px 0 rgb(0 0 0 / 10%);
 
   --fa-target-min: 2.75rem;
+  --fa-map-bottom: calc(var(--fa-space-3) + env(safe-area-inset-bottom));
   --fa-icon-sm: 1rem;
   --fa-icon-md: 1.25rem;
   --fa-duration: 200ms;
 
-  /* Layers above Leaflet's panes (its controls sit at 1000) */
+  /* Layers */
   --fa-z-panel: 1000;
   --fa-z-floating: 1100;
   --fa-z-route-info: 1500;
   --fa-z-dialog: 2000;
   --fa-z-menu: 3000;
+}
+
+@media (max-width: 40em) {
+  :root {
+    --fa-map-bottom: calc(3.25rem + env(safe-area-inset-bottom));
+  }
 }

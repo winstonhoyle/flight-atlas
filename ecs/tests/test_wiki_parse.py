@@ -1,8 +1,3 @@
-"""
-Parsers against real Wikipedia pages (tests/fixtures, fetched 2026-10-13) and against small
-snippets for each kind of mess those pages contain.
-"""
-
 from pathlib import Path
 
 import pytest
@@ -42,9 +37,6 @@ def wikitable(*rows: str) -> str:
         + "".join(rows)
         + "</tbody></table>"
     )
-
-
-# Real pages
 
 
 class TestAtlanta:
@@ -112,9 +104,6 @@ def test_airport_list_skips_state_rows_and_reads_counts():
     )
     assert bhm.airport_title == "Birmingham–Shuttlesworth_International_Airport"
     assert bhm.enplanements == 1596510
-
-
-# Snippets
 
 
 @pytest.mark.parametrize(

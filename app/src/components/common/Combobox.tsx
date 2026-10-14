@@ -8,7 +8,6 @@ import { CloseIcon, ExpandMoreIcon } from "@/icons";
 import styles from "./Combobox.module.css";
 
 type ComboboxProps<T> = {
-  /** Accessible name; the combobox has no visible label of its own. */
   label: string;
   options: T[];
   value: T | null;
@@ -36,7 +35,6 @@ function ClearIndicator<T>(props: ClearIndicatorProps<T, false, GroupBase<T>>) {
   );
 }
 
-/** Searchable single-select. All styling lives in Combobox.module.css. */
 export function Combobox<T>({
   label,
   options,

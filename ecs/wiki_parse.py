@@ -1,8 +1,3 @@
-"""
-Reads the parts of Wikipedia pages the scraper needs. Pure functions over parsed HTML, with
-no network calls, so each one can be tested against saved pages.
-"""
-
 import re
 from dataclasses import dataclass, field
 from urllib.parse import unquote
@@ -13,7 +8,6 @@ from lat_lon_parser import parse as parse_degrees
 # Footnote markers: [12], [a], [note 1], [citation needed], with or without inner spaces.
 FOOTNOTE = re.compile(r"\[[^\[\]]*\]")
 
-# Links in a destinations cell that never point at an airport.
 _SKIPPED_NAMESPACES = (
     "Wikipedia:",
     "Help:",
@@ -23,12 +17,10 @@ _SKIPPED_NAMESPACES = (
     "Category:",
 )
 
-# Boxes Wikipedia puts above a table: "More citations needed", "This section is outdated".
 _NOTICE_CLASSES = {"ambox", "metadata", "plainlinks", "box-Multiple_issues"}
 
 
 def clean_text(text: str) -> str:
-    """Strips footnote markers and collapses whitespace."""
     return " ".join(FOOTNOTE.sub("", text).split())
 
 
@@ -64,7 +56,6 @@ def parse_coordinates(soup: BeautifulSoup) -> tuple[float, float] | None:
 
 
 def parse_iata(soup: BeautifulSoup) -> str | None:
-    """The airport's IATA code from its infobox."""
     link = soup.find("a", href=lambda h: h and "/wiki/IATA_airport_code" in h)
     code_span = link.find_next("span") if link else None
     code = clean_text(code_span.text) if code_span else ""
@@ -72,7 +63,6 @@ def parse_iata(soup: BeautifulSoup) -> str | None:
 
 
 def parse_airline_code(soup: BeautifulSoup) -> str | None:
-    """The airline's IATA code from the codes box: the first cell of its second row."""
     table = soup.find("table", {"class": "infobox-airline-codes"})
     rows = table.find_all("tr") if table else []
     cell = rows[1].find("td") if len(rows) > 1 else None
@@ -86,11 +76,7 @@ def _is_destinations_heading(tag: Tag) -> bool:
 
 
 def find_destination_rows(soup: BeautifulSoup) -> list[Tag]:
-    """
-    Data rows of the first wikitable in the "Airlines and destinations" section, which is
-    the passenger table when the section splits passenger and cargo. Notice boxes above the
-    table are skipped, and the search stops at the next top-level section.
-    """
+    """The first wikitable in the section is the passenger table; cargo comes after it."""
     heading = soup.find(_is_destinations_heading)
     if heading is None:
         raise LookupError("No 'Airlines and destinations' section")
@@ -112,10 +98,6 @@ class DestinationRow:
 
 
 def parse_destination_row(tr: Tag) -> DestinationRow | None:
-    """
-    One airline and the article titles of its destinations. Extra columns (some tables add
-    a "Refs" column) are ignored. Rows without both cells return None.
-    """
     cells = tr.find_all("td", recursive=False) or tr.find_all("td")
     if len(cells) < 2:
         return None
@@ -147,10 +129,6 @@ class ListedAirport:
 
 
 def parse_airport_list(soup: BeautifulSoup) -> list[ListedAirport]:
-    """
-    Rows of the table on "List of airports in the United States". State header rows, which
-    have no codes, are skipped.
-    """
     table = soup.find("table", {"class": "wikitable"})
     if table is None:
         raise LookupError("No airports table")

@@ -18,10 +18,8 @@ export type RouteProperties = {
 
 export type Routes = FeatureCollection<LineString, RouteProperties>;
 
-/** Airline code to name, e.g. { DL: "Delta Air Lines" } */
 export type Airlines = Record<string, string>;
 
-/** `destinations` is set once routes for a selected airport are loaded. */
 export type AirlineSummary = {
   code: string;
   name: string;

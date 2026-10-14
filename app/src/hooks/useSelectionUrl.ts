@@ -9,19 +9,13 @@ import {
 const SITE_URL = "https://flightatlas.io";
 
 type Options = {
-  /** True once the airports and airlines the URL refers to have loaded. */
   ready: boolean;
   selection: Selection;
-  /** Drops codes that don't exist in the loaded data. */
   resolve: (selection: Selection) => Selection;
   apply: (selection: Selection) => void;
   airlineName?: string;
 };
 
-/**
- * Keeps the selection and the URL in step: the URL is read once the data loads and again
- * on Back/Forward, and each new selection pushes a history entry.
- */
 export const useSelectionUrl = ({ ready, selection, resolve, apply, airlineName }: Options) => {
   const appliedRef = useRef(false);
 

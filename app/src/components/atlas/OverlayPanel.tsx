@@ -28,7 +28,6 @@ type OverlayPanelProps = {
   setSelectedMonth: (month: string) => void;
   loading: boolean;
   error: string | null;
-  /** Route details, shown under the pickers. */
   children?: ReactNode;
 };
 

@@ -40,14 +40,11 @@ app-test: app/node_modules
 	.venv/bin/pip install -q -r requirements.txt -r lambda/requirements.txt -r ecs/requirements.txt
 	@touch $@
 
-# ruff and pytest for the Lambda and the scraper; no AWS or network needed.
 py-check: .venv/.deps
 	.venv/bin/ruff check lambda ecs && .venv/bin/ruff format --check lambda ecs
 	cd lambda && ../.venv/bin/python -m pytest -q
 	cd ecs && ../.venv/bin/python -m pytest -q
 
-# Runs the image under the Lambda Runtime Interface Emulator against the live AWS data,
-# using your AWS CLI credentials. Invoke it from another shell with lambda-invoke.
 lambda-run:
 	docker build $(BUILD_FLAGS) -t $(LAMBDA_IMAGE) lambda
 	docker run --rm -p 9000:8080 \
@@ -70,12 +67,9 @@ deploy-containers:
 	docker push $(ECR_REGISTRY)/$(ECS_IMAGE)
 	docker push $(ECR_REGISTRY)/$(LAMBDA_IMAGE)
 
-# Monthly refresh: scrapes Wikipedia (30 to 45 minutes), writes this month's snapshot to S3, and
-# repairs the Athena partitions. Settings come from ecs/.env.
 scrape: .venv/.deps
 	cd ecs && ../.venv/bin/python create_routes.py
 
-# Same scrape to ecs/output/ with no AWS. LIMIT=2 does only the two busiest airports.
 LIMIT ?= 0
 scrape-dry-run: .venv/.deps
 	cd ecs && OUTPUT_BASE=./output RUN_ATHENA=false SCRAPE_LIMIT=$(LIMIT) ../.venv/bin/python create_routes.py

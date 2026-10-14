@@ -1,5 +1,3 @@
-"""AWS clients, created on first use so tests can replace them."""
-
 from functools import cache
 
 import boto3

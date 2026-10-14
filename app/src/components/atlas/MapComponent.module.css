@@ -12,6 +12,6 @@
 .infoButton {
   position: absolute;
   right: var(--fa-space-105);
-  bottom: calc(3rem + env(safe-area-inset-bottom));
+  bottom: var(--fa-map-bottom);
   z-index: var(--fa-z-floating);
 }

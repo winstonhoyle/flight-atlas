@@ -1,4 +1,3 @@
-// Runs as "prebuild". Falls back to a home-page-only sitemap if the API is down.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

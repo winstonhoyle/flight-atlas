@@ -1,9 +1,6 @@
 const cache = new Map<string, string>();
 
-/**
- * Resolves a CSS custom property from tokens.css to its value. Leaflet paints on canvas and
- * SVG attributes, where var() doesn't work, so map code reads colors through this.
- */
+/** Leaflet paints on canvas and SVG attributes, where var() doesn't work. */
 export const tokenValue = (name: `--${string}`): string => {
   let value = cache.get(name);
   if (value === undefined) {

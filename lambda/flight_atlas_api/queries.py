@@ -1,5 +1,3 @@
-"""SQL for each endpoint. User input reaches Athena only through ExecutionParameters."""
-
 from .config import Settings
 from .snapshots import Snapshot
 

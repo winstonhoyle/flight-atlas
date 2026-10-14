@@ -1,5 +1,5 @@
 repos:
-  # Python lint, import order, and formatting; reads ruff.toml, same as make py-check and CI
+  # Python lint and formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.0
     hooks:
@@ -16,7 +16,7 @@ repos:
       - id: terraform_fmt
         files: ^infra/.*\.(tf|tfvars)$
 
-  # Ensure app/package-lock.json is in sync with app/package.json
+  # Ensure package-lock.json is in sync with package.json
   - repo: local
     hooks:
       - id: npm-lock-sync

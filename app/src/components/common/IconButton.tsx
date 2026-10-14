@@ -2,9 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import styles from "./IconButton.module.css";
 
 type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label"> & {
-  /** Read by screen readers and shown as the tooltip, since the button has no text. */
   label: string;
-  /** `floating` is a round white button that sits on the map. */
   variant?: "plain" | "floating";
   children: ReactNode;
 };

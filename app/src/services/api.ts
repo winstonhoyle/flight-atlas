@@ -88,10 +88,7 @@ type RouteQuery = {
   month?: string;
 };
 
-/**
- * Polls while the API answers 202 (Athena still running). Returns null if the
- * query never finishes; rethrows only when `signal` aborts.
- */
+/** Returns null if the query never finishes; throws only when `signal` aborts. */
 export const fetchRoutes = async (
   { airportIata, airlineCode, month }: RouteQuery,
   signal?: AbortSignal,

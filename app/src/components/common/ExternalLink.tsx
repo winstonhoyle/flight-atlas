@@ -6,15 +6,10 @@ const MAX_JOINED_WORD = 24;
 
 type ExternalLinkProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "target" | "rel"> & {
   href: string;
-  /** Shows the open-in-new icon after the text. */
   showIcon?: boolean;
 };
 
-/**
- * Splits plain-text children so the last word and the icon can share a no-wrap span;
- * otherwise the icon can land alone on the next line. A long last word, like a URL,
- * stays outside the span so it can still wrap.
- */
+// The last word shares a no-wrap span with the icon, or the icon can wrap alone. URLs stay wrappable.
 const splitLastWord = (children: ReactNode): [ReactNode, ReactNode] => {
   const parts = Children.toArray(children);
   if (!parts.every((p) => typeof p === "string" || typeof p === "number")) return [children, null];

@@ -1,17 +1,18 @@
 # Flight Atlas API
 
-One Lambda behind API Gateway at `https://api.flightatlas.io`. It answers `/airports`,
-`/airlines`, `/routes`, and `/available_months` from Athena queries over the Parquet data the
-scraper writes to S3. The endpoints and parameters are in the [API reference](../README.md#-api).
+The API is one Lambda behind API Gateway at `https://api.flightatlas.io`. It answers
+`/airports`, `/airlines`, `/routes`, and `/available_months` from Athena queries over the
+Parquet data the scraper writes to S3. The endpoints and parameters are in the
+[API reference](../README.md#api).
 
-## How a request is answered
+## Request flow
 
 1. `/available_months` lists the snapshots straight from the Glue partitions of the airlines
    table. No Athena query runs.
 2. The other endpoints pick a snapshot: `year` and `month` give that one (or `404`), `month`
    alone gives that month's newest year, and neither gives the newest snapshot.
-3. The query is hashed and looked up in the DynamoDB cache. A finished query is read from its
-   result CSV in S3 and returned with `200`.
+3. The Lambda looks up the query's hash in the DynamoDB cache. For a finished query it reads
+   the result CSV from S3 and returns `200`.
 4. Otherwise the Lambda starts the Athena query and returns `202`. The client asks again with
    the same URL until the result is ready, usually a few seconds.
 

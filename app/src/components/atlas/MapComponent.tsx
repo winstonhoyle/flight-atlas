@@ -37,17 +37,14 @@ const DEFAULT_ZOOM = 4;
 const GEODESIC_MIN_MILES = 1000;
 const HIGHLIGHT_WEIGHT = 4;
 
-// Route properties for each drawn line, so layers can be filtered and highlighted later.
 const routePropsByLayer = new WeakMap<L.Layer, RouteProperties>();
-// The unshifted copy of each route. Zooming uses only these, or it would fit all three worlds.
+// Zoom uses only the unshifted copy of each route, not the ±360° world copies.
 const primaryLines = new WeakSet<L.Layer>();
 
-/** Fits bounds in the part of the map the overlay panel doesn't cover. */
 const fitTo = (map: L.Map | null, bounds: L.LatLngBounds | null, padding = 15) => {
   if (!map || !bounds?.isValid()) return;
   const area = map.getContainer().getBoundingClientRect();
   const panel = document.getElementById("overlay-panel")?.getBoundingClientRect();
-  // A panel narrower than half the map sits at the side; otherwise it spans the top.
   const atSide = panel && panel.width < area.width / 2;
   map.fitBounds(bounds, {
     paddingTopLeft: [padding, panel && !atSide ? panel.bottom - area.top + padding : padding],
@@ -91,7 +88,6 @@ const highlightLine = (latLngs: L.LatLngExpression[] | L.LatLngExpression[][]) =
     renderer: L.svg(),
   });
 
-// The base line plus copies shifted ±360° so routes show on every world copy.
 const buildWorldRouteVariants = (coords: L.LatLngTuple[]): L.LatLngTuple[][] => [
   coords,
   coords.map(([lat, lng]) => [lat, lng + 360]),
@@ -104,10 +100,8 @@ const toAirlineSummaries = (airlines: Record<string, string>): AirlineSummary[] 
 export const MapComponent = () => {
   const [selectedAirport, setSelectedAirport] = useState<Airport | null>(null);
   const [selectedAirline, setSelectedAirline] = useState("");
-  // [srcIATA, dstIATA], e.g. ["GSO", "IAD"]
   const [selectedRoute, setSelectedRoute] = useState<string[]>([]);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem("hasVisited"));
-  // Separate from selected and highlighted airports; the route line is drawn to it.
   const [destinationAirport, setDestinationAirport] = useState<Airport | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
 
@@ -155,10 +149,8 @@ export const MapComponent = () => {
   });
   const { months, loading: monthsLoading, error: monthsError } = useMonths();
 
-  // Padding helps with world copies.
   const routeRenderer = useMemo(() => L.canvas({ padding: 0.5 }), []);
 
-  // Draw routes, then narrow the airports and airlines to the ones they touch.
   useEffect(() => {
     const layer = routesLayerRef.current;
     if (!layer || !routes?.features.length) return;
@@ -187,7 +179,6 @@ export const MapComponent = () => {
     fitTo(mapRef.current, bounds);
   }, [routes, routeRenderer]);
 
-  // Show only the selected airline's routes.
   useEffect(() => {
     const layer = routesLayerRef.current;
     const map = mapRef.current;
@@ -212,7 +203,7 @@ export const MapComponent = () => {
     }
   }, [selectedAirline, routes, selectedAirport]);
 
-  // Airports touched by the visible routes; empty means show every airport.
+  // Empty means show every airport.
   const filteredAirports = useMemo(() => {
     if (!routes || (!selectedAirport && !selectedAirline)) return [];
     const codes = new Set<string>();
@@ -227,7 +218,6 @@ export const MapComponent = () => {
 
   const baseAirlines = useMemo(() => toAirlineSummaries(airlines), [airlines]);
 
-  // Airlines serving the selected airport, with destination counts.
   const filteredAirlines = useMemo<AirlineSummary[]>(() => {
     if (!selectedAirport || !routes) return baseAirlines;
     const destinations = new Map<string, Set<string>>();
@@ -244,7 +234,6 @@ export const MapComponent = () => {
       .sort((a, b) => b.destinations - a.destinations);
   }, [selectedAirport, routes, airlines, baseAirlines]);
 
-  // Highlight the routes touching a hovered airport.
   const updateHighlightedRoutes = (airport: Airport | null) => {
     const routesLayer = routesLayerRef.current;
     const highlightLayer = highlightLayerRef.current;
@@ -283,7 +272,6 @@ export const MapComponent = () => {
     });
   };
 
-  // Draw and zoom to the selected route.
   useEffect(() => {
     if (selectedRoute.length < 2) return;
 
@@ -325,7 +313,6 @@ export const MapComponent = () => {
     fitTo(mapRef.current, bounds);
   };
 
-  // Step back one level: destination, then airline, then airport.
   const handleBack = () => {
     if (destinationAirport) {
       setDestinationAirport(null);

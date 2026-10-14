@@ -1,5 +1,3 @@
-"""Which year/month snapshots exist, read from the Glue partitions of the airlines table."""
-
 import time
 
 from . import aws
@@ -13,7 +11,7 @@ _cached: tuple[float, list[Snapshot]] | None = None
 
 
 def available(settings: Settings) -> list[Snapshot]:
-    """Every snapshot, newest first. Cached for ten minutes in a warm Lambda."""
+    """Newest first."""
     global _cached
     if _cached and time.monotonic() - _cached[0] < _TTL_SECONDS:
         return _cached[1]

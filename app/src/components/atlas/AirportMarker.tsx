@@ -31,7 +31,6 @@ export const AirportMarker = memo(function AirportMarker({
   const fillColor = tokenValue(destinationColorToken(destinationBin(destinations)));
   const stroke = tokenValue("--fa-map-marker-stroke");
 
-  // Repeat the marker on the world copies either side of ±180°.
   const lngVariants = [lng, lng - 360, lng + 360];
 
   const handleClick = () => {

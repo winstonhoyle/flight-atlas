@@ -2,7 +2,6 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import styles from "./Button.module.css";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  /** USWDS button styles: filled, outlined, or a link-styled text button. */
   variant?: "primary" | "outline" | "unstyled";
   icon?: ReactNode;
 };

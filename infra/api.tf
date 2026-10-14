@@ -38,7 +38,6 @@ resource "aws_apigatewayv2_stage" "flights_stage" {
   name        = "$default"
   auto_deploy = true
 
-  # Shared by all clients, not per-IP. See infra/README.md.
   default_route_settings {
     throttling_rate_limit  = var.api_throttle_rate_limit
     throttling_burst_limit = var.api_throttle_burst_limit

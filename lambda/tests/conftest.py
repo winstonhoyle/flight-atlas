@@ -8,8 +8,6 @@ from flight_atlas_api import aws, config, snapshots
 
 
 class FakeAws:
-    """In-memory Athena, S3, Glue, and DynamoDB, enough for the handler's calls."""
-
     def __init__(self):
         self.partitions: list[tuple[int, int]] = [
             (2026, 2),
@@ -24,7 +22,6 @@ class FakeAws:
         self.next_state = "SUCCEEDED"
         self._ids = itertools.count(1)
 
-    # Athena
     def start_query_execution(self, QueryString, QueryExecutionContext, ResultConfiguration, **kw):
         query_id = f"q{next(self._ids)}"
         location = f"{ResultConfiguration['OutputLocation']}{query_id}.csv"
@@ -46,11 +43,9 @@ class FakeAws:
             }
         }
 
-    # S3
     def get_object(self, Bucket, Key):
         return {"Body": io.BytesIO(self.objects[f"s3://{Bucket}/{Key}"].encode())}
 
-    # Glue
     def get_paginator(self, _name):
         partitions = [{"Values": [str(y), str(m), "AA", "ATL"]} for y, m in self.partitions]
         return type(
@@ -59,7 +54,6 @@ class FakeAws:
             {"paginate": lambda _self, **_kw: [{"Partitions": partitions}]},
         )()
 
-    # DynamoDB table
     def get_item(self, Key):
         item = self.items.get(Key["query_hash"])
         return {"Item": dict(item)} if item else {}

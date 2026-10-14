@@ -1,6 +1,6 @@
 .legend {
   position: absolute;
-  bottom: calc(var(--fa-space-3) + env(safe-area-inset-bottom));
+  bottom: var(--fa-map-bottom);
   left: var(--fa-space-105);
   z-index: var(--fa-z-panel);
   width: 11rem;
@@ -40,11 +40,4 @@
   height: 0.875rem;
   border: 1px solid var(--fa-map-marker-stroke);
   border-radius: var(--fa-radius-pill);
-}
-
-/* Clears the attribution, which wraps to two lines at phone width. */
-@media (max-width: 40em) {
-  .legend {
-    bottom: calc(3.25rem + env(safe-area-inset-bottom));
-  }
 }

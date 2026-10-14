@@ -4,15 +4,11 @@ import styles from "./Dialog.module.css";
 type DialogProps = {
   open: boolean;
   onClose: () => void;
-  /** Names the dialog for screen readers. */
   label: string;
   children: ReactNode;
 };
 
-/**
- * A modal on the native <dialog>, which brings focus trapping, Escape, and the backdrop.
- * Focus starts on the child marked `data-autofocus`, else the first focusable element.
- */
+/** Focus starts on the child marked `data-autofocus`, else the first focusable element. */
 export const Dialog = ({ open, onClose, label, children }: DialogProps) => {
   const ref = useRef<HTMLDialogElement>(null);
 

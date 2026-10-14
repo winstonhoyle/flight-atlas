@@ -1,71 +1,70 @@
-# Infrastructure (Terraform)
+# Infrastructure
 
-Terraform configuration for all AWS and Cloudflare resources behind Flight Atlas.
-State is stored in an S3 backend (`flightatlas-terraform-state`) with native S3 locking.
+Terraform for the AWS resources behind Flight Atlas and its Cloudflare DNS records. State is
+in the `flightatlas-terraform-state` S3 bucket with S3 native locking.
 
 ## Layout
 
 | File | Resources |
 | --- | --- |
-| `main.tf` | Terraform settings, S3 backend, AWS + Cloudflare providers |
+| `main.tf` | Terraform settings, S3 backend, AWS and Cloudflare providers |
 | `variables.tf` | Input variables and defaults |
-| `network.tf` | VPC, public subnets, internet gateway, route table, security group |
-| `compute.tf` | ECR repositories, ECS cluster/task/service, image-based Lambda, CloudWatch log group + monthly schedule |
-| `data.tf` | S3 buckets, Glue database + tables (Athena), DynamoDB cache |
-| `api.tf` | API Gateway (HTTP API, routes, custom domain), ACM certificate |
-| `dns.tf` | Route 53 zone + records, Cloudflare DNS |
-| `iam.tf` | IAM roles/policies for Athena, ECS, Lambda, EventBridge |
+| `network.tf` | VPC, public subnets, internet gateway, route table, security group for the scraper task |
+| `compute.tf` | ECR repository and lifecycle policy, ECS cluster, task, and service, monthly schedule, the Lambda |
+| `data.tf` | S3 buckets, Glue database and tables, DynamoDB query cache |
+| `api.tf` | API Gateway HTTP API, routes, throttling, custom domain, ACM certificate |
+| `dns.tf` | Route 53 zone and records, Cloudflare `www` and `api` records |
+| `iam.tf` | Roles and policies for Athena, ECS, the Lambda, and EventBridge |
+
+Cloudflare Pages itself is not in Terraform; CI deploys the app to it.
 
 ## Prerequisites
 
-- Terraform `>= 1.5` (`>= 1.10` for the S3 state lockfile used here)
-- AWS CLI, authenticated (see below), targeting `us-west-1`
-- Docker running, to build and push the ECS and Lambda images to ECR with the
-  [root `Makefile`](../Makefile) (`make containers`, `make deploy-containers`)
-- A Cloudflare account with an API token (`DNS:Edit`, `Zone:Read`) and the `flightatlas.io` zone ID
+- Terraform 1.10 or later (the S3 lockfile needs it; CI uses 1.13.3)
+- The AWS CLI, signed in to the account, region `us-west-1`
+- Docker, to build and push the images with the [root `Makefile`](../Makefile)
+- A Cloudflare API token with `DNS:Edit` and `Zone:Read`, and the `flightatlas.io` zone ID
 
-## Authenticate
+## Credentials
 
-Terraform uses the default AWS credential chain. Configure the AWS CLI once with an
-IAM access key, then verify:
+Terraform uses the default AWS credential chain:
 
 ```bash
 aws configure                 # Access Key ID, Secret Access Key, region = us-west-1
 aws sts get-caller-identity   # prints your account ID and ARN when authenticated
 ```
 
-That is all Terraform needs. Prefer an IAM user over the root account for these keys,
-and never commit or paste the secret key. (If your org uses IAM Identity Center instead
-of access keys, run `aws configure sso`, then `aws sso login`, and set `AWS_PROFILE`.)
-
-Cloudflare credentials are passed as Terraform variables, not the CLI (see below).
+Use an IAM user or IAM Identity Center (`aws configure sso`, `aws sso login`, `AWS_PROFILE`)
+instead of the root account. Cloudflare credentials go in Terraform variables.
 
 ## One-time setup
 
-1. **State bucket.** The S3 backend bucket must exist before `init`. If it doesn't:
+1. Create the state bucket if it doesn't exist:
    ```bash
    aws s3api create-bucket --bucket flightatlas-terraform-state \
      --region us-west-1 --create-bucket-configuration LocationConstraint=us-west-1
    aws s3api put-bucket-versioning --bucket flightatlas-terraform-state \
      --versioning-configuration Status=Enabled
    ```
-2. **Variables.** Copy the example and fill in Cloudflare values:
+2. Copy the variables file and fill in the Cloudflare values. `terraform.tfvars` is gitignored.
    ```bash
    cp terraform.tfvars.example terraform.tfvars
    ```
-   `terraform.tfvars` is gitignored; never commit it.
    ```hcl
    cloudflare_zone_io_id = "<flightatlas.io zone id>"
    cloudflare_api_token  = "<cloudflare api token>"
    ```
+3. On a new account, create the ECR repository once so the first push has somewhere to go.
+   Terraform manages it after that:
+   ```bash
+   aws ecr create-repository --repository-name flight-atlas
+   ```
 
 ## Deploy
 
-Both the ECS scraper and the query Lambda run from images in the single `flight-atlas`
-ECR repository, distinguished by tag prefix: `ecs-${var.image_tag}` and
-`lambda-${var.image_tag}` (`image_tag` is `local` by default, a git SHA in CI). Because
-the Lambda is image-based, its image must exist in ECR **before** `apply` creates or
-updates the function, so push first:
+Both images live in the `flight-atlas` ECR repository, tagged `ecs-<tag>` and `lambda-<tag>`.
+`image_tag` defaults to `local`; CI sets it to the commit SHA. The Lambda's image has to be in
+ECR before `apply` creates or updates the function, so push first:
 
 ```bash
 # from the repo root: build + push both images to flight-atlas
@@ -77,52 +76,38 @@ terraform plan     # review before applying
 terraform apply
 ```
 
-Routine changes are then just `make deploy-containers` + `make tf-apply`. Pin a specific
-image with `-var image_tag=<git-sha>`.
+After the first deploy, `make deploy-containers` and `make tf-apply` are enough. Pin an image
+with `-var image_tag=<git-sha>`.
 
-The `flight-atlas` repository must exist for the first push (it is Terraform-managed; on a
-brand-new account create it once with `aws ecr create-repository --repository-name flight-atlas`).
+The ECR lifecycle policy keeps the five newest `lambda-*` and `ecs-*` images.
 
-The first `plan` after the recent refactor shows `moved` operations (renames), not
-destroy/recreate. The `moved` blocks in `network.tf`, `data.tf`, and `api.tf` can be
-deleted after the first successful apply. They also block `terraform apply -target` until
-that first full apply is done.
+## The scraper task
 
-## Notes
+The ECS service runs at `desired_count = 0`, and the EventBridge rule starts the task on the
+first of each month. AWS blocks ECS task launches for this account (`RunTask` returns
+`BlockedException`), so those runs fail and the scraper runs locally instead; see
+[ecs/README.md](../ecs/README.md).
 
-- **ECS service** runs at `desired_count = 0`; the scraper is triggered on demand
-  (the monthly EventBridge rule exists but is disabled on this account). See the ECS
-  scraper section in the [project README](../README.md) for how to run it.
-- **Container images.** Both images live in the `flight-atlas` repo: the ECS task runs
-  `flight-atlas:ecs-${var.image_tag}` and the Lambda runs `flight-atlas:lambda-${var.image_tag}`.
-  `image_tag` defaults to `local`; CI overrides it with the git SHA. Build and push with
-  the root `Makefile` before applying.
-- **DNS** is split: Route 53 hosts the `flightatlas.io` zone and API alias; Cloudflare
-  serves `www` and `api` records for the Pages/API endpoints.
+## DNS
 
-## Destroy
-
-```bash
-terraform destroy
-```
-
-Emptying versioned S3 buckets may require deleting object versions first.
+Route 53 hosts the `flightatlas.io` zone, the ACM validation records, and the `api` alias to
+API Gateway. Cloudflare holds `www`, a CNAME to `flight-atlas.pages.dev`, and `api`, a CNAME to
+the API Gateway domain.
 
 ## Rate limiting
 
-The API Gateway `$default` stage applies a stage-wide throttle
-(`api_throttle_rate_limit` / `api_throttle_burst_limit`, default 50 rps / burst 100).
-Excess requests get `429` before reaching Lambda, which caps Lambda and Athena spend.
-The limit is shared by all clients: one abusive client can use it up for everyone.
-HTTP APIs can't attach AWS WAF, so per-IP limits need a proxy in front, e.g. set
-`proxied = true` on the Cloudflare `api` record and add a Cloudflare rate-limiting rule.
+The `$default` stage throttles the whole API to `api_throttle_rate_limit` requests per second
+with bursts up to `api_throttle_burst_limit` (defaults 50 and 100). Requests over the limit get
+`429` before they reach the Lambda. The limit is shared by every client, so one client can use
+it up. HTTP APIs can't use AWS WAF; per-client limits need a proxy in front, such as
+`proxied = true` on the Cloudflare `api` record plus a Cloudflare rate-limiting rule.
 
-## Lambda image gone from ECR
+## Recovering a Lambda whose image was deleted
 
-If the Lambda's current image is deleted, the function goes `Inactive` and `apply` fails with
-"cannot be updated as the provided Image ID cannot be found": Terraform changes the
-configuration before the image, and AWS rejects any configuration change while the image is
-missing. Point the function at a pushed image first, then apply again:
+If the Lambda's image is deleted from ECR, the function goes `Inactive` and `apply` fails with
+"cannot be updated as the provided Image ID cannot be found". Terraform changes the
+configuration before the image, and AWS rejects configuration changes while the image is
+missing. Point the function at a pushed image, then apply:
 
 ```bash
 aws lambda update-function-code --function-name flights-query-lambda \
@@ -131,5 +116,10 @@ aws lambda wait function-updated-v2 --function-name flights-query-lambda
 make tf-apply IMAGE_TAG=<tag>
 ```
 
-The ECR lifecycle policy keeps the five newest `lambda-*` and `ecs-*` images so this
-shouldn't recur.
+## Destroy
+
+```bash
+terraform destroy
+```
+
+Versioned S3 buckets need their object versions deleted first.

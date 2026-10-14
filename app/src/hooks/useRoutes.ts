@@ -4,10 +4,7 @@ import type { Airport, Routes } from "@/types";
 
 type Result = { key: string; routes: Routes | null; error: string | null };
 
-/**
- * Loads routes for the selected airport, or else the selected airline. With both
- * selected, the airport's routes are kept and the map filters them by airline.
- */
+/** With both an airport and an airline selected, the map filters the airport's routes by airline. */
 export const useRoutes = (
   selectedAirport: Airport | null,
   selectedAirline: string,

@@ -6,7 +6,6 @@ import { DESTINATION_BINS, destinationColorToken } from "@/utils/destinations";
 import styles from "./Legend.module.css";
 
 export const Legend = () => {
-  // Starts collapsed on phones, where the open legend covers a fifth of the map.
   const [open, setOpen] = useState(() => !window.matchMedia("(max-width: 40em)").matches);
 
   return (

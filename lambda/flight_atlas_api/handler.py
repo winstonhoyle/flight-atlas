@@ -52,10 +52,6 @@ ENDPOINTS = {
 
 
 def _run_cached(sql: str, params: list[str], render, config: Settings) -> dict:
-    """
-    Answers from a finished Athena query when one is cached. Otherwise starts the query and
-    returns 202; the client polls the same URL until the result is ready.
-    """
     query_hash = cache.key(sql, params)
     cached = cache.lookup(config, query_hash)
 

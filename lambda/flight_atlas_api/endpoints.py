@@ -1,5 +1,3 @@
-"""Turns Athena result rows into each endpoint's response body."""
-
 from . import geo
 
 # The scraper reads regional brands as their own airline; the map shows the parent.

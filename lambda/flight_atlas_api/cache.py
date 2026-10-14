@@ -1,5 +1,3 @@
-"""DynamoDB cache from a query's hash to its Athena execution and result location."""
-
 import hashlib
 import json
 import time

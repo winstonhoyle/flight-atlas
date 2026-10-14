@@ -1,4 +1,4 @@
-/** Destination-count bins for airport markers, smallest first. Bin n paints `--fa-map-destinations-n`. */
+/** Bin n paints `--fa-map-destinations-n`. */
 export const DESTINATION_BINS = [
   { max: 10, label: "1–10" },
   { max: 20, label: "11–20" },

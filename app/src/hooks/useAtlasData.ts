@@ -4,7 +4,6 @@ import type { Airlines, Airport } from "@/types";
 
 const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-/** Airlines load once; airports reload per month, keeping the previous month's on screen meanwhile. */
 export const useAtlasData = (month: string) => {
   const [airlines, setAirlines] = useState<Airlines>({});
   const [airports, setAirports] = useState<Airport[]>([]);

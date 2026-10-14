@@ -19,7 +19,6 @@ def start(sql: str, params: list[str], settings: Settings) -> str:
 
 
 def status(query_id: str) -> tuple[str, str]:
-    """The query's state and the S3 location of its result CSV."""
     execution = aws.athena().get_query_execution(QueryExecutionId=query_id)["QueryExecution"]
     return (
         execution["Status"]["State"],

@@ -1,4 +1,3 @@
-/** What the map has selected, by code. Empty strings mean nothing selected. */
 export type Selection = {
   airport: string;
   destination: string;
@@ -10,10 +9,6 @@ export const EMPTY_SELECTION: Selection = { airport: "", destination: "", airlin
 const AIRPORT = /^[A-Z]{3}$/;
 const AIRLINE = /^[A-Z0-9]{2,3}$/;
 
-/**
- * Reads `/ATL`, `/ATL/BOS`, `/airline/DL`, or `/ATL/airline/DL`. Anything else, including
- * malformed codes, reads as no selection. Codes are matched case-insensitively.
- */
 export const parseSelectionPath = (pathname: string): Selection => {
   const parts = pathname
     .split("/")

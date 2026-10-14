@@ -1,6 +1,6 @@
 # Flight Atlas scraper
 
-Builds the monthly data snapshot from English Wikipedia. It reads the
+The scraper builds the monthly data snapshot from English Wikipedia. It reads the
 [list of U.S. airports](https://en.wikipedia.org/wiki/List_of_airports_in_the_United_States),
 then each airport's "Airlines and destinations" table, and writes three Parquet datasets to S3
 partitioned by `year` and `month`:

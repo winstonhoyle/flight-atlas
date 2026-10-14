@@ -24,11 +24,9 @@ try:
 except ImportError:
     pass
 
-# Logger setup
 logger = logging.getLogger("flight_atlas")
 logger.setLevel(logging.DEBUG)
 
-# Add console handler
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)
 
@@ -39,7 +37,6 @@ formatter = logging.Formatter(
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-# Env Vars
 S3_ROUTES_BUCKET = os.environ.get("S3_ROUTES_BUCKET", "bucket-flight-atlas-routes")
 S3_RESULTS_BUCKET = os.environ.get("S3_RESULTS_BUCKET", "bucket-flight-atlas-query-results")
 S3_PREFIX = os.environ.get("S3_PREFIX", "flights")
@@ -52,19 +49,17 @@ OUTPUT_BASE = os.environ.get("OUTPUT_BASE") or f"s3://{S3_ROUTES_BUCKET}"
 IS_LOCAL_OUTPUT = not OUTPUT_BASE.startswith("s3://")
 RUN_ATHENA = os.environ.get("RUN_ATHENA", "false" if IS_LOCAL_OUTPUT else "true").lower() in ("1", "true", "yes")
 
-# Only the N busiest airports, for a quick check against live Wikipedia. 0 means all.
 SCRAPE_LIMIT = int(os.environ.get("SCRAPE_LIMIT", "0"))
 
 USER_AGENT = "FlightAtlasBot/1.0 (https://github.com/winstonhoyle)"
 
-# Create session
 session = requests.Session()
 session.headers.update({"User-Agent": USER_AGENT})
 
 # Wikimedia rate-limits the wikipedia library's default User-Agent.
 wikipedia.set_user_agent(USER_AGENT)
 
-# Airport code dict because many airlines do not have an IATA code on wikipedia
+# Airlines whose Wikipedia pages have no IATA code.
 airline_codes_dict = {
     "American Eagle": "AA",
     "Delta Connection": "DL",
@@ -98,10 +93,7 @@ def fetch_soup(url: str):
 
 
 def resolve_page(title: str):
-    """
-    Follows redirects to the article itself, since destination cells often link to redirect
-    titles like "Toronto–Pearson". Returns None for missing and disambiguation pages.
-    """
+    """Destination cells often link to redirects like "Toronto–Pearson"."""
     try:
         return wikipedia.page(title.replace("_", " "), auto_suggest=False, redirect=True)
     except (
@@ -143,7 +135,6 @@ def get_coordinate(url: str) -> Point | None:
 
 
 def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destinations: dict) -> list[list[str]]:
-    """Every [airline_code, src, dst] route listed on the source airport's page."""
     matches = airports_df.loc[airports_df["IATA"] == src_iata, "url"]
     if matches.empty:
         return []
@@ -217,7 +208,6 @@ def scrape_us_airports(failed: list[str]) -> pd.DataFrame:
         page = resolve_page(airport.airport_title) if airport.airport_title else None
         point = get_coordinate(unquote(page.url)) if page else None
         if page is None or point is None:
-            # Without a page or a location the airport can't be drawn or linked.
             failed.append(airport.airport_title or airport.iata)
             continue
         rows.append(
@@ -261,13 +251,10 @@ def main() -> None:
 
 
 def write_outputs(usa_airports_df: pd.DataFrame, routes: list, additional_destinations: dict) -> None:
-    # Create addtional airports df
     additional_airports_df = pd.DataFrame([airline_dict for _, airline_dict in additional_destinations.items()])
 
-    # Create a routes df with airport-pairs and geometries
     routes_df = pd.DataFrame(routes, columns=["airline_code", "src_airport", "dst_airport"])
 
-    # Join Geometries
     routes_df = routes_df.merge(
         usa_airports_df.rename(columns={"IATA": "src_airport", "geometry": "geometry_src"})[
             ["src_airport", "geometry_src"]
@@ -284,7 +271,6 @@ def write_outputs(usa_airports_df: pd.DataFrame, routes: list, additional_destin
     )
 
     if len(additional_airports_df) > 0:
-        # Join geometries for the additional routes
         routes_df = routes_df.merge(
             additional_airports_df.rename(columns={"IATA": "dst_airport", "geometry": "geometry_dst_new"}),
             on="dst_airport",
@@ -296,42 +282,33 @@ def write_outputs(usa_airports_df: pd.DataFrame, routes: list, additional_destin
             how="left",
         )
 
-        # Combine geomtries to remove `None` geometries
+        # U.S. airports' geometry comes from the first merge, foreign airports' from this one.
         routes_df["geometry_src"] = routes_df["geometry_src"].combine_first(routes_df["geometry_src_new"])
         routes_df["geometry_dst"] = routes_df["geometry_dst"].combine_first(routes_df["geometry_dst_new"])
 
-    # Cast geometries and drop geometry columns
     routes_df["src_geometry"] = routes_df["geometry_src"].apply(lambda g: g.wkt)
     routes_df["dst_geometry"] = routes_df["geometry_dst"].apply(lambda g: g.wkt)
 
-    # Format airlines df while we are formatting routes as we sort by airline route count
+    # An unordered pair, so A to B and B to A count as one route.
     routes_df["airport1"] = routes_df[["src_airport", "dst_airport"]].min(axis=1)
     routes_df["airport2"] = routes_df[["src_airport", "dst_airport"]].max(axis=1)
 
-    # Drop duplicate flights based on airline code
     unique_routes = routes_df.drop_duplicates(subset=["airline_code", "airport1", "airport2"])
 
-    # Count routes per airline
     route_counts = unique_routes.groupby("airline_code").size().reset_index(name="route_count")
 
-    # Create airline df
     airlines_df = pd.DataFrame(airline_codes_dict.items(), columns=["name", "airline_code"])
 
-    # Merge with airline names
     airlines_df = airlines_df.merge(route_counts, on="airline_code")
     airlines_df = airlines_df.sort_values("route_count", ascending=False)
 
-    # Back to uploading routes, clean the routes DF
     routes_df = routes_df[["airline_code", "src_airport", "dst_airport", "src_geometry", "dst_geometry"]]
 
-    # Format date for partition
     routes_df["year"] = datetime.now().year
     routes_df["month"] = datetime.now().month
 
-    # Upload routes to S3
     routes_table = pa.Table.from_pandas(routes_df)
 
-    # Write partitioned dataset
     routes_dir = f"{OUTPUT_BASE}/{S3_PREFIX}/"
     logger.info(f"Writing Routes to to {routes_dir}")
 
@@ -345,12 +322,10 @@ def write_outputs(usa_airports_df: pd.DataFrame, routes: list, additional_destin
         max_partitions=10_000,
     )
 
-    # Prepare airports DataFrame for upload
     airports_df = pd.concat([usa_airports_df, additional_airports_df], ignore_index=True)[
         ["FAA", "IATA", "url", "geometry", "title"]
     ]
 
-    # Merge destinations
     unique_pairs_count = routes_df.groupby("src_airport")["dst_airport"].nunique().reset_index()
     unique_pairs_count.rename(columns={"src_airport": "IATA", "dst_airport": "destinations"}, inplace=True)
     airports_df = airports_df.merge(unique_pairs_count, on="IATA", how="left")
@@ -358,21 +333,16 @@ def write_outputs(usa_airports_df: pd.DataFrame, routes: list, additional_destin
     airports_df["destinations"] = airports_df["destinations"].astype(int)
     airports_df[["FAA", "IATA", "url", "title"]] = airports_df[["FAA", "IATA", "url", "title"]].astype(str)
 
-    # Convert geometry to WKT
     airports_df["geometry"] = airports_df["geometry"].apply(lambda g: g.wkt)
 
-    # Add snapshot date and partition columns
     airports_df["year"] = datetime.now().year
     airports_df["month"] = datetime.now().month
 
-    # Convert to Arrow table
     airport_table = pa.Table.from_pandas(airports_df)
 
-    # Write partitioned dataset
     airports_dir = f"{OUTPUT_BASE}/airports/"
     logger.info(f"Writing airports to {airports_dir}")
 
-    # Write dataset partitioned by year/month
     ds.write_dataset(
         data=airport_table,
         base_dir=airports_dir,
@@ -384,22 +354,17 @@ def write_outputs(usa_airports_df: pd.DataFrame, routes: list, additional_destin
         filesystem=None,
     )
 
-    # Upload airlines to S3
     airlines_df[["name", "airline_code"]] = airlines_df[["name", "airline_code"]].astype(str)
     airlines_df["route_count"] = airlines_df["route_count"].astype(int)
 
-    # Add snapshot date and partition columns
     airlines_df["year"] = datetime.now().year
     airlines_df["month"] = datetime.now().month
 
-    # Convert to Arrow table
     airlines_table = pa.Table.from_pandas(airlines_df)
 
-    # Write partitioned dataset
     airlines_dir = f"{OUTPUT_BASE}/airlines/"
     logger.info(f"Writing Airlines to to {airlines_dir}")
 
-    # Write dataset partitioned by year/month
     ds.write_dataset(
         data=airlines_table,
         base_dir=airlines_dir,
