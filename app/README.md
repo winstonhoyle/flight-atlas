@@ -78,8 +78,8 @@ Each component is three files side by side: `Name.tsx`, `Name.module.css`, and `
 when it has tests. Colors, type, spacing, and component rules are in [DESIGN.md](../DESIGN.md).
 
 After `vite build`, `scripts/build-pages.js` fetches every airport and airline from the live
-API and writes `dist/sitemap.xml` plus one HTML page per airport and airline (`dist/ATL/index.html`,
-`dist/airline/DL/index.html`). Each is a copy of `dist/index.html` with its own title,
+API and writes `dist/sitemap.xml` plus one HTML page per airport and airline (`dist/ATL.html`,
+`dist/airline/DL.html`, served at `/ATL` and `/airline/DL`). Each is a copy of `dist/index.html` with its own title,
 description, canonical link, Open Graph tags, JSON-LD (`Airport` or `Airline`), and a one-line
 summary inside `#root`, so search engines and link previews see real content before JavaScript
 runs. If the API is down, only the sitemap's home page is written.

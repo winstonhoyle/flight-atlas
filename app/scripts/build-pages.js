@@ -34,10 +34,11 @@ const main = async () => {
     console.warn(`pages: API unavailable (${err.message}); writing the home page only`);
   }
 
+  // ATL.html, not ATL/index.html: Pages serves it at /ATL, where a folder would redirect to /ATL/.
   for (const page of pages) {
-    const dir = path.join(DIST, page.path);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "index.html"), renderPage(template, page));
+    const file = path.join(DIST, `${page.path}.html`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, renderPage(template, page));
   }
   const urls = [`${SITE_URL}/`, ...pages.map((p) => p.url).sort()];
   fs.writeFileSync(

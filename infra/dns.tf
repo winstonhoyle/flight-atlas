@@ -41,6 +41,7 @@ resource "cloudflare_record" "pages_custom_domain" {
   content = "flight-atlas.pages.dev"
   type    = "CNAME"
   proxied = true
+  ttl     = 1
 }
 
 resource "cloudflare_record" "api_custom_domain" {
@@ -49,5 +50,6 @@ resource "cloudflare_record" "api_custom_domain" {
   type       = "CNAME"
   content    = aws_apigatewayv2_domain_name.api_domain.domain_name_configuration[0].target_domain_name
   proxied    = true
+  ttl        = 1
   depends_on = [aws_apigatewayv2_domain_name.api_domain, cloudflare_zone_settings_override.flightatlas_io]
 }
