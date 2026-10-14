@@ -1,9 +1,7 @@
 import logging
 import os
-import re
 import time
 from datetime import datetime
-from typing import List, Tuple
 from urllib.parse import unquote
 
 import boto3
@@ -13,10 +11,10 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import requests
 import wikipedia
-from bs4 import BeautifulSoup
-from lat_lon_parser import parse
 from shapely.geometry import Point
 from tqdm import tqdm
+
+import wiki_parse
 
 # Load .env for local runs (no-op on ECS / if python-dotenv is absent).
 try:
@@ -43,9 +41,7 @@ logger.addHandler(console_handler)
 
 # Env Vars
 S3_ROUTES_BUCKET = os.environ.get("S3_ROUTES_BUCKET", "bucket-flight-atlas-routes")
-S3_RESULTS_BUCKET = os.environ.get(
-    "S3_RESULTS_BUCKET", "bucket-flight-atlas-query-results"
-)
+S3_RESULTS_BUCKET = os.environ.get("S3_RESULTS_BUCKET", "bucket-flight-atlas-query-results")
 S3_PREFIX = os.environ.get("S3_PREFIX", "flights")
 REGION = os.environ.get("REGION", "us-west-1")
 DATABASE = os.environ.get("ATHENA_DB", "flights_db")
@@ -54,12 +50,10 @@ DATABASE = os.environ.get("ATHENA_DB", "flights_db")
 # skipped by default for non-s3 output.
 OUTPUT_BASE = os.environ.get("OUTPUT_BASE") or f"s3://{S3_ROUTES_BUCKET}"
 IS_LOCAL_OUTPUT = not OUTPUT_BASE.startswith("s3://")
-RUN_ATHENA = os.environ.get(
-    "RUN_ATHENA", "false" if IS_LOCAL_OUTPUT else "true"
-).lower() in ("1", "true", "yes")
+RUN_ATHENA = os.environ.get("RUN_ATHENA", "false" if IS_LOCAL_OUTPUT else "true").lower() in ("1", "true", "yes")
 
-if IS_LOCAL_OUTPUT:
-    os.makedirs(OUTPUT_BASE, exist_ok=True)
+# Only the N busiest airports, for a quick check against live Wikipedia. 0 means all.
+SCRAPE_LIMIT = int(os.environ.get("SCRAPE_LIMIT", "0"))
 
 USER_AGENT = "FlightAtlasBot/1.0 (https://github.com/winstonhoyle)"
 
@@ -96,507 +90,358 @@ airline_codes_dict = {
     "San Juan Airlines": "SJ",
 }
 
-additional_destinations = {}
+
+def fetch_soup(url: str):
+    response = session.get(url)
+    response.raise_for_status()
+    return wiki_parse.soup_of(response.text)
 
 
-def wiki_url(href: str) -> str:
-    return f"https://en.wikipedia.org/wiki/{href.split('/wiki/')[-1]}"
-
-
-def get_airport_information(url: str) -> Tuple[str, Point]:
-    r = session.get(url)
-    soup = BeautifulSoup(r.text, "html.parser")
-
+def resolve_page(title: str):
+    """
+    Follows redirects to the article itself, since destination cells often link to redirect
+    titles like "Toronto–Pearson". Returns None for missing and disambiguation pages.
+    """
     try:
-        # Get Point first
-        lat = round(parse(soup.find("span", {"class": "latitude"}).text), 5)
-        lon = round(parse(soup.find("span", {"class": "longitude"}).text), 5)
-        point = Point(lon, lat)
-
-        # Get IATA Code
-        iata_href = soup.find("a", href=lambda h: h and "/wiki/IATA_airport_code" in h)
-        iata_code = re.sub(r"\[\d+\]", "", iata_href.find_next("span").text)
-        return iata_code, point
-    except Exception as e:
-        logger.error(
-            f"Unable to Retrieve airport's point or IATA code, url: {url}, Exception: {str(e)}"
-        )
+        return wikipedia.page(title.replace("_", " "), auto_suggest=False, redirect=True)
+    except (
+        wikipedia.exceptions.PageError,
+        wikipedia.exceptions.DisambiguationError,
+    ) as e:
+        logger.warning(f"Skipping link to {title!r}: {type(e).__name__}")
         return None
 
 
-def get_airline_code(url: str, name: str) -> str:
+def get_airport_information(url: str) -> tuple[str, Point] | None:
+    soup = fetch_soup(url)
+    iata = wiki_parse.parse_iata(soup)
+    coordinates = wiki_parse.parse_coordinates(soup)
+    if not iata or not coordinates:
+        logger.error(f"Unable to read IATA code or coordinates, url: {url}")
+        return None
+    return iata, Point(*coordinates)
+
+
+def get_airline_code(url: str, name: str) -> str | None:
     if name in airline_codes_dict:
         return airline_codes_dict[name]
-    else:
-        r = session.get(url)
-        soup = BeautifulSoup(r.text, "html.parser")
-        try:
-            airline_code_table = soup.find_all(
-                "table", {"class": "infobox-airline-codes"}
-            )[0]
-            codes = airline_code_table.find_all("tr")[1]
-            airline_code = re.sub(r"\[\d+\]", "", codes.find("td").text.strip())[:2]
-            airline_codes_dict[name] = airline_code
-            logger.info(f"Added New Airline Code, name: {name}, code: {airline_code}")
-            return airline_code
-        except Exception as e:
-            logger.error(
-                f"Cannot Find Airline Code, url: {url}, name: {name}, Exception: {str(e)}"
-            )
-
-
-def get_coordinate(url: str) -> Point:
-    try:
-        airport_r = session.get(url)
-        soup = BeautifulSoup(airport_r.text, "html.parser")
-        lat = round(parse(soup.find("span", {"class": "latitude"}).text), 5)
-        lon = round(parse(soup.find("span", {"class": "longitude"}).text), 5)
-        return Point(lon, lat)
-    except Exception as e:
-        logger.error(f"Cannot Find Coordinate, url: {url}, Exception: {str(e)}")
+    code = wiki_parse.parse_airline_code(fetch_soup(url))
+    if code is None:
+        logger.error(f"Cannot find airline code, url: {url}, name: {name}")
         return None
+    airline_codes_dict[name] = code
+    logger.info(f"Added new airline code, name: {name}, code: {code}")
+    return code
 
 
-def find_destination_table(url: str) -> List:
-    r = session.get(url)
-    soup = BeautifulSoup(r.text, "html.parser")
-    header = soup.find(
-        lambda tag: (
-            tag.name
-            and tag.name.startswith("h")
-            and "airline" in tag.get("id", "").lower()
-            and "destination" in tag.get("id", "").lower()
-        )
-    )
-    table = header.find_next("table")
-    classes = table.get("class", [])
-    if any(
-        c in classes for c in ["ambox", "metadata", "plainlinks", "box-Multiple_issues"]
-    ):
-        table = next(
-            table
-            for table in table.find_all_next("table")
-            if "wikitable" in table.attrs["class"]
-        )
-
-    if not table:
-        raise LookupError("Unable to find Destination table", url)
-
-    trs = table.find("tbody").find_all("tr")
-    return trs
+def get_coordinate(url: str) -> Point | None:
+    coordinates = wiki_parse.parse_coordinates(fetch_soup(url))
+    if coordinates is None:
+        logger.error(f"Cannot find coordinates, url: {url}")
+        return None
+    return Point(*coordinates)
 
 
-def get_destinations(src_iata: str, airports_df: pd.DataFrame) -> List:
-    """
-    Returns all destinations from source airport in List type
-    """
-
-    # Query airport and get destination table
+def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destinations: dict) -> list[list[str]]:
+    """Every [airline_code, src, dst] route listed on the source airport's page."""
     matches = airports_df.loc[airports_df["IATA"] == src_iata, "url"]
     if matches.empty:
         return []
-    else:
-        url = matches.iloc[0]
+    url = matches.iloc[0]
 
     try:
-        trs = find_destination_table(url=url)
-    except Exception as e:
-        logger.error(f"Cannot Find Destination Table, url: {url}, Exception: {str(e)}")
+        rows = wiki_parse.find_destination_rows(fetch_soup(url))
+    except LookupError as e:
+        logger.error(f"Cannot find destination table, url: {url}, {e}")
         return []
 
     destinations = []
+    for tr in rows:
+        row = wiki_parse.parse_destination_row(tr)
+        if row is None:
+            continue
 
-    # Loop through records
-    for tr in trs[1:]:
-        # Loop through columns
-        for i, td in enumerate(tr.find_all("td")):
-            # Get airline for desinations, saving all airlines incase I want to expand later
-            if i == 0:
-                a = td.find("a")
+        if row.airline_name in airline_codes_dict:
+            airline_code = airline_codes_dict[row.airline_name]
+        elif row.airline_title:
+            airline_code = get_airline_code(wiki_parse.wiki_url(row.airline_title), row.airline_name)
+        else:
+            logger.error(f"Airline has no link or known code, url: {url}, name: {row.airline_name}")
+            continue
+        if not airline_code:
+            continue
 
-                # If Airline does not have an `href`
-                airline_name = re.sub(r"\[\d+\]", "", td.text.strip())
-                if not a and airline_name not in airline_codes_dict:
-                    logger.error(
-                        f"Airline URL Doesn't Exist, url: {url}, name: {airline_name}"
-                    )
-                    break
-
-                # If Airline already exists in dict
-                if airline_name in airline_codes_dict:
-                    airline_code = airline_codes_dict[airline_name]
-
-                # If airline doesn't exist get code and `get_airline_code` as it to `airline_codes_dict`
-                else:
-                    airline_url = wiki_url(unquote(a.attrs["href"]))
-                    airline_name = re.sub(r"\[\d+\]", "", td.text.strip())
-                    airline_code = get_airline_code(url=airline_url, name=airline_name)
-
-            # Get Destinations
-            elif i == 1:
-                airport_as = [
-                    a
-                    for a in td.find_all("a", href=True)
-                    if "/wiki/" in a["href"]
-                    and "/wiki/Wikipedia:" not in a["href"]
-                    and "#cite_note" not in a["href"]
-                    and "NOTRS" not in a["href"]
-                ]
-
-                # Get all airports
-                for a in airport_as:
-                    href = a.attrs["href"]
-
-                    # If wiki citation note, skip
-                    if len(href.split("#")) > 1:
-                        if not href.split("#")[1].startswith("cite_note"):
-                            logger.debug(f"Href note: {a}, href: {href}")
-                        continue
-
-                    # Get iata code, US airports and intl they fly too
-                    unquote_href = unquote(href)
-                    url = wiki_url(unquote_href)
-                    if url in (
-                        "https://en.wikipedia.org/wiki/Wikipedia:Citation_needed",
-                        "https://en.wikipedia.org/wiki/Wikipedia:Verifiability",
-                    ):
-                        continue
-
-                    # Ensure airport url is original, lots of redirects on wikipedia
-                    page = wikipedia.page(
-                        unquote_href.split("/wiki/")[-1].replace("_", " "),
-                        auto_suggest=False,
-                        redirect=True,
-                    )
-                    url = unquote(page.url)
-                    matches = airports_df.loc[airports_df["url"] == url, "IATA"]
-                    dst_iata = matches.iloc[0] if not matches.empty else None
-
-                    # If code is found
-                    if dst_iata:
-                        # Add destinations, code was found in original datasource, no need to add reverse route
-                        destinations.append([airline_code, src_iata, dst_iata])
-
-                    # If international URL already found
-                    elif url in additional_destinations:
-                        dst_iata = additional_destinations[url]["IATA"]
-
-                        # Add destinations, route exist in additional dataset add
-                        destinations.append([airline_code, src_iata, dst_iata])
-                        destinations.append([airline_code, dst_iata, src_iata])
-
-                    # No code found international or remote (Alaska)
-                    else:
-                        logger.debug(
-                            f"Adding New Airport, {airline_name} flying to {url}"
-                        )
-                        # If information is found
-                        airport_info = get_airport_information(url)
-                        if not airport_info:
-                            continue
-                        else:
-                            dst_iata = airport_info[0]
-                            intl_point = airport_info[1]
-
-                        # Append to dictionary
-                        additional_destinations[url] = {
-                            "IATA": dst_iata,
-                            "geometry": intl_point,
-                            "url": url,
-                            "title": page.title,
-                        }
-
-                        # Add destinations, adding a new destination, create the reverse
-                        destinations.append([airline_code, src_iata, dst_iata])
-                        destinations.append([airline_code, dst_iata, src_iata])
-
-            else:
+        for title in row.destination_titles:
+            page = resolve_page(title)
+            if page is None:
                 continue
+            dst_url = unquote(page.url)
+            known = airports_df.loc[airports_df["url"] == dst_url, "IATA"]
+
+            if not known.empty:
+                # Both ends are U.S. airports; the reverse route comes from the other page.
+                destinations.append([airline_code, src_iata, known.iloc[0]])
+                continue
+
+            if dst_url not in additional_destinations:
+                logger.debug(f"Adding new airport, {row.airline_name} flying to {dst_url}")
+                info = get_airport_information(dst_url)
+                if info is None:
+                    continue
+                additional_destinations[dst_url] = {
+                    "IATA": info[0],
+                    "geometry": info[1],
+                    "url": dst_url,
+                    "title": page.title,
+                }
+
+            # International and remote airports have no page of their own here, so add both ways.
+            dst_iata = additional_destinations[dst_url]["IATA"]
+            destinations.append([airline_code, src_iata, dst_iata])
+            destinations.append([airline_code, dst_iata, src_iata])
+
     return destinations
 
 
-# Get all the airports in the USA
-response = session.get(
-    "https://en.wikipedia.org/wiki/List_of_airports_in_the_United_States",
-)
-response.raise_for_status()
-
-# Get headers for airports
-soup = BeautifulSoup(response.text, "html.parser")
-trs = soup.find("table", {"class": "wikitable sortable"}).find_all("tr")
-headers = [th.text.strip() for th in trs[0].find_all("th")]
-
-# Loop through airports and save data
-data = []
-points = []
-titles = []
-failed_urls = []
-for tr in tqdm(trs[1:], desc="Parsing Airports"):
-    tds = tr.find_all("td")
-    if not tds[1].text:
-        continue
-    try:
-        row = []
-        point = None
-        title = None
-        for i, td in enumerate(tds):
-            if td.find("a") and i == 4:
-                href = unquote(td.find("a").attrs["href"])
-                page = wikipedia.page(
-                    href.split("/wiki/")[-1].replace("_", " "),
-                    auto_suggest=False,
-                    redirect=True,
-                )
-                url = unquote(page.url)
-                row.append(url)
-                point = get_coordinate(url)
-                title = page.title
-            elif i == 6:
-                row.append(int(td.text.strip().replace(",", "")))
-            else:
-                row.append(td.text.strip())
-    except Exception as e:
-        airport = tds[4].text.strip() if len(tds) > 4 else tds[1].text.strip()
-        failed_urls.append(airport)
-        logger.error(f"Failed parsing airport, name: {airport}, Exception: {str(e)}")
-        continue
-    data.append(row)
-    points.append(point)
-    titles.append(title)
-
-# Create airports geopandas frame
-usa_airports_df = pd.DataFrame(data=data, columns=headers)
-usa_airports_df.rename(columns={"Airport": "url"}, inplace=True)
-usa_airports_df["geometry"] = points
-usa_airports_df["title"] = titles
-usa_airports_df = usa_airports_df[
-    ["FAA", "IATA", "ICAO", "url", "Role", "Enplanements", "geometry", "title"]
-]
-
-# Sort by most travelled airports so the largest airlines get queried first
-usa_airports_df = usa_airports_df.sort_values(
-    "Enplanements", ascending=False
-).reset_index(drop=True)
-
-# Loop through airports again but querying the destinations at the airport
-# Queried twice because we know the US airports now, before we were building a list
-routes = []
-for i in tqdm(range(len(usa_airports_df)), desc="Parsing Airports"):
-    try:
-        src_iata = usa_airports_df.iloc[i]["IATA"]
-        destinations = get_destinations(src_iata=src_iata, airports_df=usa_airports_df)
-        routes.extend(destinations)
-    except Exception as e:
-        failed_urls.append(usa_airports_df.iloc[i]["url"])
-        logger.error(
-            f"Failure getting destinations, url: {usa_airports_df.iloc[i]['url']}, Exception: {str(e)}"
-        )
-    time.sleep(1)
-
-for failed_url in failed_urls:
-    logger.error(f"Failed URL: {failed_url}")
-
-# Create addtional airports df
-additional_airports_df = pd.DataFrame(
-    [airline_dict for _, airline_dict in additional_destinations.items()]
-)
-
-# Create a routes df with airport-pairs and geometries
-routes_df = pd.DataFrame(routes, columns=["airline_code", "src_airport", "dst_airport"])
-
-# Join Geometries
-routes_df = routes_df.merge(
-    usa_airports_df.rename(columns={"IATA": "src_airport", "geometry": "geometry_src"})[
-        ["src_airport", "geometry_src"]
-    ],
-    on="src_airport",
-    how="left",
-)
-routes_df = routes_df.merge(
-    usa_airports_df.rename(columns={"IATA": "dst_airport", "geometry": "geometry_dst"})[
-        ["dst_airport", "geometry_dst"]
-    ],
-    on="dst_airport",
-    how="left",
-)
-
-if len(additional_airports_df) > 0:
-    # Join geometries for the additional routes
-    routes_df = routes_df.merge(
-        additional_airports_df.rename(
-            columns={"IATA": "dst_airport", "geometry": "geometry_dst_new"}
-        ),
-        on="dst_airport",
-        how="left",
+def scrape_us_airports(failed: list[str]) -> pd.DataFrame:
+    soup = fetch_soup("https://en.wikipedia.org/wiki/List_of_airports_in_the_United_States")
+    listed = sorted(
+        wiki_parse.parse_airport_list(soup),
+        key=lambda a: a.enplanements or 0,
+        reverse=True,
     )
+    if SCRAPE_LIMIT:
+        listed = listed[:SCRAPE_LIMIT]
+    rows = []
+    for airport in tqdm(listed, desc="Parsing Airports"):
+        page = resolve_page(airport.airport_title) if airport.airport_title else None
+        point = get_coordinate(unquote(page.url)) if page else None
+        if page is None or point is None:
+            # Without a page or a location the airport can't be drawn or linked.
+            failed.append(airport.airport_title or airport.iata)
+            continue
+        rows.append(
+            {
+                "FAA": airport.faa,
+                "IATA": airport.iata,
+                "ICAO": airport.icao,
+                "url": unquote(page.url),
+                "Role": airport.role,
+                "Enplanements": airport.enplanements,
+                "geometry": point,
+                "title": page.title,
+            }
+        )
+    # Busiest first, so the largest airlines' codes are looked up early.
+    return pd.DataFrame(rows).sort_values("Enplanements", ascending=False).reset_index(drop=True)
+
+
+def main() -> None:
+    if IS_LOCAL_OUTPUT:
+        os.makedirs(OUTPUT_BASE, exist_ok=True)
+
+    failed: list[str] = []
+    usa_airports_df = scrape_us_airports(failed)
+
+    routes: list[list[str]] = []
+    additional_destinations: dict = {}
+    for i in tqdm(range(len(usa_airports_df)), desc="Parsing Airports"):
+        src_iata = usa_airports_df.iloc[i]["IATA"]
+        try:
+            routes.extend(get_destinations(src_iata, usa_airports_df, additional_destinations))
+        except Exception as e:
+            failed.append(usa_airports_df.iloc[i]["url"])
+            logger.error(f"Failure getting destinations, url: {usa_airports_df.iloc[i]['url']}, Exception: {e}")
+        time.sleep(1)
+
+    for item in failed:
+        logger.error(f"Failed: {item}")
+
+    write_outputs(usa_airports_df, routes, additional_destinations)
+
+
+def write_outputs(usa_airports_df: pd.DataFrame, routes: list, additional_destinations: dict) -> None:
+    # Create addtional airports df
+    additional_airports_df = pd.DataFrame([airline_dict for _, airline_dict in additional_destinations.items()])
+
+    # Create a routes df with airport-pairs and geometries
+    routes_df = pd.DataFrame(routes, columns=["airline_code", "src_airport", "dst_airport"])
+
+    # Join Geometries
     routes_df = routes_df.merge(
-        additional_airports_df.rename(
-            columns={"IATA": "src_airport", "geometry": "geometry_src_new"}
-        ),
+        usa_airports_df.rename(columns={"IATA": "src_airport", "geometry": "geometry_src"})[
+            ["src_airport", "geometry_src"]
+        ],
         on="src_airport",
         how="left",
     )
-
-    # Combine geomtries to remove `None` geometries
-    routes_df["geometry_src"] = routes_df["geometry_src"].combine_first(
-        routes_df["geometry_src_new"]
+    routes_df = routes_df.merge(
+        usa_airports_df.rename(columns={"IATA": "dst_airport", "geometry": "geometry_dst"})[
+            ["dst_airport", "geometry_dst"]
+        ],
+        on="dst_airport",
+        how="left",
     )
-    routes_df["geometry_dst"] = routes_df["geometry_dst"].combine_first(
-        routes_df["geometry_dst_new"]
-    )
 
-# Cast geometries and drop geometry columns
-routes_df["src_geometry"] = routes_df["geometry_src"].apply(lambda g: g.wkt)
-routes_df["dst_geometry"] = routes_df["geometry_dst"].apply(lambda g: g.wkt)
-
-# Format airlines df while we are formatting routes as we sort by airline route count
-routes_df["airport1"] = routes_df[["src_airport", "dst_airport"]].min(axis=1)
-routes_df["airport2"] = routes_df[["src_airport", "dst_airport"]].max(axis=1)
-
-# Drop duplicate flights based on airline code
-unique_routes = routes_df.drop_duplicates(
-    subset=["airline_code", "airport1", "airport2"]
-)
-
-# Count routes per airline
-route_counts = (
-    unique_routes.groupby("airline_code").size().reset_index(name="route_count")
-)
-
-# Create airline df
-airlines_df = pd.DataFrame(airline_codes_dict.items(), columns=["name", "airline_code"])
-
-# Merge with airline names
-airlines_df = airlines_df.merge(route_counts, on="airline_code")
-airlines_df = airlines_df.sort_values("route_count", ascending=False)
-
-# Back to uploading routes, clean the routes DF
-routes_df = routes_df[
-    ["airline_code", "src_airport", "dst_airport", "src_geometry", "dst_geometry"]
-]
-
-# Format date for partition
-routes_df["year"] = datetime.now().year
-routes_df["month"] = datetime.now().month
-
-# Upload routes to S3
-routes_table = pa.Table.from_pandas(routes_df)
-
-# Write partitioned dataset
-routes_dir = f"{OUTPUT_BASE}/{S3_PREFIX}/"
-logger.info(f"Writing Routes to to {routes_dir}")
-
-ds.write_dataset(
-    routes_table,
-    base_dir=routes_dir,
-    format="parquet",
-    partitioning=["year", "month", "airline_code", "src_airport"],
-    partitioning_flavor="hive",
-    existing_data_behavior="overwrite_or_ignore",
-    max_partitions=10_000,
-)
-
-# Prepare airports DataFrame for upload
-airports_df = pd.concat([usa_airports_df, additional_airports_df], ignore_index=True)[
-    ["FAA", "IATA", "url", "geometry", "title"]
-]
-
-# Merge destinations
-unique_pairs_count = (
-    routes_df.groupby("src_airport")["dst_airport"].nunique().reset_index()
-)
-unique_pairs_count.rename(
-    columns={"src_airport": "IATA", "dst_airport": "destinations"}, inplace=True
-)
-airports_df = airports_df.merge(unique_pairs_count, on="IATA", how="left")
-airports_df = airports_df.replace(np.nan, 0.0)
-airports_df["destinations"] = airports_df["destinations"].astype(int)
-airports_df[["FAA", "IATA", "url", "title"]] = airports_df[
-    ["FAA", "IATA", "url", "title"]
-].astype(str)
-
-# Convert geometry to WKT
-airports_df["geometry"] = airports_df["geometry"].apply(lambda g: g.wkt)
-
-# Add snapshot date and partition columns
-airports_df["year"] = datetime.now().year
-airports_df["month"] = datetime.now().month
-
-# Convert to Arrow table
-airport_table = pa.Table.from_pandas(airports_df)
-
-# Write partitioned dataset
-airports_dir = f"{OUTPUT_BASE}/airports/"
-logger.info(f"Writing airports to {airports_dir}")
-
-# Write dataset partitioned by year/month
-ds.write_dataset(
-    data=airport_table,
-    base_dir=airports_dir,
-    format="parquet",
-    partitioning=["year", "month"],
-    partitioning_flavor="hive",
-    existing_data_behavior="overwrite_or_ignore",
-    basename_template="part-{i}.parquet",
-    filesystem=None,
-)
-
-# Upload airlines to S3
-airlines_df[["name", "airline_code"]] = airlines_df[["name", "airline_code"]].astype(
-    str
-)
-airlines_df["route_count"] = airlines_df["route_count"].astype(int)
-
-# Add snapshot date and partition columns
-airlines_df["year"] = datetime.now().year
-airlines_df["month"] = datetime.now().month
-
-# Convert to Arrow table
-airlines_table = pa.Table.from_pandas(airlines_df)
-
-# Write partitioned dataset
-airlines_dir = f"{OUTPUT_BASE}/airlines/"
-logger.info(f"Writing Airlines to to {airlines_dir}")
-
-# Write dataset partitioned by year/month
-ds.write_dataset(
-    data=airlines_table,
-    base_dir=airlines_dir,
-    format="parquet",
-    partitioning=["year", "month"],
-    partitioning_flavor="hive",
-    existing_data_behavior="overwrite_or_ignore",
-    basename_template="part-{i}.parquet",
-    filesystem=None,
-)
-
-if not RUN_ATHENA:
-    logger.info("RUN_ATHENA disabled; skipping Athena MSCK REPAIR step.")
-else:
-    logger.info("Enabling tables for Athena")
-    athena = boto3.client("athena", region_name=REGION)
-    athena_output_dir = f"s3://{S3_RESULTS_BUCKET}/"
-
-    for table in ["airports", "flights", "airlines"]:
-        query = f"MSCK REPAIR TABLE {table};"
-
-        response = athena.start_query_execution(
-            QueryString=query,
-            QueryExecutionContext={"Database": DATABASE},
-            ResultConfiguration={"OutputLocation": athena_output_dir},
+    if len(additional_airports_df) > 0:
+        # Join geometries for the additional routes
+        routes_df = routes_df.merge(
+            additional_airports_df.rename(columns={"IATA": "dst_airport", "geometry": "geometry_dst_new"}),
+            on="dst_airport",
+            how="left",
         )
-        query_execution_id = response["QueryExecutionId"]
-        logger.info(f"Athena query ({table}) started: {query_execution_id}")
+        routes_df = routes_df.merge(
+            additional_airports_df.rename(columns={"IATA": "src_airport", "geometry": "geometry_src_new"}),
+            on="src_airport",
+            how="left",
+        )
 
-        while True:
-            status = athena.get_query_execution(QueryExecutionId=query_execution_id)
-            state = status["QueryExecution"]["Status"]["State"]
+        # Combine geomtries to remove `None` geometries
+        routes_df["geometry_src"] = routes_df["geometry_src"].combine_first(routes_df["geometry_src_new"])
+        routes_df["geometry_dst"] = routes_df["geometry_dst"].combine_first(routes_df["geometry_dst_new"])
 
-            if state in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-                break
-            time.sleep(2)
+    # Cast geometries and drop geometry columns
+    routes_df["src_geometry"] = routes_df["geometry_src"].apply(lambda g: g.wkt)
+    routes_df["dst_geometry"] = routes_df["geometry_dst"].apply(lambda g: g.wkt)
 
-        if state == "SUCCEEDED":
-            logger.info("MSCK REPAIR TABLE completed successfully!")
-        else:
-            logger.error(f"Query failed or cancelled: {state}")
+    # Format airlines df while we are formatting routes as we sort by airline route count
+    routes_df["airport1"] = routes_df[["src_airport", "dst_airport"]].min(axis=1)
+    routes_df["airport2"] = routes_df[["src_airport", "dst_airport"]].max(axis=1)
+
+    # Drop duplicate flights based on airline code
+    unique_routes = routes_df.drop_duplicates(subset=["airline_code", "airport1", "airport2"])
+
+    # Count routes per airline
+    route_counts = unique_routes.groupby("airline_code").size().reset_index(name="route_count")
+
+    # Create airline df
+    airlines_df = pd.DataFrame(airline_codes_dict.items(), columns=["name", "airline_code"])
+
+    # Merge with airline names
+    airlines_df = airlines_df.merge(route_counts, on="airline_code")
+    airlines_df = airlines_df.sort_values("route_count", ascending=False)
+
+    # Back to uploading routes, clean the routes DF
+    routes_df = routes_df[["airline_code", "src_airport", "dst_airport", "src_geometry", "dst_geometry"]]
+
+    # Format date for partition
+    routes_df["year"] = datetime.now().year
+    routes_df["month"] = datetime.now().month
+
+    # Upload routes to S3
+    routes_table = pa.Table.from_pandas(routes_df)
+
+    # Write partitioned dataset
+    routes_dir = f"{OUTPUT_BASE}/{S3_PREFIX}/"
+    logger.info(f"Writing Routes to to {routes_dir}")
+
+    ds.write_dataset(
+        routes_table,
+        base_dir=routes_dir,
+        format="parquet",
+        partitioning=["year", "month", "airline_code", "src_airport"],
+        partitioning_flavor="hive",
+        existing_data_behavior="overwrite_or_ignore",
+        max_partitions=10_000,
+    )
+
+    # Prepare airports DataFrame for upload
+    airports_df = pd.concat([usa_airports_df, additional_airports_df], ignore_index=True)[
+        ["FAA", "IATA", "url", "geometry", "title"]
+    ]
+
+    # Merge destinations
+    unique_pairs_count = routes_df.groupby("src_airport")["dst_airport"].nunique().reset_index()
+    unique_pairs_count.rename(columns={"src_airport": "IATA", "dst_airport": "destinations"}, inplace=True)
+    airports_df = airports_df.merge(unique_pairs_count, on="IATA", how="left")
+    airports_df = airports_df.replace(np.nan, 0.0)
+    airports_df["destinations"] = airports_df["destinations"].astype(int)
+    airports_df[["FAA", "IATA", "url", "title"]] = airports_df[["FAA", "IATA", "url", "title"]].astype(str)
+
+    # Convert geometry to WKT
+    airports_df["geometry"] = airports_df["geometry"].apply(lambda g: g.wkt)
+
+    # Add snapshot date and partition columns
+    airports_df["year"] = datetime.now().year
+    airports_df["month"] = datetime.now().month
+
+    # Convert to Arrow table
+    airport_table = pa.Table.from_pandas(airports_df)
+
+    # Write partitioned dataset
+    airports_dir = f"{OUTPUT_BASE}/airports/"
+    logger.info(f"Writing airports to {airports_dir}")
+
+    # Write dataset partitioned by year/month
+    ds.write_dataset(
+        data=airport_table,
+        base_dir=airports_dir,
+        format="parquet",
+        partitioning=["year", "month"],
+        partitioning_flavor="hive",
+        existing_data_behavior="overwrite_or_ignore",
+        basename_template="part-{i}.parquet",
+        filesystem=None,
+    )
+
+    # Upload airlines to S3
+    airlines_df[["name", "airline_code"]] = airlines_df[["name", "airline_code"]].astype(str)
+    airlines_df["route_count"] = airlines_df["route_count"].astype(int)
+
+    # Add snapshot date and partition columns
+    airlines_df["year"] = datetime.now().year
+    airlines_df["month"] = datetime.now().month
+
+    # Convert to Arrow table
+    airlines_table = pa.Table.from_pandas(airlines_df)
+
+    # Write partitioned dataset
+    airlines_dir = f"{OUTPUT_BASE}/airlines/"
+    logger.info(f"Writing Airlines to to {airlines_dir}")
+
+    # Write dataset partitioned by year/month
+    ds.write_dataset(
+        data=airlines_table,
+        base_dir=airlines_dir,
+        format="parquet",
+        partitioning=["year", "month"],
+        partitioning_flavor="hive",
+        existing_data_behavior="overwrite_or_ignore",
+        basename_template="part-{i}.parquet",
+        filesystem=None,
+    )
+
+    if not RUN_ATHENA:
+        logger.info("RUN_ATHENA disabled; skipping Athena MSCK REPAIR step.")
+    else:
+        logger.info("Enabling tables for Athena")
+        athena = boto3.client("athena", region_name=REGION)
+        athena_output_dir = f"s3://{S3_RESULTS_BUCKET}/"
+
+        for table in ["airports", "flights", "airlines"]:
+            query = f"MSCK REPAIR TABLE {table};"
+
+            response = athena.start_query_execution(
+                QueryString=query,
+                QueryExecutionContext={"Database": DATABASE},
+                ResultConfiguration={"OutputLocation": athena_output_dir},
+            )
+            query_execution_id = response["QueryExecutionId"]
+            logger.info(f"Athena query ({table}) started: {query_execution_id}")
+
+            while True:
+                status = athena.get_query_execution(QueryExecutionId=query_execution_id)
+                state = status["QueryExecution"]["Status"]["State"]
+
+                if state in ["SUCCEEDED", "FAILED", "CANCELLED"]:
+                    break
+                time.sleep(2)
+
+            if state == "SUCCEEDED":
+                logger.info("MSCK REPAIR TABLE completed successfully!")
+            else:
+                logger.error(f"Query failed or cancelled: {state}")
+
+
+if __name__ == "__main__":
+    main()

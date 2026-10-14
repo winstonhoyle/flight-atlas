@@ -10,8 +10,9 @@ LAMBDA_IMAGE   := $(ECR_REPO):lambda-$(IMAGE_TAG)
 
 BUILD_FLAGS := --provenance=false --platform linux/amd64
 
-.PHONY: app-install app-dev app-build app-preview app-check app-test palette-check \
-	containers deploy-containers scrape-dry-run tf-init tf-plan tf-apply
+.PHONY: app-install app-start app-build app-preview app-check app-test \
+	py-check lambda-run lambda-invoke \
+	containers deploy-containers scrape scrape-dry-run tf-init tf-plan tf-apply
 
 app/node_modules: app/package-lock.json
 	cd app && npm ci
@@ -19,8 +20,8 @@ app/node_modules: app/package-lock.json
 
 app-install: app/node_modules
 
-app-dev: app/node_modules
-	cd app && npm run dev
+app-start: app/node_modules
+	cd app && npm start
 
 app-build: app/node_modules
 	cd app && npm run build
@@ -34,13 +35,29 @@ app-check: app/node_modules
 app-test: app/node_modules
 	cd app && npm run test:run
 
-.venv/.palette-deps: tools/requirements.txt
+.venv/.deps: requirements.txt lambda/requirements.txt ecs/requirements.txt
 	test -d .venv || python3 -m venv .venv
-	.venv/bin/pip install -q -r tools/requirements.txt
+	.venv/bin/pip install -q -r requirements.txt -r lambda/requirements.txt -r ecs/requirements.txt
 	@touch $@
 
-palette-check: .venv/.palette-deps
-	.venv/bin/python tools/palette_check.py
+# ruff and pytest for the Lambda and the scraper; no AWS or network needed.
+py-check: .venv/.deps
+	.venv/bin/ruff check lambda ecs && .venv/bin/ruff format --check lambda ecs
+	cd lambda && ../.venv/bin/python -m pytest -q
+	cd ecs && ../.venv/bin/python -m pytest -q
+
+# Runs the image under the Lambda Runtime Interface Emulator against the live AWS data,
+# using your AWS CLI credentials. Invoke it from another shell with lambda-invoke.
+lambda-run:
+	docker build $(BUILD_FLAGS) -t $(LAMBDA_IMAGE) lambda
+	docker run --rm -p 9000:8080 \
+		-v "$(HOME)/.aws:/root/.aws:ro" \
+		-e AWS_PROFILE=$${AWS_PROFILE:-default} -e AWS_REGION=$(AWS_REGION) \
+		$(LAMBDA_IMAGE)
+
+EVENT ?= lambda/events/routes_atl.json
+lambda-invoke:
+	@curl -s http://localhost:9000/2015-03-31/functions/function/invocations -d @$(EVENT) | python3 -m json.tool | head -40
 
 containers:
 	docker build $(BUILD_FLAGS) -t $(ECS_IMAGE) ecs
@@ -53,11 +70,15 @@ deploy-containers:
 	docker push $(ECR_REGISTRY)/$(ECS_IMAGE)
 	docker push $(ECR_REGISTRY)/$(LAMBDA_IMAGE)
 
-scrape-dry-run:
-	docker run --rm \
-		-e OUTPUT_BASE=/data -e RUN_ATHENA=false \
-		-v "$(CURDIR)/ecs/output:/data" \
-		$(ECS_IMAGE)
+# Monthly refresh: scrapes Wikipedia (30 to 45 minutes), writes this month's snapshot to S3, and
+# repairs the Athena partitions. Settings come from ecs/.env.
+scrape: .venv/.deps
+	cd ecs && ../.venv/bin/python create_routes.py
+
+# Same scrape to ecs/output/ with no AWS. LIMIT=2 does only the two busiest airports.
+LIMIT ?= 0
+scrape-dry-run: .venv/.deps
+	cd ecs && OUTPUT_BASE=./output RUN_ATHENA=false SCRAPE_LIMIT=$(LIMIT) ../.venv/bin/python create_routes.py
 
 tf-init:
 	cd infra && terraform init

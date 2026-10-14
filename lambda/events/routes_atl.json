@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "rawPath": "/routes",
+  "rawQueryString": "airport=ATL",
+  "queryStringParameters": {
+    "airport": "ATL"
+  },
+  "requestContext": {
+    "http": {
+      "method": "GET",
+      "path": "/routes"
+    }
+  }
+}

@@ -249,3 +249,4 @@ Thumbs.db # Windows
 
 terraform.tfvars
 app/public/sitemap.xml
+PROMPT.md

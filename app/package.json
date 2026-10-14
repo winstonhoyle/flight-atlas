@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Flight Atlas web client: React + Vite + Leaflet map of direct U.S. flight routes.",
   "scripts": {
-    "dev": "vite",
+    "start": "vite",
     "prebuild": "node scripts/generate-sitemap.js",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

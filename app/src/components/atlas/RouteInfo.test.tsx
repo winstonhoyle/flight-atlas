@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { Airport, Routes } from "@/types";
-import { RouteInfoPanel } from "./RouteInfoPanel";
+import { RouteInfo } from "./RouteInfo";
 
 const airport = (IATA: string, Name: string): Airport => ({
   type: "Feature",
@@ -32,41 +32,42 @@ const ROUTES: Routes = {
   ],
 };
 
-describe("RouteInfoPanel", () => {
+describe("RouteInfo", () => {
   it("lists each airline on the route once, linked to Google Flights", () => {
     render(
-      <RouteInfoPanel
+      <RouteInfo
         selectedAirport={airport("ATL", "Atlanta")}
         destinationAirport={airport("BOS", "Boston")}
         routes={ROUTES}
         airlines={{ DL: "Delta Air Lines", B6: "JetBlue" }}
-        handleBack={() => {}}
+        onClose={() => {}}
       />,
     );
 
-    const links = screen.getAllByRole("link", { name: /flights|Delta|JetBlue/ });
-    expect(links.map((l) => l.textContent)).toEqual([
-      "DL · Delta Air Lines (opens in a new tab)",
-      "B6 · JetBlue (opens in a new tab)",
-    ]);
-    expect(links[0]).toHaveAttribute(
+    const flights = screen
+      .getAllByRole("link")
+      .filter((l) => l.getAttribute("href")?.includes("google.com"));
+    expect(flights).toHaveLength(2);
+    expect(flights[0]).toHaveAccessibleName("Delta Air Lines (opens in a new tab)");
+    expect(flights[0]).toHaveAttribute(
       "href",
       "https://www.google.com/travel/flights?q=ATL+to+BOS+DL",
     );
+    expect(flights[1]).toHaveAccessibleName("JetBlue (opens in a new tab)");
   });
 
-  it("closes through handleBack", async () => {
+  it("closes through onClose", async () => {
     const handleBack = vi.fn();
     render(
-      <RouteInfoPanel
+      <RouteInfo
         selectedAirport={airport("ATL", "Atlanta")}
         destinationAirport={airport("BOS", "Boston")}
         routes={ROUTES}
         airlines={{}}
-        handleBack={handleBack}
+        onClose={handleBack}
       />,
     );
-    await userEvent.click(screen.getByRole("button", { name: "Close route info" }));
+    await userEvent.click(screen.getByRole("button", { name: "Close route" }));
     expect(handleBack).toHaveBeenCalledOnce();
   });
 });

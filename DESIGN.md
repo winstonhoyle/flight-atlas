@@ -61,21 +61,14 @@ does, and components read only roles, so changing what a role looks like is one 
 
 | Role | Value | Used for |
 | --- | --- | --- |
-| `--fa-map-route` | blue-60v `#005ea2` | Every drawn route |
-| `--fa-map-route-highlight` | orange-60v `#8c471c` | Hovered airport's routes, the selected route |
+| `--fa-map-route` | `#64b5f7` | Every drawn route |
+| `--fa-map-route-highlight` | `#004c97` | Hovered airport's routes, the selected route |
 | `--fa-map-marker-stroke` | gray-90 `#1b1b1b` | Airport marker outline |
-| `--fa-map-destinations-1` to `-5` | viridis, `#fde725` to `#440154` | Airport marker fill by destination count |
+| `--fa-map-destinations-1` to `-5` | `#ff0000`, `#fc8d59`, `#f2f700`, `#62eb07`, `#047a00` | Airport marker fill, 1 to 10 destinations up to over 100 |
 
-Routes and highlights are blue and orange, a pair that stays apart for every type of color
-blindness. No two map colors are red and green, the pair most color-blind people can't
-separate.
-
-The destinations ramp is [viridis](https://cran.r-project.org/web/packages/viridis/vignettes/intro-to-viridis.html),
-ordered from light (1 to 10 destinations) to dark (over 100). Each step is darker than the
-last in normal vision and under every simulated color blindness, so a reader who sees no hue
-at all can still read the order. Marker size also grows with the count. The fill shows the
-count, and the dark outline separates the marker from the basemap, which the light end of the
-ramp can't do on its own.
+The map keeps its original colors, which aren't USWDS colors. The destinations ramp runs from
+red (fewest) to green (most), a pair color-blind readers can confuse, so marker size grows
+with the count as well and the legend gives each color's range.
 
 ### Typography
 
@@ -129,17 +122,16 @@ so the logo keeps its colors. Don't reuse the brand red and green to mean two di
 
 ## Accessibility
 
-- Text clears WCAG AA 4.5:1 on its background; the focus ring and map graphics clear 3:1, map graphics against both the basemap's land (`#efefef`) and water (`#d0cfd4`).
-- Colors that carry meaning stay at least ΔE 15 apart (CAM02-UCS) under simulated protanopia, deuteranopia, and tritanopia.
-- Color is never the only signal. Marker size follows the count, and the highlight is thicker as well as orange.
+- Text clears WCAG AA 4.5:1 on its background, and the focus ring clears 3:1.
+- UI colors that carry meaning (links and errors) stay at least ΔE 15 apart (CAM02-UCS) under simulated protanopia, deuteranopia, and tritanopia. The map colors are exempt; see Map colors.
+- Color is never the only signal. Marker size follows the count, and the highlight is thicker than other routes.
 - Focus is always visible: `index.css` draws one ring for every element, and components don't remove it.
 - Icon-only buttons have a label (`IconButton` requires one). Links that open a new tab say so to screen readers.
 - Motion is short and turns off under `prefers-reduced-motion`.
 
-`make palette-check` measures all of the color rules above from `tokens.css`. It simulates color
-blindness with two models, `colorspacious` (Machado 2009) and the `colorblind` package (LMS
-daltonization), and counts the worse one. Run it after changing a color; it exits 1 on a
-failure.
+The UI values above were measured on 2026-10-13: color blindness simulated with `colorspacious`
+(Machado 2009) and the `colorblind` package (LMS daltonization), counting the worse of the two.
+Measure a new color the same way before adding it.
 
 ## Writing
 
@@ -157,4 +149,4 @@ UI text, comments, and docs follow the same rules, taken from Wikipedia's
 | Command | What it checks |
 | --- | --- |
 | `make app-check` | ESLint, Prettier, TypeScript, and unit and component tests |
-| `make palette-check` | Contrast, color-blind separation, ramp order |
+| `make py-check` | ruff and pytest for the Lambda and the scraper |

@@ -1,22 +1,20 @@
-.overlay {
+.panel {
   position: absolute;
   top: var(--fa-space-105);
   right: var(--fa-space-105);
   z-index: var(--fa-z-panel);
   display: flex;
   flex-direction: column;
-  gap: var(--fa-space-1);
-  width: min(20rem, calc(100vw - 2 * var(--fa-space-105)));
+  width: 20rem;
+  max-height: calc(100dvh - 2 * var(--fa-space-105));
+  padding: var(--fa-space-105) var(--fa-space-2);
 }
 
-.toggle {
-  align-self: flex-end;
-}
-
-.panel {
+.header {
   display: flex;
-  flex-direction: column;
-  gap: var(--fa-space-105);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fa-space-1);
 }
 
 .title {
@@ -26,30 +24,37 @@
   line-height: var(--fa-leading-tight);
 }
 
-.advanced {
-  font-size: var(--fa-font-size-3xs);
-}
-
-.summary {
+/* Scrolls inside the panel when route details outgrow the screen. */
+.body {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--fa-space-05);
-  color: var(--fa-color-link);
-  font-weight: var(--fa-font-weight-semibold);
-  list-style: none;
-  cursor: pointer;
+  flex-direction: column;
+  gap: var(--fa-space-105);
+  min-height: 0;
+  margin-top: var(--fa-space-105);
+  overflow-y: auto;
 }
 
-.summary::-webkit-details-marker {
-  display: none;
-}
-
-.advancedBody {
+.fields {
   display: flex;
   flex-direction: column;
   gap: var(--fa-space-1);
-  margin-top: var(--fa-space-1);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.advancedToggle {
+  margin-left: auto;
+}
+
+.advanced {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-1);
+  font-size: var(--fa-font-size-3xs);
 }
 
 .hint {
@@ -80,4 +85,14 @@
 
 .error {
   color: var(--fa-color-error);
+}
+
+@media (max-width: 40em) {
+  .panel {
+    left: var(--fa-space-1);
+    right: var(--fa-space-1);
+    top: var(--fa-space-1);
+    width: auto;
+    max-height: 60dvh;
+  }
 }

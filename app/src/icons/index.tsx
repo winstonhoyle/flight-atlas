@@ -6,9 +6,9 @@ const PATHS = {
   arrowBack: "M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
   close:
     "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+  expandLess: "m12 8-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z",
   expandMore: "M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z",
   info: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
-  menu: "M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z",
   openInNew:
     "M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z",
   remove: "M19 13H5v-2h14v2z",
@@ -19,9 +19,9 @@ const PATHS = {
 export const AddIcon = (props: IconProps) => <Icon path={PATHS.add} {...props} />;
 export const ArrowBackIcon = (props: IconProps) => <Icon path={PATHS.arrowBack} {...props} />;
 export const CloseIcon = (props: IconProps) => <Icon path={PATHS.close} {...props} />;
+export const ExpandLessIcon = (props: IconProps) => <Icon path={PATHS.expandLess} {...props} />;
 export const ExpandMoreIcon = (props: IconProps) => <Icon path={PATHS.expandMore} {...props} />;
 export const InfoIcon = (props: IconProps) => <Icon path={PATHS.info} {...props} />;
-export const MenuIcon = (props: IconProps) => <Icon path={PATHS.menu} {...props} />;
 export const OpenInNewIcon = (props: IconProps) => <Icon path={PATHS.openInNew} {...props} />;
 export const RemoveIcon = (props: IconProps) => <Icon path={PATHS.remove} {...props} />;
 export const SettingsIcon = (props: IconProps) => <Icon path={PATHS.settings} {...props} />;

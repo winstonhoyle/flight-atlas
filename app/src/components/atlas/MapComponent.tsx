@@ -7,7 +7,7 @@ import "leaflet/dist/leaflet.css";
 import { AirportMarker } from "./AirportMarker";
 import { Legend } from "./Legend";
 import { OverlayPanel } from "./OverlayPanel";
-import { RouteInfoPanel } from "./RouteInfoPanel";
+import { RouteInfo } from "./RouteInfo";
 import { WelcomeDialog } from "./WelcomeDialog";
 import styles from "./MapComponent.module.css";
 
@@ -16,11 +16,13 @@ import { IconButton } from "@/components/common/IconButton";
 import { useAtlasData } from "@/hooks/useAtlasData";
 import { useMonths } from "@/hooks/useMonths";
 import { useRoutes } from "@/hooks/useRoutes";
+import { useSelectionUrl } from "@/hooks/useSelectionUrl";
 import { InfoIcon } from "@/icons";
 import { currentMonth } from "@/services/api";
 import { tokenValue } from "@/styles/tokens";
 import type { AirlineSummary, Airport, RouteProperties } from "@/types";
 import { distanceMiles } from "@/utils/geo";
+import { EMPTY_SELECTION, type Selection } from "@/utils/selectionPath";
 
 // ---- Known Issues ----
 // PRIORITY:
@@ -28,7 +30,6 @@ import { distanceMiles } from "@/utils/geo";
 // Highlighted routes don't work if you hover over somewhere else -- Fixed?
 
 // ---- Enhancements TODO ----
-// Building and Selecting from URL
 // Selecting Airport when Selected Airport event
 
 const DEFAULT_CENTER: L.LatLngTuple = [39.8283, -98.5795]; // center of continental US
@@ -38,6 +39,36 @@ const HIGHLIGHT_WEIGHT = 4;
 
 // Route properties for each drawn line, so layers can be filtered and highlighted later.
 const routePropsByLayer = new WeakMap<L.Layer, RouteProperties>();
+// The unshifted copy of each route. Zooming uses only these, or it would fit all three worlds.
+const primaryLines = new WeakSet<L.Layer>();
+
+/** Fits bounds in the part of the map the overlay panel doesn't cover. */
+const fitTo = (map: L.Map | null, bounds: L.LatLngBounds | null, padding = 15) => {
+  if (!map || !bounds?.isValid()) return;
+  const area = map.getContainer().getBoundingClientRect();
+  const panel = document.getElementById("overlay-panel")?.getBoundingClientRect();
+  // A panel narrower than half the map sits at the side; otherwise it spans the top.
+  const atSide = panel && panel.width < area.width / 2;
+  map.fitBounds(bounds, {
+    paddingTopLeft: [padding, panel && !atSide ? panel.bottom - area.top + padding : padding],
+    paddingBottomRight: [panel && atSide ? area.right - panel.left + padding : padding, padding],
+  });
+};
+
+const primaryBounds = (
+  layer: L.FeatureGroup,
+  include: (props: RouteProperties | undefined) => boolean = () => true,
+): L.LatLngBounds | null => {
+  let bounds: L.LatLngBounds | null = null;
+  for (const l of layer.getLayers()) {
+    if (!primaryLines.has(l) || !include(routePropsByLayer.get(l))) continue;
+    const b = (l as L.Polyline).getBounds();
+    if (!b.isValid()) continue;
+    // getBounds() returns the line's own object; copy it before extending.
+    bounds = bounds ? bounds.extend(b) : L.latLngBounds(b.getSouthWest(), b.getNorthEast());
+  }
+  return bounds;
+};
 
 const drawLine = (
   coords: L.LatLngTuple[],
@@ -92,6 +123,36 @@ export const MapComponent = () => {
   const { airports, airlines, error: dataError } = useAtlasData(selectedMonth);
 
   const { routes, loading, error } = useRoutes(selectedAirport, selectedAirline, selectedMonth);
+
+  const findAirport = (iata: string) => airports.find((a) => a.properties.IATA === iata) ?? null;
+
+  useSelectionUrl({
+    ready: airports.length > 0 && Object.keys(airlines).length > 0,
+    selection: {
+      airport: selectedAirport?.properties.IATA ?? "",
+      destination: destinationAirport?.properties.IATA ?? "",
+      airline: selectedAirline,
+    },
+    airlineName: airlines[selectedAirline],
+    resolve: ({ airport, destination, airline }) => {
+      if (airport && !findAirport(airport)) return EMPTY_SELECTION;
+      return {
+        airport,
+        destination: airport && findAirport(destination) ? destination : "",
+        airline: airline in airlines ? airline : "",
+      };
+    },
+    apply: (selection: Selection) => {
+      setSelectedAirport(findAirport(selection.airport));
+      setDestinationAirport(selection.destination ? findAirport(selection.destination) : null);
+      setSelectedRoute(selection.destination ? [selection.airport, selection.destination] : []);
+      setSelectedAirline(selection.airline);
+      if (!selection.destination) highlightLayerRef.current?.clearLayers();
+      if (!selection.airport && !selection.airline) {
+        mapRef.current?.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+      }
+    },
+  });
   const { months, loading: monthsLoading, error: monthsError } = useMonths();
 
   // Padding helps with world copies.
@@ -106,7 +167,6 @@ export const MapComponent = () => {
 
     const weight = routes.features.length > 200 ? 1 : 2;
     const lines: L.Polyline[] = [];
-    let primaryBounds: L.LatLngBounds | null = null;
 
     routes.features.forEach((f) => {
       const raw = f.geometry.coordinates;
@@ -116,21 +176,15 @@ export const MapComponent = () => {
       buildWorldRouteVariants(coords).forEach((variantCoords, idx) => {
         const line = drawLine(variantCoords, useGeodesic, weight, routeRenderer);
         routePropsByLayer.set(line, f.properties);
+        if (idx === 0) primaryLines.add(line);
         lines.push(line);
-
-        // Only the base copy counts toward the zoom bounds.
-        if (idx === 0) {
-          const b = line.getBounds();
-          if (b.isValid()) primaryBounds = primaryBounds ? primaryBounds.extend(b) : b;
-        }
       });
     });
 
     lines.forEach((l) => layer.addLayer(l));
 
-    if (mapRef.current && primaryBounds) {
-      mapRef.current.fitBounds(primaryBounds, { padding: [15, 15] });
-    }
+    const bounds = primaryBounds(layer);
+    fitTo(mapRef.current, bounds);
   }, [routes, routeRenderer]);
 
   // Show only the selected airline's routes.
@@ -144,19 +198,17 @@ export const MapComponent = () => {
       return;
     }
 
-    const visibleLayers: L.Layer[] = [];
     layer.eachLayer((l) => {
       if (!selectedAirline || selectedAirline === routePropsByLayer.get(l)?.airline_code) {
         if (!map.hasLayer(l)) map.addLayer(l);
-        if (selectedAirline) visibleLayers.push(l);
       } else if (map.hasLayer(l)) {
         map.removeLayer(l);
       }
     });
 
-    if (visibleLayers.length) {
-      const bounds = L.featureGroup(visibleLayers).getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds, { padding: [15, 15] });
+    if (selectedAirline) {
+      const bounds = primaryBounds(layer, (props) => props?.airline_code === selectedAirline);
+      fitTo(map, bounds);
     }
   }, [selectedAirline, routes, selectedAirport]);
 
@@ -264,13 +316,13 @@ export const MapComponent = () => {
         : highlightLine(coords),
     );
 
-    mapRef.current?.fitBounds(L.latLngBounds(coords), { padding: [30, 30] });
+    fitTo(mapRef.current, L.latLngBounds(coords), 30);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRoute]);
 
   const fitToRoutes = () => {
-    const bounds = routesLayerRef.current?.getBounds();
-    if (bounds?.isValid()) mapRef.current?.fitBounds(bounds, { padding: [15, 15] });
+    const bounds = routesLayerRef.current && primaryBounds(routesLayerRef.current);
+    fitTo(mapRef.current, bounds);
   };
 
   // Step back one level: destination, then airline, then airport.
@@ -351,16 +403,6 @@ export const MapComponent = () => {
         <Pane name="airportTooltipPane" />
 
         <Legend />
-
-        {selectedAirport && destinationAirport && routes && (
-          <RouteInfoPanel
-            selectedAirport={selectedAirport}
-            destinationAirport={destinationAirport}
-            airlines={airlines}
-            routes={routes}
-            handleBack={handleBack}
-          />
-        )}
       </MapContainer>
 
       <OverlayPanel
@@ -380,7 +422,17 @@ export const MapComponent = () => {
         setSelectedMonth={setSelectedMonth}
         loading={loading || monthsLoading}
         error={error || monthsError || dataError}
-      />
+      >
+        {selectedAirport && destinationAirport && routes && (
+          <RouteInfo
+            selectedAirport={selectedAirport}
+            destinationAirport={destinationAirport}
+            airlines={airlines}
+            routes={routes}
+            onClose={handleBack}
+          />
+        )}
+      </OverlayPanel>
 
       <IconButton
         label="About Flight Atlas"

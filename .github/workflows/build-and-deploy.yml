@@ -48,10 +48,37 @@ jobs:
           projectName: flight-atlas
           directory: ./app/dist
 
+  check-python:
+    runs-on: ubuntu-latest
+    name: Check Lambda and scraper (ruff, pytest)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            lambda/requirements.txt
+            ecs/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r lambda/requirements.txt -r ecs/requirements.txt
+
+      - name: Lint and test
+        run: |
+          ruff check lambda ecs && ruff format --check lambda ecs
+          (cd lambda && python -m pytest -q)
+          (cd ecs && python -m pytest -q)
+
   deploy-aws:
     runs-on: ubuntu-latest
     name: Deploy Backend (Lambda, ECS, Terraform)
-    needs: deploy-cloudflare
+    needs: [deploy-cloudflare, check-python]
 
     steps:
       - name: Checkout code

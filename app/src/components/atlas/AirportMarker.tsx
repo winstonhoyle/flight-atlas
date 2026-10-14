@@ -58,7 +58,7 @@ export const AirportMarker = memo(function AirportMarker({
           <CircleMarker
             center={[lat, variantLng]}
             radius={3 + Math.min(destinations / 20, 4)}
-            pathOptions={{ color: stroke, fillColor, fillOpacity: 1, weight: 1 }}
+            pathOptions={{ color: stroke, fillColor, fillOpacity: 1, weight: 0.5 }}
             interactive={false}
           />
 

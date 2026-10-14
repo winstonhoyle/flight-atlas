@@ -18,7 +18,7 @@ All infrastructure is **fully managed using Terraform**, enabling reproducible d
 ### Data Pipeline (ECS + ECR + S3 + Athena)
 
 - **ECS Task (Monthly Job):**  
-  A scheduled ECS task runs once per month to scrape the list of all U.S. airports and their destinations from Wikipedia.
+  A monthly job scrapes the list of all U.S. airports and their destinations from Wikipedia. It's built to run as an ECS task, but AWS blocks ECS for this account, so it runs locally with `make scrape` (see [Running the scraper](#running-the-ecs-scraper)).
   - Runs inside a **Docker container** stored in **Amazon ECR**.
   - Writes structured route data to an **S3 bucket**.
   - **CloudWatch Events / EventBridge** triggers the ECS task on a monthly schedule.
@@ -33,8 +33,9 @@ All infrastructure is **fully managed using Terraform**, enabling reproducible d
 
 - **AWS Lambda Function:**  
   Handles on-demand flight queries from the frontend.  
-  - Checks **DynamoDB** for cached results.  
-  - If not cached, queries **Athena** and stores results in DynamoDB for future requests.
+  - Picks the data snapshot (year and month) from the Glue partitions.
+  - Checks **DynamoDB** for a cached Athena query; if there is none, starts one and returns `202` until it finishes.
+  - Code lives in `lambda/flight_atlas_api/`, one module per job (see [Lambda](#lambda)).
 
 - **API Gateway Endpoint:**  
   Exposes the Lambda function over HTTPS, serving as the backend API for the frontend.
@@ -96,7 +97,7 @@ This provides **fully automated, end-to-end CI/CD** whenever changes are pushed 
 
 ### 🗓️ Workflow Summary
 
-1. **Monthly ECS Task** scrapes Wikipedia → writes data to **S3**.  
+1. **Monthly scrape** (`make scrape`, run locally) reads Wikipedia → writes data to **S3**.  
 2. **Athena** indexes the data → ready for queries.  
 3. **Frontend (Cloudflare)** sends request → **API Gateway → Lambda**.  
 4. **Lambda** checks **DynamoDB** cache:  
@@ -112,13 +113,19 @@ This setup ensures **scalable, serverless infrastructure** with automated data u
 
 ## 📡 API
 
-All endpoints are read-only `GET` requests that return JSON. `/airports`, `/airlines`, and
-`/routes` take an optional `month` parameter (`1`–`12`, defaults to the current month).
+All endpoints are read-only `GET` requests that return JSON. The data comes in monthly
+snapshots; `/available_months` lists them. `/airports`, `/airlines`, and `/routes` pick one with
+optional `year` and `month` parameters:
+
+- Neither: the newest snapshot.
+- `year` and `month`: that snapshot, or `404` if it doesn't exist.
+- `month` alone: that month's newest year, or the newest snapshot if that month has none.
 
 **Status codes:**
 - `200`: result in the body
 - `202`: the query is still running in Athena (`{"status": "processing", "query_id": "..."}`). Retry the same request after a short delay
 - `400`: missing or invalid parameter
+- `404`: unknown path, or no snapshot for the requested `year` and `month`
 - `429`: rate limit exceeded. Back off and retry
 
 **Rate limits:** the API is throttled to 50 requests/second sustained (burst 100), shared
@@ -185,8 +192,7 @@ across all clients. Please cache responses: the data only changes once a month.
 **Parameters (at least one required):**
 - `airport`: IATA code of the origin airport (optional if airline_code is provided)
 - `airline_code`: IATA code of the airline (optional if airport is provided)
-
-- `month`: `1`–`12` (optional, defaults to the current month)
+- `year`, `month`: the snapshot (optional, see above)
 
 Note: At least one of airport or airline_code must be provided; both can also be used together for filtering.
 
@@ -217,10 +223,11 @@ Note: At least one of airport or airline_code must be provided; both can also be
 
 ## 📂 Project Structure
 
-- `app/`: React frontend
-- `infra/`: Terraform code for AWS & Cloudflare
-- `lambda/`: Lambda function code and packaging scripts
-- `ecs/`: Dockerfile and ECS scraper container
+- `app/`: React frontend ([app/README.md](app/README.md))
+- `infra/`: Terraform for AWS and Cloudflare ([infra/README.md](infra/README.md))
+- `lambda/`: the query API ([lambda/README.md](lambda/README.md))
+- `ecs/`: the monthly Wikipedia scraper ([ecs/README.md](ecs/README.md))
+- `requirements.txt`: pytest and ruff, for `make py-check`
 
 ---
 
@@ -254,7 +261,7 @@ CLOUDFLARE_ZONE_IO_ID
 ```bash
 git clone https://github.com/winstonhoyle/flight-atlas.git
 cd flight-atlas
-make app-dev        # http://localhost:3000, against the live API
+make app-start      # http://localhost:3000, against the live API
 ```
 
 See [app/README.md](app/README.md) for the other `make app-*` targets.
@@ -288,67 +295,15 @@ before apply). See [infra/README.md](infra/README.md).
 
 ### Running the ECS Scraper
 
-`ecs/create_routes.py` scrapes Wikipedia, writes the `flights`, `airports`, and
-`airlines` Parquet datasets, and repairs the Athena partitions. A full scrape takes
-about 2 hours. Configure it with `ecs/.env` (copy from [`ecs/.env.sample`](ecs/.env.sample)):
+The data refreshes once a month with `make scrape`, run locally (30 to 45 minutes). Setup,
+settings, tests, and the Wikipedia quirks it handles are in [ecs/README.md](ecs/README.md).
 
-| Variable | Purpose |
-| --- | --- |
-| `OUTPUT_BASE` | Output location. Unset → `s3://$S3_ROUTES_BUCKET`; set to a folder (e.g. `./output`) for an offline dry run |
-| `RUN_ATHENA` | `true` runs `MSCK REPAIR TABLE` after writing |
-| `S3_ROUTES_BUCKET`, `S3_RESULTS_BUCKET`, `S3_PREFIX`, `ATHENA_DB`, `REGION` | AWS targets |
+---
 
-Writing to S3 and running Athena need AWS credentials (`aws configure` / `AWS_PROFILE`)
-with access to the buckets, the Glue catalog, and Athena.
+## Lambda
 
-**Locally → S3 (updates the live site):**
-```bash
-cd ecs
-cp .env.sample .env          # RUN_ATHENA=true, OUTPUT_BASE unset -> s3://$S3_ROUTES_BUCKET
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python create_routes.py
-```
-
-**Locally in Docker → S3** (updates the live site; mount your AWS creds, the image runs as non-root `appuser`):
-```bash
-make containers              # builds flight-atlas:ecs-local
-docker run --rm \
-  -v "$HOME/.aws:/home/appuser/.aws:ro" \
-  -e AWS_PROFILE=default -e AWS_REGION=us-west-1 \
-  --env-file ecs/.env \
-  flight-atlas:ecs-local
-```
-
-**Offline dry run in Docker** (no AWS; Parquet to `ecs/output/`):
-```bash
-make containers              # builds flight-atlas:ecs-local
-make scrape-dry-run          # runs it with OUTPUT_BASE=/data, RUN_ATHENA=false
-```
-Or the equivalent `docker run`:
-```bash
-docker run --rm \
-  -e OUTPUT_BASE=/data -e RUN_ATHENA=false \
-  -v "$(pwd)/ecs/output:/data" \
-  flight-atlas:ecs-local
-```
-
-Without Docker, run it in a venv instead: `cd ecs && OUTPUT_BASE=./output RUN_ATHENA=false python create_routes.py`.
-
-**On AWS (manual task run).** The EventBridge rule is defined but its monthly trigger is
-disabled for this account, so run the task on demand:
-```bash
-SUBNETS=$(aws ec2 describe-subnets \
-  --filters "Name=tag:Name,Values=ecs-public-*" \
-  --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
-SG=$(aws ec2 describe-security-groups \
-  --filters "Name=group-name,Values=ecs-sg" \
-  --query 'SecurityGroups[0].GroupId' --output text)
-
-aws ecs run-task --cluster flights-cluster --task-definition flights-scraper \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=ENABLED}"
-```
+How the API answers requests, its modules, settings, and local runs are in
+[lambda/README.md](lambda/README.md).
 
 ---
 

@@ -121,10 +121,7 @@ export const fetchRoutes = async (
 };
 
 export const fetchMonths = async (): Promise<MonthOption[]> => {
-  const data = await fetchJSON("/available_months");
-  if (!isMonthRows(data)) {
-    throw new Error("Invalid /available_months response schema.");
-  }
+  const data = await retryFetch(() => fetchJSON("/available_months"), isMonthRows);
 
   return data
     .map(({ month, year }) => ({

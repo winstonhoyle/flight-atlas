@@ -64,8 +64,8 @@ Cloudflare credentials are passed as Terraform variables, not the CLI (see below
 Both the ECS scraper and the query Lambda run from images in the single `flight-atlas`
 ECR repository, distinguished by tag prefix: `ecs-${var.image_tag}` and
 `lambda-${var.image_tag}` (`image_tag` is `local` by default, a git SHA in CI). Because
-the Lambda is image-based, its image must exist in ECR **before** `apply` creates the
-function, so push first:
+the Lambda is image-based, its image must exist in ECR **before** `apply` creates or
+updates the function, so push first:
 
 ```bash
 # from the repo root: build + push both images to flight-atlas
@@ -116,3 +116,20 @@ Excess requests get `429` before reaching Lambda, which caps Lambda and Athena s
 The limit is shared by all clients: one abusive client can use it up for everyone.
 HTTP APIs can't attach AWS WAF, so per-IP limits need a proxy in front, e.g. set
 `proxied = true` on the Cloudflare `api` record and add a Cloudflare rate-limiting rule.
+
+## Lambda image gone from ECR
+
+If the Lambda's current image is deleted, the function goes `Inactive` and `apply` fails with
+"cannot be updated as the provided Image ID cannot be found": Terraform changes the
+configuration before the image, and AWS rejects any configuration change while the image is
+missing. Point the function at a pushed image first, then apply again:
+
+```bash
+aws lambda update-function-code --function-name flights-query-lambda \
+  --image-uri <account>.dkr.ecr.us-west-1.amazonaws.com/flight-atlas:lambda-<tag>
+aws lambda wait function-updated-v2 --function-name flights-query-lambda
+make tf-apply IMAGE_TAG=<tag>
+```
+
+The ECR lifecycle policy keeps the five newest `lambda-*` and `ecs-*` images so this
+shouldn't recur.

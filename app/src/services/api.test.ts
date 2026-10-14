@@ -29,12 +29,30 @@ describe("fetchMonths", () => {
     ]);
   });
 
-  it("rejects an unexpected shape", async () => {
+  it("polls past a 202 while the query runs", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(respond(202, { status: "started", query_id: "q1" }))
+      .mockResolvedValueOnce(respond(200, [{ month: "10", year: "2026" }]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = fetchMonths();
+    await vi.runAllTimersAsync();
+
+    expect(await pending).toEqual([{ label: "October 2026", month: "10", year: 2026 }]);
+  });
+
+  it("gives up on a shape that never matches", async () => {
+    vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => respond(200, { error: "nope" })),
     );
-    await expect(fetchMonths()).rejects.toThrow("Invalid /available_months");
+
+    const pending = expect(fetchMonths()).rejects.toThrow("Exceeded maximum attempts");
+    await vi.runAllTimersAsync();
+    await pending;
   });
 });
 

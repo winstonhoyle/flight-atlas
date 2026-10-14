@@ -6,7 +6,8 @@ import { DESTINATION_BINS, destinationColorToken } from "@/utils/destinations";
 import styles from "./Legend.module.css";
 
 export const Legend = () => {
-  const [open, setOpen] = useState(true);
+  // Starts collapsed on phones, where the open legend covers a fifth of the map.
+  const [open, setOpen] = useState(() => !window.matchMedia("(max-width: 40em)").matches);
 
   return (
     <Panel className={styles.legend}>
@@ -26,16 +27,18 @@ export const Legend = () => {
 
       {open && (
         <ul id="legend-items" className={styles.items} aria-labelledby="legend-title">
-          {DESTINATION_BINS.map((bin, i) => (
-            <li key={bin.label} className={styles.item}>
-              <span
-                className={styles.swatch}
-                style={{ background: `var(${destinationColorToken(i + 1)})` }}
-                aria-hidden
-              />
-              {bin.label}
-            </li>
-          ))}
+          {DESTINATION_BINS.map((bin, i) => ({ ...bin, n: i + 1 }))
+            .reverse()
+            .map((bin) => (
+              <li key={bin.label} className={styles.item}>
+                <span
+                  className={styles.swatch}
+                  style={{ background: `var(${destinationColorToken(bin.n)})` }}
+                  aria-hidden
+                />
+                {bin.label}
+              </li>
+            ))}
         </ul>
       )}
     </Panel>

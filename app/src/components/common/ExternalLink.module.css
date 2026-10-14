@@ -3,6 +3,10 @@
   text-underline-offset: 0.15em;
 }
 
+.noWrap {
+  white-space: nowrap;
+}
+
 .icon {
   margin-left: 0.15em;
   vertical-align: -0.125em;

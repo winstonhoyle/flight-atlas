@@ -2,8 +2,8 @@
   Design tokens. See DESIGN.md.
 
   Two layers. The palette holds USWDS system colors by their USWDS names. The roles below it
-  name the job a color does, and components read only roles. tools/palette_check.py measures
-  the roles for contrast and color-blind separation, so run it after changing either layer.
+  name the job a color does, and components read only roles. DESIGN.md lists the contrast and
+  color-blind rules every role meets.
 */
 
 @font-face {
@@ -36,7 +36,6 @@
   --uswds-blue-warm-70v: #1a4480;
   --uswds-blue-40v: #2491ff;
   --uswds-red-60v: #b50909;
-  --uswds-orange-60v: #8c471c;
 
   /* Palette: brand, measured from the logo. The logo and wordmark only. */
   --brand-green-dark: #2a5f2a;
@@ -44,12 +43,14 @@
   --brand-red: #ec2722;
   --brand-silver: #c2c3c3;
 
-  /* Palette: viridis, an ordered ramp that stays ordered under every color-vision type */
-  --viridis-1: #fde725;
-  --viridis-2: #5ec962;
-  --viridis-3: #21918c;
-  --viridis-4: #3b528b;
-  --viridis-5: #440154;
+  /* Palette: the original map colors */
+  --map-route: #64b5f7;
+  --map-highlight: #004c97;
+  --map-red: #ff0000;
+  --map-orange: #fc8d59;
+  --map-yellow: #f2f700;
+  --map-light-green: #62eb07;
+  --map-green: #047a00;
 
   /* Roles: surfaces and text */
   --fa-color-surface: var(--uswds-white);
@@ -68,15 +69,15 @@
   --fa-color-focus: var(--uswds-blue-40v);
   --fa-color-error: var(--uswds-red-60v);
 
-  /* Roles: map. Fill carries meaning; the ink stroke separates a marker from the basemap. */
-  --fa-map-route: var(--uswds-blue-60v);
-  --fa-map-route-highlight: var(--uswds-orange-60v);
+  /* Roles: map */
+  --fa-map-route: var(--map-route);
+  --fa-map-route-highlight: var(--map-highlight);
   --fa-map-marker-stroke: var(--uswds-gray-90);
-  --fa-map-destinations-1: var(--viridis-1);
-  --fa-map-destinations-2: var(--viridis-2);
-  --fa-map-destinations-3: var(--viridis-3);
-  --fa-map-destinations-4: var(--viridis-4);
-  --fa-map-destinations-5: var(--viridis-5);
+  --fa-map-destinations-1: var(--map-red);
+  --fa-map-destinations-2: var(--map-orange);
+  --fa-map-destinations-3: var(--map-yellow);
+  --fa-map-destinations-4: var(--map-light-green);
+  --fa-map-destinations-5: var(--map-green);
 
   /* Type: the USWDS pair and the USWDS theme size scale */
   --fa-font-sans: "Public Sans", system-ui, sans-serif;

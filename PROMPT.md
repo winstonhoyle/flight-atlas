@@ -19,7 +19,7 @@ stopped.
 - Keep the frontend light. Ask before adding a runtime dependency.
 - Follow `DESIGN.md`: tokens only, components in `common/` or `atlas/`, icons from `src/icons/`, no emoji in the UI.
 - Writing rules in `DESIGN.md` apply to code comments and docs too. A comment says why, not what. No em or en dashes in prose.
-- Run `make app-check` and `make palette-check` before calling frontend work done, and `make lambda-check` (Phase 3) for Lambda work.
+- Run `make app-check` before calling frontend work done, and `make py-check` for the Lambda and the scraper.
 
 ## 2. Environment (checked 2026-10-13)
 
@@ -28,22 +28,25 @@ stopped.
 | Host | Windows + WSL2. Repo on `/mnt/c/Users/Winston/Documents/Github/flight-atlas` (slow mount; Vite polls for changes automatically) |
 | Branch | `Modernizing-FE-Code`, everything below uncommitted |
 | Node | 25 locally; CI uses 22 (Vite 7 needs ≥ 20.19) |
-| Python | `.venv/` at the repo root, Python 3.14, with `tools/requirements.txt` (colorblind, colorspacious, numpy, opencv-python-headless) |
+| Python | `.venv/` at the repo root, Python 3.14. `requirements.txt` at the root pins pytest and ruff; `lambda/` and `ecs/` have their own |
 | Docker | 29.x, builds `linux/amd64` images |
 | AWS | Account `406891295987`, region `us-west-1`. The CLI is signed in as **root** (see Phase 5) |
 | Screenshots | No browser tool in this session. Playwright's Chromium is in `~/.cache/ms-playwright`; load `@playwright/test` from `../landmatch-site/frontend/node_modules` with `createRequire` from a script in the scratchpad |
-| Run the app | `make app-dev`, then http://localhost:3000. It talks to the live API |
+| Run the app | `make app-start`, then http://localhost:3000. It talks to the live API |
 
 ### Already done
 
-- Frontend: CRA replaced by Vite + strict TypeScript; zustand, react-router, and turf removed; components split into `common/` and `atlas/` with CSS modules; USWDS tokens in `app/src/styles/tokens.css`; viridis destinations ramp; Material SVG icons; `logo.svg` and `logo-mark.svg`; 24 unit and component tests; `DESIGN.md`.
+- Frontend: CRA replaced by Vite + strict TypeScript; zustand, react-router, and turf removed; components split into `common/` and `atlas/` with CSS modules; USWDS tokens in `app/src/styles/tokens.css`; the original map colors kept as tokens; Material SVG icons; `logo.svg` and `logo-mark.svg`; 24 unit and component tests; `DESIGN.md`.
 - SEO: `robots.txt`, a sitemap generated before each build, canonical and Open Graph tags, `_headers` with security headers.
 - API: stage-wide throttling (50 rps, burst 100), `Cache-Control` on 200s, generic 500 bodies, Lambda at 256 MB / 10 s, count-based ECR lifecycle policy.
-- Tooling: `make app-*` targets, `make palette-check`, CI runs lint, format, and tests before deploying.
+- Tooling: `make app-*` and `make py-check`; CI runs lint, format, and tests before deploying.
 
 ### Decision log
 
 - **2026-10-13:** The API went down because the old ECR lifecycle policy expired every image after 7 days, including the Lambda's. The policy now keeps the 5 newest `lambda-*` and `ecs-*` images.
+- **2026-10-13:** Terraform updates a Lambda's configuration before its image. When the current image is gone from ECR, AWS rejects the configuration change, so the apply deadlocks. The way out is `aws lambda update-function-code --image-uri <new image>` first, then apply again.
+- **2026-10-13:** `fetchMonths` now polls past `202` like the other fetches; before, a cold cache left the month picker empty.
+- **2026-10-13:** Vite answers "504 Outdated Optimize Dep" after packages change while the dev server runs. Restart `make app-start`.
 - **2026-10-13:** React, not React Native. The map is Leaflet in the DOM, and the site is a web page.
 - **2026-10-13:** `Combobox` keeps react-select behind one file. It's most of the bundle; replacing it means editing only `common/Combobox.tsx`.
 - **2026-10-13:** The logo keeps its red and green, which look alike under protanopia. The UI never uses the brand colors to mean anything.
@@ -56,30 +59,51 @@ stopped.
 
 Images `flight-atlas:ecs-ae2eac20` and `flight-atlas:lambda-ae2eac20` are built locally. `terraform plan` showed 2 to add, 4 to change, 2 to destroy, all expected.
 
-- [ ] Owner says go
-- [ ] `make deploy-containers IMAGE_TAG=ae2eac20`
-- [ ] `make tf-plan IMAGE_TAG=ae2eac20`, confirm nothing unexpected, then `make tf-apply IMAGE_TAG=ae2eac20`
-- [ ] `aws lambda get-function-configuration --function-name flights-query-lambda --query State` returns `Active`
-- [ ] `curl https://api.flightatlas.io/routes?airport=ATL` returns GeoJSON (the first call may return `202`; repeat)
+- [x] Owner says go
+- [x] `make deploy-containers IMAGE_TAG=ae2eac20`
+- [x] `make tf-apply IMAGE_TAG=ae2eac20` (failed on the Lambda; see the decision log)
+- [x] `aws lambda update-function-code` to `lambda-ae2eac20`; the function is `Active`
+- [x] All four endpoints return 200 with `Cache-Control` after a first `202`
+- [x] Re-run `make tf-apply IMAGE_TAG=ae2eac20` for the remaining Lambda memory (256 MB) and timeout (10 s)
 
 ### Phase 1: Check the app on real data
 
-- [ ] Screenshot the app with routes drawn: all airports, ATL selected, ATL to BOS selected, an airline selected
-- [ ] Routes are blue, highlights orange, markers follow the viridis ramp and stay visible on land and water
-- [ ] Hover, click, Back, Escape on the dialog, and the month picker all behave as on `main`
-- [ ] Check a phone-width viewport (390×844): panel, legend, and info button don't overlap
-- [ ] `npm run sitemap` lists airports and airlines once the API answers
+- [x] Screenshot the app with routes drawn: all airports, ATL selected, ATL to BOS selected, an airline selected
+- [x] Map colors: tried viridis and an orange highlight; the owner kept the original red-to-green markers, light blue routes, and navy highlight
+- [x] Zooming to an airline or back to an airport's routes fit all three world copies; it now fits the original lines only
+- [x] Phone width (390×844): the legend covered the map credits; it now starts collapsed and sits above them
+- [x] The open-in-new icon wrapped onto its own line; the last word and icon now share a no-wrap span
+- [x] One overlay panel: collapse control in its header, route info inside it, Back and Advanced on one row; zooming leaves room for the panel so a highlighted route is never under it
+- [ ] Hover highlighting and Back by hand in a real browser (the scripted run covered select, route, airline, Escape)
+- [ ] `npm run sitemap` lists airports and airlines
+
+### Phase 1b: Data snapshots (owner decisions first)
+
+The newest data is February 2026. EventBridge has failed to start the scraper every month since
+March 2026: CloudTrail shows `ecs:RunTask` returning `BlockedException: Your account is currently
+blocked`. AWS blocks ECS task launches for this account, so no code change fixes it.
+
+Snapshots are stored by year and month, but the API filters by month only, and the app asks for
+the current month. From March to September 2026 that month had no data, so the map was empty.
+When October 2026 lands, `month=10` will return 2025 and 2026 rows together.
+
+- [ ] Owner: open an AWS Support case to unblock ECS (`RunTask` `BlockedException`), or decide to run the scraper locally each month (`README.md` has the Docker command)
+- [ ] Owner: decide whether to refresh the data now with a local run (about 2 hours, writes to S3)
+- [ ] API: accept `year` with `month` on `/airports`, `/airlines`, and `/routes`, and default to the newest snapshot instead of the current month (do this inside the Phase 3 split)
+- [ ] App: default to the newest entry from `/available_months`, send `year` and `month`, and show the snapshot date in the panel so stale data is visible
+- [ ] Tests for both sides
 
 ### Phase 2: Selection lives in the URL
 
 The sitemap lists `/ATL`, `/ATL/BOS`, and `/airline/DL`, but the app ignores the path, so every URL renders the same page. Search engines would see hundreds of duplicates.
 
-- [ ] Read the path on load and select the airport, route, or airline it names (no router dependency; `window.location` and `history.pushState` are enough)
-- [ ] Update the path as the selection changes, and handle Back/Forward with `popstate`
-- [ ] Unknown codes fall back to the home map without an error
-- [ ] Set `document.title` and the canonical link per selection ("ATL direct flights | Flight Atlas")
-- [ ] Tests for parsing and building paths
-- [ ] Remove the "Building and Selecting from URL" TODO in `MapComponent.tsx`
+- [x] Read the path on load and select the airport, route, or airline it names (`hooks/useSelectionUrl.ts`, no router)
+- [x] Update the path as the selection changes, and handle Back/Forward with `popstate`
+- [x] Unknown codes fall back to the home map and the URL is replaced with `/`
+- [x] Set `document.title` and the canonical link per selection
+- [x] Tests for parsing and building paths (`utils/selectionPath.test.ts`); deep links and history checked in Chromium
+- [x] Remove the "Building and Selecting from URL" TODO in `MapComponent.tsx`
+- Paths: `/ATL`, `/ATL/BOS`, `/airline/DL`, `/ATL/airline/DL`. Codes are case-insensitive. A destination drops the airline from the path, since the panel hides the airline picker then.
 
 ### Phase 3: Split the Lambda into modules
 
@@ -117,15 +141,27 @@ lambda/
   pyproject.toml    # ruff + pytest settings
 ```
 
-- [ ] Move code into the modules above with no behavior change first; the existing responses must match byte for byte
-- [ ] Dockerfile copies `flight_atlas_api/`; `CMD ["flight_atlas_api.handler.lambda_handler"]`
-- [ ] Fix the problems listed above, one change at a time
-- [ ] Tests for every module; the handler test covers 200, 202, 400, 404, and 500
-- [ ] `requirements-dev.in` with pytest, ruff (compiled with pip-compile like `requirements.txt`)
-- [ ] Make targets: `lambda-test` (pytest), `lambda-check` (ruff + pytest), `lambda-run` (build the image and run it with the Lambda Runtime Interface Emulator on port 9000), `lambda-invoke EVENT=events/routes_atl.json`
-- [ ] Update `infra/compute.tf` env vars, then `terraform plan` (don't apply without the owner)
-- [ ] Add a Lambda job to CI that runs `make lambda-check` before building images
-- [ ] Update the README sections on the Lambda and the API
+- [x] Move code into the modules above; bodies for the same rows match the old handler byte for byte
+- [x] Dockerfile copies `flight_atlas_api/`; `CMD ["flight_atlas_api.handler.lambda_handler"]`
+- [x] Fix the problems listed above (plus: snapshots come from Glue partitions, a cached result skips Athena)
+- [x] Tests for every module; the handler test covers 200, 202, 400, 404, and 500 (38 tests)
+- [x] `make py-check` (ruff + pytest for the Lambda and the scraper), `make lambda-run`, `make lambda-invoke EVENT=...`; pytest and ruff pinned in the root `requirements.txt`
+- [x] `infra/compute.tf` env vars updated; `terraform plan` shows only that change
+- [x] CI job `check-python` runs before images are built
+- [x] README sections on the Lambda and the API
+- [x] The image ran under the Lambda emulator against live AWS: same ATL routes as the live API for Oct 2025
+- [ ] Owner: deploy. Build and push a new image, then `make tf-apply IMAGE_TAG=<tag>`; deploy the Lambda before the app so `year` is understood
+
+### Phase 3b: Scraper tests
+
+Wikipedia markup is the scraper's main risk. Every function that reads HTML now lives in
+`ecs/wiki_parse.py` with no network calls, and `create_routes.py` runs through `main()`.
+
+- [x] Fixtures cut from real pages (Parsoid HTML, 2026-10-13): Atlanta, Bethel, Anchorage, Delta, the airport list
+- [x] Tests for citation markers, notice boxes, tables without a class, unlinked airlines, redirect links, section links, missing coordinates and codes (45 tests); guards checked by removing them and watching tests fail
+- [x] Fixed: a disambiguation link no longer drops an airport's routes; airlines without a code and airports without coordinates are skipped instead of written as empty values, which crashed the final write
+- [x] `SCRAPE_LIMIT=2` live run against Wikipedia: ATL 373 routes, DFW 399, no errors
+- [ ] App: default to the newest snapshot and send `year` with `month` (Phase 1b), after the Lambda is deployed
 
 ### Phase 4: Commit (owner approves)
 
@@ -134,7 +170,7 @@ Suggested commits, in order. Show the owner the file list for each before commit
 - [ ] Infra reorganization, rate limiting, ECR lifecycle fix, Lambda settings
 - [ ] Lambda: cache headers, generic errors, then the module split
 - [ ] Frontend: Vite + TypeScript migration, dependency cuts, tests, Make targets, CI
-- [ ] Design system: tokens, components, icons, logo SVGs, `DESIGN.md`, palette checker
+- [ ] Design system: tokens, components, icons, logo SVGs, `DESIGN.md`
 - [ ] Docs: README, `app/README.md`, `infra/README.md`, this file
 
 ### Phase 5: Security

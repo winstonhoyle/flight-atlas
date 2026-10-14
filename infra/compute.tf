@@ -127,10 +127,12 @@ resource "aws_lambda_function" "flights_query_lambda" {
 
   environment {
     variables = {
+      ATHENA_DATABASE   = aws_glue_catalog_database.flights_db.name
+      FLIGHTS_TABLE     = aws_glue_catalog_table.tables["flights"].name
+      AIRPORTS_TABLE    = aws_glue_catalog_table.tables["airports"].name
+      AIRLINES_TABLE    = aws_glue_catalog_table.tables["airlines"].name
       S3_RESULTS_BUCKET = aws_s3_bucket.athena_query_results.bucket
-      DATABASE          = aws_glue_catalog_database.flights_db.name
-      ATHENA_TABLE      = aws_glue_catalog_table.tables["flights"].name
-      REGION            = var.region
+      CACHE_TABLE       = aws_dynamodb_table.flights_query_cache.name
     }
   }
 }

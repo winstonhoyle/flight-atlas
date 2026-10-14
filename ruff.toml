@@ -1,0 +1,6 @@
+line-length = 120
+target-version = "py314"
+src = ["lambda", "ecs", "lambda/tests", "ecs/tests"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B"]

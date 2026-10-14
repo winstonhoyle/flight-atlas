@@ -1,4 +1,8 @@
 build/
 __pycache__/
 *.py[cod]
-lambda_package.zip
+.pytest_cache/
+.ruff_cache/
+tests/
+events/
+pyproject.toml
