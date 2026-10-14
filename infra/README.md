@@ -15,6 +15,7 @@ in the `flightatlas-terraform-state` S3 bucket with S3 native locking.
 | `api.tf` | API Gateway HTTP API, routes, throttling, custom domain, ACM certificate |
 | `dns.tf` | Route 53 zone and records, Cloudflare `www` and `api` records |
 | `edge.tf` | Cloudflare SSL mode, `www` redirect, API rate limit and cache rules |
+| `alerts.tf` | SNS email topic, API 5xx and Lambda error alarms, monthly budget |
 | `iam.tf` | Roles and policies for Athena, ECS, the Lambda, and EventBridge |
 
 Cloudflare Pages itself is not in Terraform; CI deploys the app to it.
@@ -108,12 +109,24 @@ The default `execute-api` URL is disabled, so every request comes through `api.f
 and Cloudflare. Cloudflare caches responses for as long as their `Cache-Control` allows: an hour
 for `200`, and never for `202` or errors.
 
+## Alerts
+
+Alarms and budget alerts go to `alert_email` (in `variables.tf`). After the first apply, AWS
+emails a confirmation link for the SNS subscription; alarms arrive only once it's clicked.
+
+- `flight-atlas-api-5xx`: 3 or more `5xx` responses in 5 minutes.
+- `flight-atlas-lambda-errors`: the Lambda crashed, timed out, or couldn't start (a deleted image shows up here).
+- `flight-atlas-monthly`: actual spend passes 80% of `monthly_budget_usd` (default 10), or the forecast passes 100%.
+
+Each alarm also emails when it returns to OK.
+
 ## Recovering a Lambda whose image was deleted
 
 If the Lambda's image is deleted from ECR, the function goes `Inactive` and `apply` fails with
 "cannot be updated as the provided Image ID cannot be found". Terraform changes the
 configuration before the image, and AWS rejects configuration changes while the image is
-missing. Point the function at a pushed image, then apply:
+missing. Point the function at a pushed image, then apply. The function's code and settings are
+described in [lambda/README.md](../lambda/README.md).
 
 ```bash
 aws lambda update-function-code --function-name flights-query-lambda \

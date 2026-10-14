@@ -50,7 +50,8 @@ link follow the selection, and Back/Forward step through it.
 
 ## Data source
 
-Requests go through `src/services/api.ts`, which reads `VITE_API_BASE` and falls back to
+The API answers `202` while a query runs, and the client polls until it finishes; see
+[lambda/README.md](../lambda/README.md#request-flow). Requests go through `src/services/api.ts`, which reads `VITE_API_BASE` and falls back to
 `https://api.flightatlas.io`. To point the app at a different API, create `.env.local`:
 
 ```
@@ -71,14 +72,17 @@ VITE_API_BASE=https://your-api-host
 | `src/styles/`            | `tokens.css` (every color, size, and space), base styles, Leaflet panes                   |
 | `src/utils/`             | Path parsing, destination bins, great-circle distance                                     |
 | `src/types.ts`           | API response types                                                                        |
-| `scripts/`               | `generate-sitemap.js`, run before every build                                             |
+| `scripts/`               | `build-pages.js` and `pages.js`, run after every build                                    |
 
 Each component is three files side by side: `Name.tsx`, `Name.module.css`, and `Name.test.tsx`
 when it has tests. Colors, type, spacing, and component rules are in [DESIGN.md](../DESIGN.md).
 
-`npm run build` first runs `scripts/generate-sitemap.js`, which writes `public/sitemap.xml` with
-a URL for every airport and airline from the live API, or only the home page if the API is
-down. `npm run sitemap` runs it alone.
+After `vite build`, `scripts/build-pages.js` fetches every airport and airline from the live
+API and writes `dist/sitemap.xml` plus one HTML page per airport and airline (`dist/ATL/index.html`,
+`dist/airline/DL/index.html`). Each is a copy of `dist/index.html` with its own title,
+description, canonical link, Open Graph tags, JSON-LD (`Airport` or `Airline`), and a one-line
+summary inside `#root`, so search engines and link previews see real content before JavaScript
+runs. If the API is down, only the sitemap's home page is written.
 
 ## Tests
 

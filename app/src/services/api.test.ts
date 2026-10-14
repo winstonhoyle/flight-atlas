@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchMonths, fetchRoutes } from "./api";
+import { fetchMonths, fetchRoutes, snapshotParams } from "./api";
 
 const respond = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -66,11 +66,23 @@ describe("fetchRoutes", () => {
       .mockResolvedValueOnce(respond(200, routes));
     vi.stubGlobal("fetch", fetchMock);
 
-    const pending = fetchRoutes({ airportIata: "ATL", month: "10" });
+    const pending = fetchRoutes({
+      airportIata: "ATL",
+      snapshot: { label: "October 2026", month: "10", year: 2026 },
+    });
     await vi.runAllTimersAsync();
 
     expect(await pending).toEqual(routes);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0][0]).toContain("/routes?airport=ATL&month=10");
+    expect(fetchMock.mock.calls[0][0]).toContain("/routes?year=2026&month=10&airport=ATL");
+  });
+});
+
+describe("snapshotParams", () => {
+  it("names the snapshot, or nothing so the API picks the newest", () => {
+    expect(snapshotParams({ label: "February 2026", month: "02", year: 2026 }).toString()).toBe(
+      "year=2026&month=02",
+    );
+    expect(snapshotParams(null).toString()).toBe("");
   });
 });

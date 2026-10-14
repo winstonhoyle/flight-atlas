@@ -77,24 +77,3 @@ resource "aws_acm_certificate_validation" "api_cert_validation" {
   certificate_arn         = aws_acm_certificate.api_cert.arn
   validation_record_fqdns = [for record in aws_route53_record.api_cert_validation : record.fqdn]
 }
-
-# Route keys migrated from individually-named resources to for_each.
-moved {
-  from = aws_apigatewayv2_route.routes
-  to   = aws_apigatewayv2_route.routes["GET /routes"]
-}
-
-moved {
-  from = aws_apigatewayv2_route.airlines
-  to   = aws_apigatewayv2_route.routes["GET /airlines"]
-}
-
-moved {
-  from = aws_apigatewayv2_route.airports
-  to   = aws_apigatewayv2_route.routes["GET /airports"]
-}
-
-moved {
-  from = aws_apigatewayv2_route.available_months
-  to   = aws_apigatewayv2_route.routes["GET /available_months"]
-}

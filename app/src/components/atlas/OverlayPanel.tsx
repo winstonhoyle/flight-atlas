@@ -5,7 +5,7 @@ import { ExternalLink } from "@/components/common/ExternalLink";
 import { IconButton } from "@/components/common/IconButton";
 import { Panel } from "@/components/common/Panel";
 import { ArrowBackIcon, ExpandLessIcon, ExpandMoreIcon, SettingsIcon } from "@/icons";
-import { API_BASE } from "@/services/api";
+import { API_BASE, snapshotParams } from "@/services/api";
 import type { AirlineSummary, Airport, MonthOption, Routes } from "@/types";
 import styles from "./OverlayPanel.module.css";
 
@@ -24,8 +24,8 @@ type OverlayPanelProps = {
   setDestinationAirport: (airport: Airport | null) => void;
   setSelectedRoute: (route: string[]) => void;
   monthOptions: MonthOption[];
-  selectedMonth: string;
-  setSelectedMonth: (month: string) => void;
+  snapshot: MonthOption | null;
+  setSnapshot: (snapshot: MonthOption) => void;
   loading: boolean;
   error: string | null;
   children?: ReactNode;
@@ -33,16 +33,17 @@ type OverlayPanelProps = {
 
 const ALL_AIRPORTS: Option = { value: "", label: "All airports" };
 
-const buildApiUrl = (selectedAirport: Airport | null, selectedAirline: string, month: string) => {
-  if (month && !selectedAirline && !selectedAirport) {
-    return `${API_BASE}/airports?month=${month}`;
-  }
-  const params = new URLSearchParams();
+const buildApiUrl = (
+  selectedAirport: Airport | null,
+  selectedAirline: string,
+  snapshot: MonthOption | null,
+) => {
+  const params = snapshotParams(snapshot);
   if (selectedAirport) params.set("airport", selectedAirport.properties.IATA);
   if (selectedAirline) params.set("airline_code", selectedAirline);
-  if (month) params.set("month", month);
-  const qs = params.toString();
-  return `${API_BASE}/routes${qs ? `?${qs}` : ""}`;
+  const path = selectedAirport || selectedAirline ? "/routes" : "/airports";
+  const query = params.toString();
+  return `${API_BASE}${path}${query ? `?${query}` : ""}`;
 };
 
 const OverlayPanelBase = ({
@@ -58,8 +59,8 @@ const OverlayPanelBase = ({
   setDestinationAirport,
   setSelectedRoute,
   monthOptions,
-  selectedMonth,
-  setSelectedMonth,
+  snapshot,
+  setSnapshot,
   loading,
   error,
   children,
@@ -104,12 +105,15 @@ const OverlayPanelBase = ({
     })),
   ];
 
-  const apiUrl = buildApiUrl(selectedAirport, selectedAirline, selectedMonth);
+  const apiUrl = buildApiUrl(selectedAirport, selectedAirline, snapshot);
 
   return (
     <Panel id="overlay-panel" className={styles.panel}>
       <div className={styles.header}>
-        <h1 className={styles.title}>Direct U.S. flight routes</h1>
+        <div>
+          <h1 className={styles.title}>Direct U.S. flight routes</h1>
+          {snapshot && <p className={styles.snapshot}>Data from {snapshot.label}</p>}
+        </div>
         <IconButton
           label={isOpen ? "Collapse panel" : "Expand panel"}
           aria-expanded={isOpen}
@@ -188,6 +192,14 @@ const OverlayPanelBase = ({
             )}
           </div>
 
+          {selectedAirport && !destinationAirport && (
+            <p className={styles.summary}>
+              {selectedAirport.properties.Name} has direct flights to{" "}
+              {selectedAirport.properties.destinations}{" "}
+              {selectedAirport.properties.destinations === 1 ? "destination" : "destinations"}.
+            </p>
+          )}
+
           {children}
 
           <div className={styles.footer}>
@@ -216,16 +228,14 @@ const OverlayPanelBase = ({
               <Combobox<MonthOption>
                 label="Data snapshot month"
                 size="sm"
-                value={
-                  monthOptions.find((o) => o.month === selectedMonth) ?? monthOptions[0] ?? null
-                }
+                value={snapshot}
                 onChange={(option) => {
-                  if (option) setSelectedMonth(option.month);
+                  if (option) setSnapshot(option);
                 }}
                 options={monthOptions}
                 placeholder="Select a month"
                 getOptionLabel={(o) => o.label}
-                getOptionValue={(o) => o.month}
+                getOptionValue={(o) => `${o.year}-${o.month}`}
               />
               <ExternalLink
                 href={apiUrl}

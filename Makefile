@@ -12,7 +12,7 @@ BUILD_FLAGS := --provenance=false --platform linux/amd64
 
 .PHONY: app-install app-start app-build app-preview app-check app-test \
 	py-check lambda-run lambda-invoke \
-	containers deploy-containers scrape scrape-dry-run tf-init tf-plan tf-apply
+	containers deploy-containers scrape scrape-check scrape-dry-run tf-init tf-plan tf-apply
 
 app/node_modules: app/package-lock.json
 	cd app && npm ci
@@ -67,12 +67,16 @@ deploy-containers:
 	docker push $(ECR_REGISTRY)/$(ECS_IMAGE)
 	docker push $(ECR_REGISTRY)/$(LAMBDA_IMAGE)
 
+AIRPORTS ?=
 scrape: .venv/.deps
-	cd ecs && $(CURDIR)/.venv/bin/python create_routes.py
+	cd ecs && AIRPORTS=$(AIRPORTS) $(CURDIR)/.venv/bin/python create_routes.py
+
+scrape-check: .venv/.deps
+	cd ecs && AIRPORTS=$(AIRPORTS) $(CURDIR)/.venv/bin/python create_routes.py --check
 
 LIMIT ?= 0
 scrape-dry-run: .venv/.deps
-	cd ecs && OUTPUT_BASE=./output RUN_ATHENA=false SCRAPE_LIMIT=$(LIMIT) $(CURDIR)/.venv/bin/python create_routes.py
+	cd ecs && OUTPUT_BASE=./output RUN_ATHENA=false SCRAPE_LIMIT=$(LIMIT) AIRPORTS=$(AIRPORTS) $(CURDIR)/.venv/bin/python create_routes.py
 
 tf-init:
 	cd infra && terraform init

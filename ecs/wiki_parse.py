@@ -75,19 +75,33 @@ def _is_destinations_heading(tag: Tag) -> bool:
     return tag.name in ("h2", "h3", "h4") and "airline" in heading_id and "destination" in heading_id
 
 
+def _is_airlines_table(table: Tag) -> bool:
+    classes = set(table.get("class") or [])
+    header = table.find("th")
+    return (
+        "wikitable" in classes
+        and not classes & _NOTICE_CLASSES
+        and header is not None
+        and "airline" in header.get_text().lower()
+    )
+
+
 def find_destination_rows(soup: BeautifulSoup) -> list[Tag]:
-    """The first wikitable in the section is the passenger table; cargo comes after it."""
-    heading = soup.find(_is_destinations_heading)
-    if heading is None:
+    """
+    The first airlines table under any "Airlines and destinations" heading; the passenger table
+    comes before cargo. Ranking tables ("Top destinations") have no Airlines column and are skipped.
+    """
+    headings = soup.find_all(_is_destinations_heading)
+    if not headings:
         raise LookupError("No 'Airlines and destinations' section")
 
-    for element in heading.find_all_next(["table", "h2"]):
-        if element.name == "h2":
-            break
-        classes = set(element.get("class") or [])
-        if "wikitable" in classes and not classes & _NOTICE_CLASSES:
-            return [tr for tr in element.find_all("tr") if tr.find("td")]
-    raise LookupError("No destinations table in the 'Airlines and destinations' section")
+    for heading in headings:
+        for element in heading.find_all_next(["table", "h2"]):
+            if element.name == "h2":
+                break
+            if _is_airlines_table(element):
+                return [tr for tr in element.find_all("tr") if tr.find("td")]
+    raise LookupError("No airlines table in the 'Airlines and destinations' section")
 
 
 @dataclass

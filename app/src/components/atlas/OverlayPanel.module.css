@@ -71,6 +71,18 @@
   word-break: break-all;
 }
 
+.summary {
+  margin: 0;
+  color: var(--fa-color-text-muted);
+  font-size: var(--fa-font-size-2xs);
+}
+
+.snapshot {
+  margin: var(--fa-space-05) 0 0;
+  color: var(--fa-color-text-muted);
+  font-size: var(--fa-font-size-3xs);
+}
+
 /* Not display: none, so screen readers still hear the update when text arrives. */
 .status:empty {
   position: absolute;

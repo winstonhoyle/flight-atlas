@@ -18,19 +18,10 @@ import { useMonths } from "@/hooks/useMonths";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useSelectionUrl } from "@/hooks/useSelectionUrl";
 import { InfoIcon } from "@/icons";
-import { currentMonth } from "@/services/api";
 import { tokenValue } from "@/styles/tokens";
-import type { AirlineSummary, Airport, RouteProperties } from "@/types";
+import type { AirlineSummary, Airport, MonthOption, RouteProperties } from "@/types";
 import { distanceMiles } from "@/utils/geo";
 import { EMPTY_SELECTION, type Selection } from "@/utils/selectionPath";
-
-// ---- Known Issues ----
-// PRIORITY:
-// Points on other side of arcs
-// Highlighted routes don't work if you hover over somewhere else -- Fixed?
-
-// ---- Enhancements TODO ----
-// Selecting Airport when Selected Airport event
 
 const DEFAULT_CENTER: L.LatLngTuple = [39.8283, -98.5795]; // center of continental US
 const DEFAULT_ZOOM = 4;
@@ -103,7 +94,7 @@ export const MapComponent = () => {
   const [selectedRoute, setSelectedRoute] = useState<string[]>([]);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem("hasVisited"));
   const [destinationAirport, setDestinationAirport] = useState<Airport | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [chosenSnapshot, setChosenSnapshot] = useState<MonthOption | null>(null);
 
   useEffect(() => {
     localStorage.setItem("hasVisited", "true");
@@ -114,9 +105,11 @@ export const MapComponent = () => {
   const highlightLayerRef = useRef<L.FeatureGroup | null>(null);
   const highlightedAirportRef = useRef<Airport | null>(null);
 
-  const { airports, airlines, error: dataError } = useAtlasData(selectedMonth);
+  const { months, loading: monthsLoading, error: monthsError } = useMonths();
+  const snapshot = monthsLoading ? undefined : (chosenSnapshot ?? months[0] ?? null);
+  const { airports, airlines, error: dataError } = useAtlasData(snapshot);
 
-  const { routes, loading, error } = useRoutes(selectedAirport, selectedAirline, selectedMonth);
+  const { routes, loading, error } = useRoutes(selectedAirport, selectedAirline, snapshot);
 
   const findAirport = (iata: string) => airports.find((a) => a.properties.IATA === iata) ?? null;
 
@@ -147,7 +140,6 @@ export const MapComponent = () => {
       }
     },
   });
-  const { months, loading: monthsLoading, error: monthsError } = useMonths();
 
   const routeRenderer = useMemo(() => L.canvas({ padding: 0.5 }), []);
 
@@ -405,8 +397,8 @@ export const MapComponent = () => {
         destinationAirport={destinationAirport}
         setDestinationAirport={setDestinationAirport}
         monthOptions={months}
-        selectedMonth={selectedMonth}
-        setSelectedMonth={setSelectedMonth}
+        snapshot={snapshot ?? null}
+        setSnapshot={setChosenSnapshot}
         loading={loading || monthsLoading}
         error={error || monthsError || dataError}
       >

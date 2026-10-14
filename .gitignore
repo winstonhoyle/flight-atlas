@@ -12,7 +12,6 @@ venv/
 node_modules/
 app/dist/
 app/build/
-app/public/sitemap.xml
 coverage/
 npm-debug.log*
 

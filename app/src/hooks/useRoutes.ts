@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchRoutes } from "@/services/api";
-import type { Airport, Routes } from "@/types";
+import type { Airport, MonthOption, Routes } from "@/types";
 
 type Result = { key: string; routes: Routes | null; error: string | null };
 
@@ -8,24 +8,28 @@ type Result = { key: string; routes: Routes | null; error: string | null };
 export const useRoutes = (
   selectedAirport: Airport | null,
   selectedAirline: string,
-  selectedMonth: string,
+  snapshot: MonthOption | null | undefined,
 ) => {
   const [result, setResult] = useState<Result | null>(null);
 
   const airportIata = selectedAirport?.properties.IATA;
-  const key = airportIata
-    ? `airport:${airportIata}:${selectedMonth}`
-    : selectedAirline
-      ? `airline:${selectedAirline}:${selectedMonth}`
-      : null;
+  const snapshotKey = `${snapshot?.year}-${snapshot?.month}`;
+  const key =
+    snapshot === undefined
+      ? null
+      : airportIata
+        ? `airport:${airportIata}:${snapshotKey}`
+        : selectedAirline
+          ? `airline:${selectedAirline}:${snapshotKey}`
+          : null;
 
   useEffect(() => {
     if (!key) return;
 
     const controller = new AbortController();
     const query = airportIata
-      ? { airportIata, month: selectedMonth }
-      : { airlineCode: selectedAirline, month: selectedMonth };
+      ? { airportIata, snapshot: snapshot ?? null }
+      : { airlineCode: selectedAirline, snapshot: snapshot ?? null };
 
     fetchRoutes(query, controller.signal)
       .then((routes) =>

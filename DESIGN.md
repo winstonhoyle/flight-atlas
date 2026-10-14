@@ -109,7 +109,8 @@ The UI doesn't use emoji or text arrows (`☰`, `✖`, `←`, `⚙️`).
 | File | Use |
 | --- | --- |
 | `app/public/logo.svg` | Mark and wordmark: welcome dialog |
-| `app/public/logo-mark.svg` | Mark only: favicon, small spaces |
+| `app/public/logo-mark.svg` | Mark only: SVG favicon, small spaces |
+| `app/public/favicon.ico` | The mark at 16, 32, and 48 px for browsers without SVG favicons |
 | `app/public/logo.png`, `logo192.png`, `logo512.png` | Raster copies for the web manifest and link previews |
 
 The SVGs are redrawn from `logo.png`: a green globe behind a silver compass star, with a red,

@@ -17,7 +17,14 @@ const MONTH_NAMES = [
   "December",
 ];
 
-export const currentMonth = (): string => String(new Date().getMonth() + 1).padStart(2, "0");
+/** No snapshot asks the API for the newest one. */
+export const snapshotParams = (snapshot: MonthOption | null): URLSearchParams =>
+  new URLSearchParams(snapshot ? { year: String(snapshot.year), month: snapshot.month } : {});
+
+const withQuery = (path: string, params: URLSearchParams) => {
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+};
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -52,6 +59,7 @@ const retryFetch = async <T>(
   isValid: (data: unknown) => data is T,
   maxAttempts = 5,
   delay = 500,
+  signal?: AbortSignal,
 ): Promise<T> => {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -59,6 +67,7 @@ const retryFetch = async <T>(
       if (isValid(data)) return data;
       console.warn(`Attempt ${attempt + 1}: response failed schema validation.`);
     } catch (err) {
+      if (signal?.aborted) throw err;
       console.warn(`Attempt ${attempt + 1} failed: ${errorMessage(err)}`);
     }
     if (attempt < maxAttempts - 1) await sleep(delay);
@@ -76,45 +85,40 @@ export const fetchAirlines = async (): Promise<Airlines> => {
   return cleaned;
 };
 
-export const fetchAirports = async (month?: string): Promise<Airport[]> => {
-  const query = month ? `?month=${encodeURIComponent(month)}` : "";
-  const data = await retryFetch(() => fetchJSON(`/airports${query}`), isFeatureCollection);
+export const fetchAirports = async (snapshot: MonthOption | null): Promise<Airport[]> => {
+  const path = withQuery("/airports", snapshotParams(snapshot));
+  const data = await retryFetch(() => fetchJSON(path), isFeatureCollection);
   return data.features as Airport[];
 };
 
 type RouteQuery = {
   airportIata?: string;
   airlineCode?: string;
-  month?: string;
+  snapshot: MonthOption | null;
 };
 
 /** Returns null if the query never finishes; throws only when `signal` aborts. */
 export const fetchRoutes = async (
-  { airportIata, airlineCode, month }: RouteQuery,
+  { airportIata, airlineCode, snapshot }: RouteQuery,
   signal?: AbortSignal,
 ): Promise<Routes | null> => {
-  const params = new URLSearchParams();
+  const params = snapshotParams(snapshot);
   if (airportIata) params.set("airport", airportIata);
   if (airlineCode) params.set("airline_code", airlineCode);
-  params.set("month", month ?? currentMonth());
-
-  const url = `/routes?${params.toString()}`;
-  const maxAttempts = 10;
-  const retryDelay = 500;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      const data = await fetchJSON(url, signal);
-      if (isFeatureCollection(data)) return data as Routes;
-    } catch (err) {
-      if (signal?.aborted) throw err;
-      console.warn(`Attempt ${attempt + 1} failed: ${errorMessage(err)}`);
-    }
-    if (attempt < maxAttempts - 1) await sleep(retryDelay);
+  const url = withQuery("/routes", params);
+  try {
+    return (await retryFetch(
+      () => fetchJSON(url, signal),
+      isFeatureCollection,
+      10,
+      500,
+      signal,
+    )) as Routes;
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    console.warn(`fetchRoutes: no result for ${url}`);
+    return null;
   }
-
-  console.warn(`fetchRoutes: exhausted ${maxAttempts} attempts for ${url}`);
-  return null;
 };
 
 export const fetchMonths = async (): Promise<MonthOption[]> => {

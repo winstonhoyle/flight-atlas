@@ -165,7 +165,7 @@ def test_does_not_wander_into_the_next_section():
         + '<div class="mw-heading mw-heading2"><h2 id="Statistics">Statistics</h2></div>'
         + wikitable("<tr><td>2024</td><td>1,000</td></tr>")
     )
-    with pytest.raises(LookupError, match="No destinations table"):
+    with pytest.raises(LookupError, match="No airlines table"):
         find_destination_rows(soup)
 
 
@@ -242,3 +242,25 @@ def test_airline_code(cell, code):
 
 def test_airline_without_codes_box():
     assert parse_airline_code(html("<p>Charter operator</p>")) is None
+
+
+def test_skips_a_ranking_table_without_an_airlines_column():
+    ranking = (
+        '<table class="wikitable"><tr><th>Rank</th><th>Destination</th><th>Passengers</th></tr>'
+        "<tr><td>1</td><td><a href='/wiki/Peach_Springs_Airport'>Peach Springs</a></td><td>330</td></tr></table>"
+    )
+    with pytest.raises(LookupError, match="No airlines table"):
+        find_destination_rows(html(destinations_page(ranking)))
+
+
+def test_tries_each_destinations_heading_until_one_has_a_table():
+    soup = html(
+        destinations_page("<p>Service history.</p>", heading_id="Airlines_and_destinations:_past_&_present")
+        + '<div class="mw-heading mw-heading2"><h2 id="Airline_and_destination">Airline and destination</h2></div>'
+        + wikitable(
+            "<tr><td><a href='/wiki/American_Eagle_(airline_brand)'>American Eagle</a></td>"
+            "<td><a href='/wiki/Dallas/Fort_Worth_International_Airport'>Dallas/Fort Worth</a></td></tr>"
+        )
+    )
+    row = parse_destination_row(find_destination_rows(soup)[0])
+    assert row.destination_titles == ["Dallas/Fort_Worth_International_Airport"]

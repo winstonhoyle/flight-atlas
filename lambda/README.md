@@ -2,7 +2,7 @@
 
 The API is one Lambda behind API Gateway at `https://api.flightatlas.io`. It answers
 `/airports`, `/airlines`, `/routes`, and `/available_months` from Athena queries over the
-Parquet data the scraper writes to S3. The endpoints and parameters are in the
+Parquet data the [scraper](../ecs/README.md) writes to S3. The endpoints and parameters are in the
 [API reference](../README.md#api).
 
 ## Request flow

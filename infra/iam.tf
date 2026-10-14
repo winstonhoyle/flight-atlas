@@ -103,7 +103,7 @@ resource "aws_iam_policy" "ecs_task_s3_policy" {
     Statement = [
       {
         Effect = "Allow",
-        Action = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
         Resource = [
           aws_s3_bucket.flights_bucket.arn,
           "${aws_s3_bucket.flights_bucket.arn}/*"
@@ -159,8 +159,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
         Effect = "Allow",
         Action = [
           "s3:GetObject",
-          "s3:ListBucket",
-          "s3:PutObject"
+          "s3:ListBucket"
         ],
         Resource = [
           "arn:aws:s3:::${aws_s3_bucket.flights_bucket.bucket}",

@@ -80,6 +80,21 @@ variable "api_rate_limit_per_ip" {
 }
 
 # ------------------------------
+# Alerts
+# ------------------------------
+variable "alert_email" {
+  description = "Where API alarms and budget alerts go"
+  type        = string
+  default     = "hoylejwinston@gmail.com"
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly AWS spend in USD; email at 80% actual and 100% forecast"
+  type        = string
+  default     = "10"
+}
+
+# ------------------------------
 # Cloudflare Configuration
 # ------------------------------
 variable "cloudflare_api_token" {

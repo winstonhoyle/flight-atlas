@@ -6,15 +6,14 @@
   "description": "Flight Atlas web client: React + Vite + Leaflet map of direct U.S. flight routes.",
   "scripts": {
     "start": "vite",
-    "prebuild": "node scripts/generate-sitemap.js",
     "build": "tsc -b && vite build",
+    "postbuild": "node scripts/build-pages.js",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest",
-    "test:run": "vitest run",
-    "sitemap": "node scripts/generate-sitemap.js"
+    "test:run": "vitest run"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

@@ -81,24 +81,3 @@ resource "aws_security_group" "ecs_sg" {
     Name = "ecs-sg"
   }
 }
-
-# Rename-only state moves for the for_each migration; remove after first apply.
-moved {
-  from = aws_subnet.public_subnet_1
-  to   = aws_subnet.public["1"]
-}
-
-moved {
-  from = aws_subnet.public_subnet_2
-  to   = aws_subnet.public["2"]
-}
-
-moved {
-  from = aws_route_table_association.subnet1_assoc
-  to   = aws_route_table_association.public["1"]
-}
-
-moved {
-  from = aws_route_table_association.subnet2_assoc
-  to   = aws_route_table_association.public["2"]
-}
