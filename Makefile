@@ -42,8 +42,8 @@ app-test: app/node_modules
 
 py-check: .venv/.deps
 	.venv/bin/ruff check lambda ecs && .venv/bin/ruff format --check lambda ecs
-	cd lambda && ../.venv/bin/python -m pytest -q
-	cd ecs && ../.venv/bin/python -m pytest -q
+	cd lambda && $(CURDIR)/.venv/bin/python -m pytest -q
+	cd ecs && $(CURDIR)/.venv/bin/python -m pytest -q
 
 lambda-run:
 	docker build $(BUILD_FLAGS) -t $(LAMBDA_IMAGE) lambda
@@ -68,11 +68,11 @@ deploy-containers:
 	docker push $(ECR_REGISTRY)/$(LAMBDA_IMAGE)
 
 scrape: .venv/.deps
-	cd ecs && ../.venv/bin/python create_routes.py
+	cd ecs && $(CURDIR)/.venv/bin/python create_routes.py
 
 LIMIT ?= 0
 scrape-dry-run: .venv/.deps
-	cd ecs && OUTPUT_BASE=./output RUN_ATHENA=false SCRAPE_LIMIT=$(LIMIT) ../.venv/bin/python create_routes.py
+	cd ecs && OUTPUT_BASE=./output RUN_ATHENA=false SCRAPE_LIMIT=$(LIMIT) $(CURDIR)/.venv/bin/python create_routes.py
 
 tf-init:
 	cd infra && terraform init
