@@ -1,9 +1,15 @@
 import logging
 import os
+import posixpath
+import shutil
 import sys
+import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
+from functools import cache
+from urllib.parse import urlparse
 
 import boto3
 import numpy as np
@@ -38,6 +44,11 @@ formatter = logging.Formatter(
 )
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
+
+# Keeps the last runs' output for debugging a crash; *.log is gitignored.
+file_handler = logging.FileHandler(os.path.join(os.path.dirname(os.path.abspath(__file__)), "scrape.log"))
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 S3_ROUTES_BUCKET = os.environ.get("S3_ROUTES_BUCKET", "bucket-flight-atlas-routes")
 S3_RESULTS_BUCKET = os.environ.get("S3_RESULTS_BUCKET", "bucket-flight-atlas-query-results")
@@ -285,11 +296,42 @@ def read_snapshot(dataset: str, snapshot: tuple[int, int]) -> pd.DataFrame:
     return ds.dataset(path, filesystem=fs, format="parquet", partitioning="hive").to_table().to_pandas()
 
 
+@cache
+def _s3():
+    return boto3.client("s3", region_name=REGION)
+
+
+def _bucket_and_key(uri: str) -> tuple[str, str]:
+    parsed = urlparse(uri)
+    return parsed.netloc, parsed.path.lstrip("/")
+
+
 def clear_snapshot(snapshot: tuple[int, int]) -> None:
     for dataset in (S3_PREFIX, "airports", "airlines"):
-        fs, path = _filesystem(snapshot_dir(dataset, snapshot))
-        if fs.get_file_info(path).type != pafs.FileType.NotFound:
-            fs.delete_dir(path)
+        path = snapshot_dir(dataset, snapshot)
+        if IS_LOCAL_OUTPUT:
+            shutil.rmtree(path, ignore_errors=True)
+            continue
+        # The trailing slash keeps month=1 from matching month=10, 11, and 12.
+        bucket, prefix = _bucket_and_key(path + "/")
+        for page in _s3().get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+            keys = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+            if keys:
+                _s3().delete_objects(Bucket=bucket, Delete={"Objects": keys})
+
+
+def upload_dir(local_dir: str) -> None:
+    """boto3 instead of pyarrow's S3 writer, whose multipart uploads fail S3's CRC64NVME check."""
+    bucket, prefix = _bucket_and_key(OUTPUT_BASE)
+    files = [os.path.join(root, name) for root, _, names in os.walk(local_dir) for name in names]
+
+    def upload(path: str) -> None:
+        key = posixpath.join(prefix, os.path.relpath(path, local_dir).replace(os.sep, "/"))
+        _s3().upload_file(path, bucket, key)
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        list(pool.map(upload, files))
+    logger.info(f"Uploaded {len(files)} files to s3://{bucket}/{prefix}")
 
 
 def merge_into_snapshot(
@@ -475,11 +517,14 @@ def write_outputs(
 
     routes_df["year"], routes_df["month"] = snapshot
 
-    clear_snapshot(snapshot)
+    # S3 output is staged locally and uploaded once every file is written.
+    stage = OUTPUT_BASE if IS_LOCAL_OUTPUT else tempfile.mkdtemp(prefix="flight-atlas-")
+    if IS_LOCAL_OUTPUT:
+        clear_snapshot(snapshot)
     routes_table = pa.Table.from_pandas(routes_df)
 
-    routes_dir = f"{OUTPUT_BASE}/{S3_PREFIX}/"
-    logger.info(f"Writing Routes to to {routes_dir}")
+    routes_dir = f"{stage}/{S3_PREFIX}/"
+    logger.info(f"Writing routes to {routes_dir}")
 
     ds.write_dataset(
         routes_table,
@@ -508,7 +553,7 @@ def write_outputs(
 
     airport_table = pa.Table.from_pandas(airports_df)
 
-    airports_dir = f"{OUTPUT_BASE}/airports/"
+    airports_dir = f"{stage}/airports/"
     logger.info(f"Writing airports to {airports_dir}")
 
     ds.write_dataset(
@@ -529,8 +574,8 @@ def write_outputs(
 
     airlines_table = pa.Table.from_pandas(airlines_df)
 
-    airlines_dir = f"{OUTPUT_BASE}/airlines/"
-    logger.info(f"Writing Airlines to to {airlines_dir}")
+    airlines_dir = f"{stage}/airlines/"
+    logger.info(f"Writing airlines to {airlines_dir}")
 
     ds.write_dataset(
         data=airlines_table,
@@ -542,6 +587,11 @@ def write_outputs(
         basename_template="part-{i}.parquet",
         filesystem=None,
     )
+
+    if not IS_LOCAL_OUTPUT:
+        clear_snapshot(snapshot)
+        upload_dir(stage)
+        shutil.rmtree(stage)
 
     if not RUN_ATHENA:
         logger.info("RUN_ATHENA disabled; skipping Athena MSCK REPAIR step.")
@@ -576,6 +626,10 @@ def write_outputs(
 
 
 if __name__ == "__main__":
-    if "--check" in sys.argv:
-        sys.exit(1 if check_airports() else 0)
-    main()
+    try:
+        if "--check" in sys.argv:
+            sys.exit(1 if check_airports() else 0)
+        main()
+    except Exception:
+        logger.exception("Scrape failed")
+        raise

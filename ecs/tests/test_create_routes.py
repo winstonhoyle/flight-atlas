@@ -281,3 +281,58 @@ def test_check_airport_reports_page_problems(wikipedia):
         "no coordinates",
         "No 'Airlines and destinations' section",
     ]
+
+
+class FakeS3:
+    def __init__(self, keys=()):
+        self.objects = dict.fromkeys(keys, b"")
+
+    def get_paginator(self, _name):
+        objects = self.objects
+
+        class Paginator:
+            def paginate(self, Bucket, Prefix):
+                return [{"Contents": [{"Key": k} for k in list(objects) if k.startswith(Prefix)]}]
+
+        return Paginator()
+
+    def delete_objects(self, Bucket, Delete):
+        for obj in Delete["Objects"]:
+            del self.objects[obj["Key"]]
+
+    def upload_file(self, path, bucket, key):
+        self.objects[key] = open(path, "rb").read()
+
+
+@pytest.fixture
+def s3_output(monkeypatch):
+    fake = FakeS3()
+    monkeypatch.setattr(create_routes, "OUTPUT_BASE", "s3://bucket-flight-atlas-routes")
+    monkeypatch.setattr(create_routes, "IS_LOCAL_OUTPUT", False)
+    monkeypatch.setattr(create_routes, "RUN_ATHENA", False)
+    monkeypatch.setattr(create_routes, "_s3", lambda: fake)
+    monkeypatch.setattr(create_routes, "airline_codes_dict", {"Alaska Airlines": "AS", "Grant Aviation": "GV"})
+    return fake
+
+
+def test_clearing_january_leaves_october(s3_output):
+    s3_output.objects = dict.fromkeys(["flights/year=2026/month=1/a.parquet", "flights/year=2026/month=10/b.parquet"])
+    create_routes.clear_snapshot((2026, 1))
+    assert list(s3_output.objects) == ["flights/year=2026/month=10/b.parquet"]
+
+
+def test_s3_write_replaces_the_month_through_boto3(s3_output, us_airports):
+    stale = "flights/year=2026/month=10/airline_code=BW/src_airport=JFK/part-0.parquet"
+    other_month = "flights/year=2026/month=9/airline_code=AS/src_airport=BET/part-0.parquet"
+    s3_output.objects = dict.fromkeys([stale, other_month], b"")
+
+    write_full_snapshot(us_airports)
+
+    keys = set(s3_output.objects)
+    assert stale not in keys and other_month in keys
+    for dataset in (
+        "flights/year=2026/month=10/airline_code=AS/src_airport=BET/",
+        "airports/year=2026/month=10/",
+        "airlines/year=2026/month=10/",
+    ):
+        assert any(k.startswith(dataset) for k in keys)

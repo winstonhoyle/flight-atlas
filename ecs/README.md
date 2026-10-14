@@ -48,6 +48,11 @@ make scrape-dry-run LIMIT=2       # the two busiest airports, Parquet to ecs/out
 Destination links are resolved through the MediaWiki API, 50 titles per request and cached
 for the run. When Wikipedia answers `429`, the scraper waits as long as it asks and retries.
 
+For S3 output, the datasets are written to a local temp folder first and uploaded with boto3
+once every file exists; pyarrow's own S3 writer fails S3's CRC64NVME checksum on multipart
+uploads. Every run appends its log to `ecs/scrape.log` (gitignored), including the traceback
+if it crashes.
+
 ## Settings
 
 From `ecs/.env` (copy [`.env.sample`](.env.sample)) or the environment:
