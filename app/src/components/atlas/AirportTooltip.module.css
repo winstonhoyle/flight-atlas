@@ -3,7 +3,9 @@
   flex-direction: column;
   align-items: center;
   padding: var(--fa-space-05) var(--fa-space-1);
-  border-color: var(--fa-color-border);
+  border: 1px solid var(--fa-color-border);
+  background: var(--fa-color-surface);
+  white-space: nowrap;
   border-radius: var(--fa-radius-md);
   box-shadow: var(--fa-shadow-1);
   color: var(--fa-color-text);

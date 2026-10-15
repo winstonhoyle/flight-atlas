@@ -1,3 +1,5 @@
+import io
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -118,7 +120,6 @@ SNAPSHOT = (2026, 10)
 def local_output(tmp_path, monkeypatch):
     monkeypatch.setattr(create_routes, "OUTPUT_BASE", str(tmp_path))
     monkeypatch.setattr(create_routes, "IS_LOCAL_OUTPUT", True)
-    monkeypatch.setattr(create_routes, "RUN_ATHENA", False)
     monkeypatch.setattr(create_routes, "airline_codes_dict", {"Alaska Airlines": "AS", "Grant Aviation": "GV"})
     return tmp_path
 
@@ -145,31 +146,46 @@ def write_full_snapshot(us_airports):
     return us_airports
 
 
-def test_write_outputs_round_trips_through_parquet(local_output, us_airports):
+def read_json(root, key):
+    return json.loads((root / key).read_text(encoding="utf-8"))
+
+
+def test_write_outputs_writes_the_months_json(local_output, us_airports):
     write_full_snapshot(us_airports)
 
-    flights = create_routes.read_snapshot("flights", SNAPSHOT)
-    assert len(flights) == 6
-    assert "POINT (-165.44 64.51)" in set(flights["dst_geometry"])
+    assert sorted(map(tuple, read_json(local_output, "2026/10/routes.json"))) == sorted(map(tuple, FULL_ROUTES))
 
-    airports = create_routes.read_snapshot("airports", SNAPSHOT)
-    assert dict(zip(airports["IATA"], airports["destinations"], strict=True)) == {
+    airports = read_json(local_output, "2026/10/airports.json")["features"]
+    assert {f["properties"]["IATA"]: f["properties"]["destinations"] for f in airports} == {
         "BET": 2,
         "ANC": 2,
         "OME": 1,
         "AUK": 1,
     }
+    ome = next(f for f in airports if f["properties"]["IATA"] == "OME")
+    assert ome["geometry"]["coordinates"] == [-165.44, 64.51]
+    assert ome["properties"]["FAA"] is None
 
-    airlines = create_routes.read_snapshot("airlines", SNAPSHOT)
-    assert dict(zip(airlines["airline_code"], airlines["route_count"], strict=True)) == {"AS": 2, "GV": 1}
+    assert read_json(local_output, "2026/10/airlines.json") == {"AS": "Alaska Airlines", "GV": "Grant Aviation"}
+    assert read_json(local_output, "snapshots.json") == [{"month": "10", "year": "2026"}]
+
+
+def test_routes_to_an_airport_without_coordinates_are_refused(local_output, us_airports):
+    with pytest.raises(ValueError, match="OME"):
+        create_routes.write_outputs(
+            us_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"]),
+            [["AS", "ANC", "OME"]],
+            {},
+            SNAPSHOT,
+        )
 
 
 def test_merge_replaces_only_the_target_and_its_foreign_return_legs():
     existing = pd.DataFrame(FULL_ROUTES, columns=["airline_code", "src_airport", "dst_airport"])
     airports = pd.DataFrame(
         [
-            {"IATA": "OME", "url": WIKI + "Nome_Airport", "geometry": "POINT (-165.44 64.51)", "title": "Nome"},
-            {"IATA": "AUK", "url": WIKI + "Alakanuk_Airport", "geometry": "POINT (-164.66 62.68)", "title": "Alakanuk"},
+            {"IATA": "OME", "url": WIKI + "Nome_Airport", "geometry": Point(-165.44, 64.51), "title": "Nome"},
+            {"IATA": "AUK", "url": WIKI + "Alakanuk_Airport", "geometry": Point(-164.66, 62.68), "title": "Alakanuk"},
         ]
     )
     extra: dict = {}
@@ -188,20 +204,16 @@ def test_merge_replaces_only_the_target_and_its_foreign_return_legs():
 def test_rescraping_one_airport_updates_the_snapshot_in_place(local_output, us_airports):
     us_airports = write_full_snapshot(us_airports)
 
+    flights, airports = create_routes.read_snapshot(SNAPSHOT)
     routes = create_routes.merge_into_snapshot(
-        [["AS", "BET", "ANC"]],
-        {"BET"},
-        {"BET", "ANC"},
-        create_routes.read_snapshot("flights", SNAPSHOT),
-        create_routes.read_snapshot("airports", SNAPSHOT),
-        extra := {},
+        [["AS", "BET", "ANC"]], {"BET"}, {"BET", "ANC"}, flights, airports, extra := {}
     )
     create_routes.write_outputs(us_airports, routes, extra, SNAPSHOT)
 
-    flights = create_routes.read_snapshot("flights", SNAPSHOT)
+    flights, airports = create_routes.read_snapshot(SNAPSHOT)
     pairs = set(zip(flights["airline_code"], flights["src_airport"], flights["dst_airport"], strict=True))
     assert pairs == {("AS", "BET", "ANC"), ("AS", "ANC", "BET"), ("AS", "ANC", "OME"), ("AS", "OME", "ANC")}
-    assert "AUK" not in set(create_routes.read_snapshot("airports", SNAPSHOT)["IATA"])
+    assert "AUK" not in set(airports["IATA"])
 
 
 def test_clearing_a_snapshot_leaves_other_months(local_output, us_airports):
@@ -212,11 +224,15 @@ def test_clearing_a_snapshot_leaves_other_months(local_output, us_airports):
         {},
         (2026, 9),
     )
+    assert read_json(local_output, "snapshots.json") == [
+        {"month": "10", "year": "2026"},
+        {"month": "9", "year": "2026"},
+    ]
 
     create_routes.clear_snapshot(SNAPSHOT)
 
-    assert create_routes.read_snapshot("flights", SNAPSHOT).empty
-    assert len(create_routes.read_snapshot("flights", (2026, 9))) == 1
+    assert create_routes.read_snapshot(SNAPSHOT)[0].empty
+    assert len(create_routes.read_snapshot((2026, 9))[0]) == 1
 
 
 class FakeResponse:
@@ -284,6 +300,10 @@ def test_check_airport_reports_page_problems(wikipedia):
 
 
 class FakeS3:
+    class exceptions:
+        class NoSuchKey(Exception):
+            pass
+
     def __init__(self, keys=()):
         self.objects = dict.fromkeys(keys, b"")
 
@@ -303,36 +323,46 @@ class FakeS3:
     def upload_file(self, path, bucket, key):
         self.objects[key] = open(path, "rb").read()
 
+    def put_object(self, Bucket, Key, Body, **_kw):
+        self.objects[Key] = Body.encode()
+
+    def get_object(self, Bucket, Key):
+        if Key not in self.objects:
+            raise self.exceptions.NoSuchKey(Key)
+        return {"Body": io.BytesIO(self.objects[Key])}
+
 
 @pytest.fixture
 def s3_output(monkeypatch):
     fake = FakeS3()
     monkeypatch.setattr(create_routes, "OUTPUT_BASE", "s3://bucket-flight-atlas-routes")
     monkeypatch.setattr(create_routes, "IS_LOCAL_OUTPUT", False)
-    monkeypatch.setattr(create_routes, "RUN_ATHENA", False)
     monkeypatch.setattr(create_routes, "_s3", lambda: fake)
     monkeypatch.setattr(create_routes, "airline_codes_dict", {"Alaska Airlines": "AS", "Grant Aviation": "GV"})
     return fake
 
 
 def test_clearing_january_leaves_october(s3_output):
-    s3_output.objects = dict.fromkeys(["flights/year=2026/month=1/a.parquet", "flights/year=2026/month=10/b.parquet"])
+    s3_output.objects = dict.fromkeys(["2026/01/routes.json", "2026/10/routes.json"])
     create_routes.clear_snapshot((2026, 1))
-    assert list(s3_output.objects) == ["flights/year=2026/month=10/b.parquet"]
+    assert list(s3_output.objects) == ["2026/10/routes.json"]
 
 
 def test_s3_write_replaces_the_month_through_boto3(s3_output, us_airports):
-    stale = "flights/year=2026/month=10/airline_code=BW/src_airport=JFK/part-0.parquet"
-    other_month = "flights/year=2026/month=9/airline_code=AS/src_airport=BET/part-0.parquet"
-    s3_output.objects = dict.fromkeys([stale, other_month], b"")
+    s3_output.objects = {"2026/10/stale.json": b"", "2026/09/routes.json": b"[]"}
 
     write_full_snapshot(us_airports)
 
-    keys = set(s3_output.objects)
-    assert stale not in keys and other_month in keys
-    for dataset in (
-        "flights/year=2026/month=10/airline_code=AS/src_airport=BET/",
-        "airports/year=2026/month=10/",
-        "airlines/year=2026/month=10/",
-    ):
-        assert any(k.startswith(dataset) for k in keys)
+    assert set(s3_output.objects) == {
+        "2026/09/routes.json",
+        "2026/10/airports.json",
+        "2026/10/airlines.json",
+        "2026/10/routes.json",
+        "snapshots.json",
+    }
+    assert json.loads(s3_output.objects["snapshots.json"]) == [
+        {"month": "10", "year": "2026"},
+        {"month": "9", "year": "2026"},
+    ]
+    flights, airports = create_routes.read_snapshot(SNAPSHOT)
+    assert len(flights) == 6 and len(airports) == 4

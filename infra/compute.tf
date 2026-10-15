@@ -48,10 +48,7 @@ resource "aws_ecs_task_definition" "flights_task" {
     essential = true
     environment = [
       { name = "S3_ROUTES_BUCKET", value = aws_s3_bucket.flights_bucket.bucket },
-      { name = "S3_RESULTS_BUCKET", value = aws_s3_bucket.athena_query_results.bucket },
-      { name = "REGION", value = var.region },
-      { name = "ATHENA_DB", value = aws_glue_catalog_database.flights_db.name },
-      { name = "S3_PREFIX", value = "flights" }
+      { name = "REGION", value = var.region }
     ]
     logConfiguration = {
       logDriver = "awslogs"
@@ -127,12 +124,7 @@ resource "aws_lambda_function" "flights_query_lambda" {
 
   environment {
     variables = {
-      ATHENA_DATABASE   = aws_glue_catalog_database.flights_db.name
-      FLIGHTS_TABLE     = aws_glue_catalog_table.tables["flights"].name
-      AIRPORTS_TABLE    = aws_glue_catalog_table.tables["airports"].name
-      AIRLINES_TABLE    = aws_glue_catalog_table.tables["airlines"].name
-      S3_RESULTS_BUCKET = aws_s3_bucket.athena_query_results.bucket
-      CACHE_TABLE       = aws_dynamodb_table.flights_query_cache.name
+      S3_ROUTES_BUCKET = aws_s3_bucket.flights_bucket.bucket
     }
   }
 }

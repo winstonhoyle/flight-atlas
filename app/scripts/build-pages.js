@@ -6,14 +6,10 @@ import { SITE_URL, airlinePage, airportPage, renderPage, sitemapXml } from "./pa
 const API_BASE = process.env.VITE_API_BASE || "https://api.flightatlas.io";
 const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
 
-const fetchJSON = async (endpoint, attempts = 10) => {
-  for (let i = 0; i < attempts; i++) {
-    const res = await fetch(`${API_BASE}${endpoint}`, { signal: AbortSignal.timeout(10000) });
-    if (res.status === 200) return res.json();
-    if (res.status !== 202) throw new Error(`HTTP ${res.status} on ${endpoint}`);
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-  throw new Error(`${endpoint} still processing after ${attempts} attempts`);
+const fetchJSON = async (endpoint) => {
+  const res = await fetch(`${API_BASE}${endpoint}`, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status} on ${endpoint}`);
+  return res.json();
 };
 
 const main = async () => {

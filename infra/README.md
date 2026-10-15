@@ -11,12 +11,12 @@ in the `flightatlas-terraform-state` S3 bucket with S3 native locking.
 | `variables.tf` | Input variables and defaults |
 | `network.tf` | VPC, public subnets, internet gateway, route table, security group for the scraper task |
 | `compute.tf` | ECR repository and lifecycle policy, ECS cluster, task, and service, monthly schedule, the Lambda |
-| `data.tf` | S3 buckets, Glue database and tables, DynamoDB query cache |
+| `data.tf` | The S3 bucket the scraper writes and the Lambda reads |
 | `api.tf` | API Gateway HTTP API, routes, throttling, custom domain, ACM certificate |
 | `dns.tf` | Route 53 zone and records, Cloudflare `www` and `api` records |
 | `edge.tf` | Cloudflare SSL mode, `www` redirect, API rate limit and cache rules |
 | `alerts.tf` | SNS email topic, API 5xx and Lambda error alarms, monthly budget |
-| `iam.tf` | Roles and policies for Athena, ECS, the Lambda, and EventBridge |
+| `iam.tf` | Roles and policies for ECS, the Lambda, and EventBridge |
 
 Cloudflare Pages itself is not in Terraform; CI deploys the app to it.
 
@@ -107,7 +107,7 @@ Two limits apply to the API:
 
 The default `execute-api` URL is disabled, so every request comes through `api.flightatlas.io`
 and Cloudflare. Cloudflare caches responses for as long as their `Cache-Control` allows: an hour
-for `200`, and never for `202` or errors.
+for the newest snapshot, a year for a past one, and never for errors.
 
 ## Alerts
 

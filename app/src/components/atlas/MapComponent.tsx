@@ -1,14 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FeatureGroup, MapContainer, Pane, TileLayer } from "react-leaflet";
-import L from "leaflet";
-import "leaflet.geodesic";
-import "leaflet/dist/leaflet.css";
+import { createPortal } from "react-dom";
+import Feature, { type FeatureLike } from "ol/Feature";
+import OlMap from "ol/Map";
+import Overlay from "ol/Overlay";
+import View from "ol/View";
+import { defaults as defaultControls } from "ol/control/defaults";
+import type { Coordinate } from "ol/coordinate";
+import { createEmpty, extend, isEmpty, type Extent } from "ol/extent";
+import LineString from "ol/geom/LineString";
+import Point from "ol/geom/Point";
+import { defaults as defaultInteractions } from "ol/interaction/defaults";
+import TileLayer from "ol/layer/Tile";
+import VectorLayer from "ol/layer/Vector";
+import type { Pixel } from "ol/pixel";
+import { fromLonLat } from "ol/proj";
+import VectorSource from "ol/source/Vector";
+import XYZ from "ol/source/XYZ";
+import { Circle, Fill, Stroke, Style } from "ol/style";
+import "ol/ol.css";
+import type { Position } from "geojson";
 
-import { AirportMarker } from "./AirportMarker";
 import { Legend } from "./Legend";
 import { OverlayPanel } from "./OverlayPanel";
 import { RouteInfo } from "./RouteInfo";
 import { WelcomeDialog } from "./WelcomeDialog";
+import tooltipStyles from "./AirportTooltip.module.css";
 import styles from "./MapComponent.module.css";
 
 import { IconButton } from "@/components/common/IconButton";
@@ -20,70 +36,115 @@ import { useSelectionUrl } from "@/hooks/useSelectionUrl";
 import { InfoIcon } from "@/icons";
 import { tokenValue } from "@/styles/tokens";
 import type { AirlineSummary, Airport, MonthOption, RouteProperties } from "@/types";
-import { distanceMiles } from "@/utils/geo";
+import { destinationBin, destinationColorToken } from "@/utils/destinations";
+import { distanceMiles, greatCircle } from "@/utils/geo";
 import { EMPTY_SELECTION, type Selection } from "@/utils/selectionPath";
 
-const DEFAULT_CENTER: L.LatLngTuple = [39.8283, -98.5795]; // center of continental US
+const DEFAULT_CENTER = fromLonLat([-98.5795, 39.8283]); // center of continental US
 const DEFAULT_ZOOM = 4;
+const MAX_ZOOM = 10;
 const GEODESIC_MIN_MILES = 1000;
 const HIGHLIGHT_WEIGHT = 4;
+const HIT_TOLERANCE = 8;
+const WORLD_WIDTH = 2 * 20037508.342789244;
 
-const routePropsByLayer = new WeakMap<L.Layer, RouteProperties>();
-// Zoom uses only the unshifted copy of each route, not the ±360° world copies.
-const primaryLines = new WeakSet<L.Layer>();
+const TILE_URL =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}";
+const ATTRIBUTION =
+  'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ | Route data from <a href="https://en.wikipedia.org/" target="_blank" rel="noopener noreferrer">Wikipedia</a> (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>)';
 
-const fitTo = (map: L.Map | null, bounds: L.LatLngBounds | null, padding = 15) => {
-  if (!map || !bounds?.isValid()) return;
-  const area = map.getContainer().getBoundingClientRect();
+type RouteMatch = (route: RouteProperties) => boolean;
+
+const routeGeometry = ([a, b]: Position[]) =>
+  new LineString(
+    greatCircle(a, b, distanceMiles(a, b) > GEODESIC_MIN_MILES ? 64 : 1).map((p) => fromLonLat(p)),
+  );
+
+/** The copy of x (one per world wrap) closest to `near`. */
+const nearestCopy = (x: number, near: number) =>
+  x + WORLD_WIDTH * Math.round((near - x) / WORLD_WIDTH);
+
+const fitTo = (map: OlMap | null, extent: Extent, padding = 15) => {
+  if (!map || isEmpty(extent)) return;
+  const area = map.getViewport().getBoundingClientRect();
   const panel = document.getElementById("overlay-panel")?.getBoundingClientRect();
   const atSide = panel && panel.width < area.width / 2;
-  map.fitBounds(bounds, {
-    paddingTopLeft: [padding, panel && !atSide ? panel.bottom - area.top + padding : padding],
-    paddingBottomRight: [panel && atSide ? area.right - panel.left + padding : padding, padding],
+  map.getView().fit(extent, {
+    padding: [
+      panel && !atSide ? panel.bottom - area.top + padding : padding,
+      panel && atSide ? area.right - panel.left + padding : padding,
+      padding,
+      padding,
+    ],
+    maxZoom: MAX_ZOOM,
   });
 };
 
-const primaryBounds = (
-  layer: L.FeatureGroup,
-  include: (props: RouteProperties | undefined) => boolean = () => true,
-): L.LatLngBounds | null => {
-  let bounds: L.LatLngBounds | null = null;
-  for (const l of layer.getLayers()) {
-    if (!primaryLines.has(l) || !include(routePropsByLayer.get(l))) continue;
-    const b = (l as L.Polyline).getBounds();
-    if (!b.isValid()) continue;
-    // getBounds() returns the line's own object; copy it before extending.
-    bounds = bounds ? bounds.extend(b) : L.latLngBounds(b.getSouthWest(), b.getNorthEast());
+const resetView = (map: OlMap | null) => {
+  map?.getView().setCenter(DEFAULT_CENTER);
+  map?.getView().setZoom(DEFAULT_ZOOM);
+};
+
+const routesExtent = (source: VectorSource, airline = "") => {
+  const extent = createEmpty();
+  source.forEachFeature((f) => {
+    if (!airline || f.get("airline_code") === airline) extend(extent, f.getGeometry()!.getExtent());
+  });
+  return extent;
+};
+
+const airportAt = (map: OlMap, layer: VectorLayer, pixel: Pixel, coordinate: Coordinate) => {
+  let nearest: Airport | null = null;
+  let best = Infinity;
+  for (const f of map.getFeaturesAtPixel(pixel, {
+    layerFilter: (l) => l === layer,
+    hitTolerance: HIT_TOLERANCE,
+  })) {
+    const [x, y] = (f.getGeometry() as Point).getCoordinates();
+    const d = Math.hypot(nearestCopy(x, coordinate[0]) - coordinate[0], y - coordinate[1]);
+    if (d < best) [best, nearest] = [d, f.get("airport") as Airport];
   }
-  return bounds;
+  return nearest;
 };
 
-const drawLine = (
-  coords: L.LatLngTuple[],
-  useGeodesic: boolean,
-  weight: number,
-  renderer: L.Renderer,
-): L.Polyline => {
-  const options = { color: tokenValue("--fa-map-route"), weight, opacity: 1.0, interactive: false };
-  return useGeodesic
-    ? L.geodesic(coords, { ...options, wrap: false })
-    : L.polyline(coords, { ...options, renderer });
+const styleCache = new Map<string, Style>();
+const cachedStyle = (key: string, make: () => Style) => {
+  let style = styleCache.get(key);
+  if (!style) styleCache.set(key, (style = make()));
+  return style;
 };
 
-const highlightLine = (latLngs: L.LatLngExpression[] | L.LatLngExpression[][]) =>
-  L.polyline(latLngs, {
-    color: tokenValue("--fa-map-route-highlight"),
-    weight: HIGHLIGHT_WEIGHT,
-    opacity: 1.0,
-    interactive: false,
-    renderer: L.svg(),
-  });
+const routeStyle = (highlighted: boolean, weight: number) =>
+  cachedStyle(
+    `route-${highlighted}-${weight}`,
+    () =>
+      new Style({
+        stroke: new Stroke({
+          color: tokenValue(highlighted ? "--fa-map-route-highlight" : "--fa-map-route"),
+          width: highlighted ? HIGHLIGHT_WEIGHT : weight,
+        }),
+        zIndex: highlighted ? 1 : 0,
+      }),
+  );
 
-const buildWorldRouteVariants = (coords: L.LatLngTuple[]): L.LatLngTuple[][] => [
-  coords,
-  coords.map(([lat, lng]) => [lat, lng + 360]),
-  coords.map(([lat, lng]) => [lat, lng - 360]),
-];
+const airportStyle = (feature: FeatureLike) => {
+  const destinations = (feature.get("airport") as Airport).properties.destinations || 0;
+  return cachedStyle(
+    `airport-${destinations}`,
+    () =>
+      new Style({
+        image: new Circle({
+          radius: 3 + Math.min(destinations / 20, 4),
+          fill: new Fill({
+            color: tokenValue(destinationColorToken(destinationBin(destinations))),
+          }),
+          stroke: new Stroke({ color: tokenValue("--fa-map-marker-stroke"), width: 0.5 }),
+        }),
+        // Busier airports draw on top.
+        zIndex: destinations,
+      }),
+  );
+};
 
 const toAirlineSummaries = (airlines: Record<string, string>): AirlineSummary[] =>
   Object.entries(airlines).map(([code, name]) => ({ code, name }));
@@ -95,21 +156,86 @@ export const MapComponent = () => {
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem("hasVisited"));
   const [destinationAirport, setDestinationAirport] = useState<Airport | null>(null);
   const [chosenSnapshot, setChosenSnapshot] = useState<MonthOption | null>(null);
+  const [hovered, setHovered] = useState<Airport | null>(null);
 
   useEffect(() => {
     localStorage.setItem("hasVisited", "true");
   }, []);
 
-  const mapRef = useRef<L.Map | null>(null);
-  const routesLayerRef = useRef<L.FeatureGroup | null>(null);
-  const highlightLayerRef = useRef<L.FeatureGroup | null>(null);
-  const highlightedAirportRef = useRef<Airport | null>(null);
+  const targetRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<OlMap | null>(null);
+  const handlersRef = useRef({
+    hover: (_airport: Airport | null, _coordinate: Coordinate) => {},
+    click: (_airport: Airport | null) => {},
+  });
+
+  const [map] = useState(() => {
+    const routesLayer = new VectorLayer({ source: new VectorSource(), zIndex: 1 });
+    const airportsLayer = new VectorLayer({
+      source: new VectorSource(),
+      style: airportStyle,
+      zIndex: 2,
+    });
+    const tooltipElement = document.createElement("div");
+    const tooltip = new Overlay({
+      element: tooltipElement,
+      positioning: "bottom-center",
+      offset: [0, -10],
+      stopEvent: false,
+    });
+    return { routesLayer, airportsLayer, tooltip, tooltipElement };
+  });
+  const routesSource = map.routesLayer.getSource()!;
+  const airportsSource = map.airportsLayer.getSource()!;
+
+  useEffect(() => {
+    const { routesLayer, airportsLayer, tooltip } = map;
+    const olMap = new OlMap({
+      target: targetRef.current!,
+      layers: [
+        new TileLayer({ source: new XYZ({ url: TILE_URL, attributions: ATTRIBUTION }) }),
+        routesLayer,
+        airportsLayer,
+      ],
+      overlays: [tooltip],
+      view: new View({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, maxZoom: MAX_ZOOM }),
+      controls: defaultControls({
+        zoom: false,
+        rotate: false,
+        attributionOptions: { collapsible: false },
+      }),
+      interactions: defaultInteractions({ altShiftDragRotate: false, pinchRotate: false }),
+    });
+    olMap.on("pointermove", (e) => {
+      if (e.dragging) return;
+      handlersRef.current.hover(
+        airportAt(olMap, airportsLayer, e.pixel, e.coordinate),
+        e.coordinate,
+      );
+    });
+    olMap.on("click", (e) =>
+      handlersRef.current.click(airportAt(olMap, airportsLayer, e.pixel, e.coordinate)),
+    );
+    const leave = () => handlersRef.current.hover(null, [0, 0]);
+    olMap.getViewport().addEventListener("mouseleave", leave);
+    mapRef.current = olMap;
+    return () => {
+      olMap.getViewport().removeEventListener("mouseleave", leave);
+      olMap.setTarget(undefined);
+      mapRef.current = null;
+    };
+  }, [map]);
 
   const { months, loading: monthsLoading, error: monthsError } = useMonths();
-  const snapshot = monthsLoading ? undefined : (chosenSnapshot ?? months[0] ?? null);
-  const { airports, airlines, error: dataError } = useAtlasData(snapshot);
-
-  const { routes, loading, error } = useRoutes(selectedAirport, selectedAirline, snapshot);
+  const {
+    airports,
+    routes: routeRows,
+    airlines,
+    loading,
+    error: dataError,
+  } = useAtlasData(chosenSnapshot);
+  const routes = useRoutes(selectedAirport, selectedAirline, routeRows, airports);
+  const locked = loading || monthsLoading;
 
   const findAirport = (iata: string) => airports.find((a) => a.properties.IATA === iata) ?? null;
 
@@ -134,66 +260,80 @@ export const MapComponent = () => {
       setDestinationAirport(selection.destination ? findAirport(selection.destination) : null);
       setSelectedRoute(selection.destination ? [selection.airport, selection.destination] : []);
       setSelectedAirline(selection.airline);
-      if (!selection.destination) highlightLayerRef.current?.clearLayers();
-      if (!selection.airport && !selection.airline) {
-        mapRef.current?.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-      }
+      if (!selection.airport && !selection.airline) resetView(mapRef.current);
     },
   });
 
-  const routeRenderer = useMemo(() => L.canvas({ padding: 0.5 }), []);
+  useEffect(() => {
+    handlersRef.current = {
+      hover: (airport, coordinate) => {
+        setHovered(airport);
+        const [x, y] = airport ? fromLonLat(airport.geometry.coordinates) : [0, 0];
+        map.tooltip.setPosition(airport ? [nearestCopy(x, coordinate[0]), y] : undefined);
+        mapRef.current!.getViewport().style.cursor = airport ? "pointer" : "";
+      },
+      click: (airport) => {
+        if (!airport) return;
+        if (selectedAirport) {
+          if (airport.properties.IATA === selectedAirport.properties.IATA) return;
+          setDestinationAirport(airport);
+          setSelectedRoute([selectedAirport.properties.IATA, airport.properties.IATA]);
+          return;
+        }
+        if (!selectedAirline) setSelectedAirport(airport);
+      },
+    };
+  });
 
   useEffect(() => {
-    const layer = routesLayerRef.current;
-    if (!layer || !routes?.features.length) return;
-
-    layer.clearLayers();
-
-    const weight = routes.features.length > 200 ? 1 : 2;
-    const lines: L.Polyline[] = [];
-
-    routes.features.forEach((f) => {
-      const raw = f.geometry.coordinates;
-      const coords = raw.map(([lng, lat]): L.LatLngTuple => [lat, lng]);
-      const useGeodesic = distanceMiles(raw[0], raw[raw.length - 1]) > GEODESIC_MIN_MILES;
-
-      buildWorldRouteVariants(coords).forEach((variantCoords, idx) => {
-        const line = drawLine(variantCoords, useGeodesic, weight, routeRenderer);
-        routePropsByLayer.set(line, f.properties);
-        if (idx === 0) primaryLines.add(line);
-        lines.push(line);
-      });
-    });
-
-    lines.forEach((l) => layer.addLayer(l));
-
-    const bounds = primaryBounds(layer);
-    fitTo(mapRef.current, bounds);
-  }, [routes, routeRenderer]);
+    routesSource.clear();
+    if (!routes?.features.length) return;
+    routesSource.addFeatures(
+      routes.features.map(
+        (f) => new Feature({ geometry: routeGeometry(f.geometry.coordinates), ...f.properties }),
+      ),
+    );
+    fitTo(mapRef.current, routesExtent(routesSource));
+  }, [routes, routesSource]);
 
   useEffect(() => {
-    const layer = routesLayerRef.current;
-    const map = mapRef.current;
-    if (!layer || !map) return;
+    if (selectedAirline) fitTo(mapRef.current, routesExtent(routesSource, selectedAirline));
+  }, [selectedAirline, routes, routesSource]);
 
-    if (!selectedAirport && !selectedAirline) {
-      layer.clearLayers();
-      return;
-    }
+  const highlight = useMemo<RouteMatch | null>(() => {
+    const between =
+      (a: string, b: string): RouteMatch =>
+      ({ src_airport: src, dst_airport: dst }) =>
+        (src === a && dst === b) || (src === b && dst === a);
+    if (selectedRoute.length === 2) return between(selectedRoute[0], selectedRoute[1]);
+    if (!hovered) return null;
+    const hoveredIATA = hovered.properties.IATA;
+    const selectedIATA = selectedAirport?.properties.IATA;
+    if (selectedIATA && selectedIATA !== hoveredIATA) return between(selectedIATA, hoveredIATA);
+    const target = selectedIATA ?? hoveredIATA;
+    return ({ src_airport: src, dst_airport: dst }) => src === target || dst === target;
+  }, [selectedRoute, hovered, selectedAirport]);
 
-    layer.eachLayer((l) => {
-      if (!selectedAirline || selectedAirline === routePropsByLayer.get(l)?.airline_code) {
-        if (!map.hasLayer(l)) map.addLayer(l);
-      } else if (map.hasLayer(l)) {
-        map.removeLayer(l);
-      }
+  useEffect(() => {
+    const weight = (routes?.features.length ?? 0) > 200 ? 1 : 2;
+    map.routesLayer.setStyle((feature) => {
+      const route = feature.getProperties() as RouteProperties;
+      if (selectedAirline && route.airline_code !== selectedAirline) return undefined;
+      return routeStyle(highlight?.(route) ?? false, weight);
     });
+  }, [selectedAirline, highlight, routes, map]);
 
-    if (selectedAirline) {
-      const bounds = primaryBounds(layer, (props) => props?.airline_code === selectedAirline);
-      fitTo(map, bounds);
-    }
-  }, [selectedAirline, routes, selectedAirport]);
+  useEffect(() => {
+    if (selectedRoute.length < 2) return;
+    const ends = selectedRoute.map((iata) => airports.find((a) => a.properties.IATA === iata));
+    if (!ends[0] || !ends[1]) return;
+    const extent = createEmpty();
+    routeGeometry(ends.map((a) => a!.geometry.coordinates))
+      .getCoordinates()
+      .forEach((c) => extend(extent, [...c, ...c]));
+    fitTo(mapRef.current, extent, 30);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRoute]);
 
   // Empty means show every airport.
   const filteredAirports = useMemo(() => {
@@ -207,6 +347,18 @@ export const MapComponent = () => {
     });
     return airports.filter((a) => codes.has(a.properties.IATA));
   }, [routes, airports, selectedAirport, selectedAirline]);
+
+  const visibleAirports = filteredAirports.length ? filteredAirports : airports;
+
+  useEffect(() => {
+    airportsSource.clear();
+    airportsSource.addFeatures(
+      visibleAirports.map(
+        (airport) =>
+          new Feature({ geometry: new Point(fromLonLat(airport.geometry.coordinates)), airport }),
+      ),
+    );
+  }, [visibleAirports, airportsSource]);
 
   const baseAirlines = useMemo(() => toAirlineSummaries(airlines), [airlines]);
 
@@ -226,90 +378,12 @@ export const MapComponent = () => {
       .sort((a, b) => b.destinations - a.destinations);
   }, [selectedAirport, routes, airlines, baseAirlines]);
 
-  const updateHighlightedRoutes = (airport: Airport | null) => {
-    const routesLayer = routesLayerRef.current;
-    const highlightLayer = highlightLayerRef.current;
-
-    // A selected route keeps its own highlight.
-    if (selectedRoute.length === 2) return;
-
-    if (!airport) {
-      highlightLayer?.clearLayers();
-      return;
-    }
-    if (!routesLayer || !highlightLayer) return;
-
-    highlightLayer.clearLayers();
-
-    const hoveredIATA = airport.properties.IATA;
-    const selectedIATA = selectedAirport?.properties.IATA;
-
-    routesLayer.eachLayer((l) => {
-      const props = routePropsByLayer.get(l);
-      if (!props) return;
-      const { src_airport: src, dst_airport: dst } = props;
-
-      let isMatch: boolean;
-      if (!selectedIATA || hoveredIATA === selectedIATA) {
-        const target = selectedIATA ?? hoveredIATA;
-        isMatch = src === target || dst === target;
-      } else {
-        isMatch =
-          (src === selectedIATA && dst === hoveredIATA) ||
-          (dst === selectedIATA && src === hoveredIATA);
-      }
-
-      if (isMatch)
-        highlightLayer.addLayer(highlightLine((l as L.Polyline).getLatLngs() as L.LatLng[]));
-    });
-  };
-
-  useEffect(() => {
-    if (selectedRoute.length < 2) return;
-
-    const highlightLayer = highlightLayerRef.current;
-    if (!routesLayerRef.current || !highlightLayer) return;
-
-    highlightLayer.clearLayers();
-
-    const src = airports.find((a) => a.properties.IATA === selectedRoute[0]);
-    const dst = airports.find((a) => a.properties.IATA === selectedRoute[1]);
-    if (!src || !dst) return;
-
-    const [srcLng, srcLat] = src.geometry.coordinates;
-    const [dstLng, dstLat] = dst.geometry.coordinates;
-    const coords: L.LatLngTuple[] = [
-      [srcLat, srcLng],
-      [dstLat, dstLng],
-    ];
-
-    const useGeodesic =
-      distanceMiles(src.geometry.coordinates, dst.geometry.coordinates) > GEODESIC_MIN_MILES;
-    highlightLayer.addLayer(
-      useGeodesic
-        ? L.geodesic(coords, {
-            color: tokenValue("--fa-map-route-highlight"),
-            weight: HIGHLIGHT_WEIGHT,
-            opacity: 1.0,
-            interactive: false,
-          })
-        : highlightLine(coords),
-    );
-
-    fitTo(mapRef.current, L.latLngBounds(coords), 30);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRoute]);
-
-  const fitToRoutes = () => {
-    const bounds = routesLayerRef.current && primaryBounds(routesLayerRef.current);
-    fitTo(mapRef.current, bounds);
-  };
+  const fitToRoutes = () => fitTo(mapRef.current, routesExtent(routesSource));
 
   const handleBack = () => {
     if (destinationAirport) {
       setDestinationAirport(null);
       setSelectedRoute([]);
-      highlightLayerRef.current?.clearLayers();
       fitToRoutes();
       return;
     }
@@ -323,66 +397,37 @@ export const MapComponent = () => {
     if (selectedAirport) {
       setSelectedAirport(null);
       setSelectedAirline("");
-      mapRef.current?.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+      resetView(mapRef.current);
       return;
     }
 
     if (selectedAirline) {
       setSelectedAirline("");
-      routesLayerRef.current?.clearLayers();
-      mapRef.current?.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+      resetView(mapRef.current);
     }
   };
 
-  const visibleAirports = (filteredAirports.length ? filteredAirports : airports)
-    .slice()
-    .sort((a, b) => a.properties.destinations - b.properties.destinations);
-
   return (
     <div className={styles.container}>
-      <MapContainer
-        className={styles.map}
-        center={DEFAULT_CENTER}
-        zoom={DEFAULT_ZOOM}
-        worldCopyJump={true}
-        maxZoom={10}
-        ref={mapRef}
-        zoomControl={false}
-      >
-        <TileLayer
-          attribution='Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ | Route data from <a href="https://en.wikipedia.org/" target="_blank" rel="noopener noreferrer">Wikipedia</a> (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>)'
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-        />
+      <div ref={targetRef} className={styles.map} aria-busy={locked} />
+      {locked && (
+        <div className={styles.loading} aria-hidden>
+          <span className={styles.loadingLabel}>Loading airports and routes…</span>
+        </div>
+      )}
+      {createPortal(
+        hovered && (
+          <div className={tooltipStyles.tooltip}>
+            <strong className={tooltipStyles.name}>{hovered.properties.Name}</strong>
+            <span>
+              {hovered.properties.IATA} · {hovered.properties.destinations} destinations
+            </span>
+          </div>
+        ),
+        map.tooltipElement,
+      )}
 
-        <Pane name="routesPane">
-          <FeatureGroup ref={routesLayerRef} />
-        </Pane>
-
-        <Pane name="highlightPane">
-          <FeatureGroup ref={highlightLayerRef} />
-        </Pane>
-
-        <Pane name="airportsPane">
-          {visibleAirports.map((airport) => (
-            <AirportMarker
-              key={airport.properties.IATA}
-              airport={airport}
-              selectedAirport={selectedAirport}
-              setSelectedAirport={setSelectedAirport}
-              setDestinationAirport={setDestinationAirport}
-              setSelectedRoute={setSelectedRoute}
-              selectedAirline={selectedAirline}
-              highlightedAirportRef={highlightedAirportRef}
-              updateHighlightedRoutes={updateHighlightedRoutes}
-            />
-          ))}
-        </Pane>
-
-        {/* Registers the pane that airport tooltips render into */}
-        <Pane name="airportTooltipPane" />
-
-        <Legend />
-      </MapContainer>
+      <Legend />
 
       <OverlayPanel
         airports={airports}
@@ -397,10 +442,10 @@ export const MapComponent = () => {
         destinationAirport={destinationAirport}
         setDestinationAirport={setDestinationAirport}
         monthOptions={months}
-        snapshot={snapshot ?? null}
+        snapshot={chosenSnapshot ?? months[0] ?? null}
         setSnapshot={setChosenSnapshot}
-        loading={loading || monthsLoading}
-        error={error || monthsError || dataError}
+        loading={locked}
+        error={monthsError || dataError}
       >
         {selectedAirport && destinationAirport && routes && (
           <RouteInfo

@@ -10,16 +10,17 @@ airline and destination tables. Live at [flightatlas.io](https://flightatlas.io)
 | Part | Service | Folder |
 | --- | --- | --- |
 | Scraper | Python, run locally each month | [`ecs/`](ecs/README.md) |
-| Storage and queries | S3 (Parquet), Glue, Athena | |
-| API | API Gateway, Lambda, DynamoDB query cache | [`lambda/`](lambda/README.md) |
-| Frontend | React, TypeScript, and Leaflet on Cloudflare Pages | [`app/`](app/README.md) |
+| Storage | S3: three JSON files per month | |
+| API | API Gateway, Lambda | [`lambda/`](lambda/README.md) |
+| Frontend | React, TypeScript, and OpenLayers on Cloudflare Pages | [`app/`](app/README.md) |
 | Infrastructure | Terraform: AWS resources and Cloudflare DNS records | [`infra/`](infra/README.md) |
 
 How data moves:
 
-1. `make scrape` reads Wikipedia and writes a year/month snapshot of routes, airports, and airlines to S3 as Parquet, then repairs the Athena partitions.
+1. `make scrape` reads Wikipedia and writes the month's `airports.json`, `airlines.json` and `routes.json` to `s3://<bucket>/YYYY/MM/`, then rewrites the month list in `snapshots.json`.
 2. The app calls `api.flightatlas.io`, where API Gateway invokes the Lambda.
-3. The Lambda picks the snapshot, then either reads a finished Athena query's result from S3 (found through the DynamoDB cache) or starts the query and returns `202` until it finishes.
+3. The Lambda picks the snapshot and returns its file from S3. Cloudflare caches the response.
+4. The app loads a month's airports and routes once and filters routes by airport or airline in the browser.
 
 The scraper is packaged for ECS with a monthly EventBridge schedule, but AWS blocks ECS task
 launches for this account, so it runs locally.
@@ -41,14 +42,13 @@ parameters to pick one:
 Status codes:
 
 - `200`: result in the body
-- `202`: the query is still running in Athena (`{"status": "processing", "query_id": "..."}`). Retry the same request after a short delay
 - `400`: missing or invalid parameter
 - `404`: unknown path, or no snapshot for the requested `year` and `month`
 - `429`: rate limit exceeded. Back off and retry
 
 Each IP may make 100 requests in 10 seconds; past that, Cloudflare blocks it for 10 seconds.
-Successful responses are cached for an hour. The data changes once a month, so cache them
-on your side too.
+Responses for the newest snapshot are cached for an hour; a past snapshot named by `year` and
+`month` never changes and is cached for a year. Cache them on your side too.
 
 **Endpoint:** `https://api.flightatlas.io/airports`  
 
@@ -108,37 +108,17 @@ on your side too.
 
 **Method:** GET  
 
-**Parameters:**
-- `airport`: IATA code of the origin airport
-- `airline_code`: IATA code of the airline
-- `year`, `month`: the snapshot (optional, see above)
+**Parameters:** `year`, `month`: the snapshot (optional, see above)
 
-At least one of `airport` and `airline_code` is required. With both, the response has that
-airline's routes from that airport.
+Every route in the snapshot, as `[airline_code, src_airport, dst_airport]`. Airport coordinates
+are in `/airports`.
 
 **Response:**
 ```json
-{
-  "type": "FeatureCollection",
-  "features": [
-    {
-      "type": "Feature",
-      "geometry": {
-        "type": "LineString",
-        "coordinates": [
-          [-79.93722, 36.09778],
-          [-82.6875, 27.91]
-        ]
-      },
-      "properties": {
-        "airline_code": "G4",
-        "src_airport": "GSO",
-        "dst_airport": "PIE"
-      }
-    },
-    ...
-  ]
-}
+[
+  ["G4", "GSO", "PIE"],
+  ...
+]
 ```
 
 ## Getting started

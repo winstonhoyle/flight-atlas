@@ -1,8 +1,4 @@
-import re
 from dataclasses import dataclass
-
-AIRPORT = re.compile(r"^[A-Z]{3}$")
-AIRLINE = re.compile(r"^[A-Z0-9]{2,3}$")
 
 
 class BadRequest(ValueError):
@@ -11,20 +7,8 @@ class BadRequest(ValueError):
 
 @dataclass(frozen=True)
 class Query:
-    airport: str | None = None
-    airline: str | None = None
     year: int | None = None
     month: int | None = None
-
-
-def _code(value: str | None, pattern: re.Pattern) -> str | None:
-    if not value:
-        return None
-    # Some clients have sent a second "?" inside the query string; keep what precedes it.
-    value = value.strip().split("?")[0]
-    if not pattern.match(value):
-        raise BadRequest(f"Invalid parameter: {value}")
-    return value
 
 
 def _int(value: str | None, low: int, high: int, message: str) -> int | None:
@@ -41,8 +25,6 @@ def _int(value: str | None, low: int, high: int, message: str) -> int | None:
 
 def parse_query(params: dict[str, str]) -> Query:
     query = Query(
-        airport=_code(params.get("airport"), AIRPORT),
-        airline=_code(params.get("airline_code"), AIRLINE),
         month=_int(
             params.get("month"),
             1,

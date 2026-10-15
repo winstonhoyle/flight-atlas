@@ -1,55 +1,6 @@
 data "aws_caller_identity" "current" {}
 
 ############################################################
-# Athena role
-############################################################
-resource "aws_iam_role" "athena_s3_role" {
-  name = "athena_s3_role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "athena.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy" "athena_s3_access" {
-  name = "athena_s3_access"
-  role = aws_iam_role.athena_s3_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect = "Allow",
-        Action = [
-          "s3:GetBucketLocation",
-          "s3:GetObject",
-          "s3:ListBucket",
-          "s3:ListBucketMultipartUploads",
-          "s3:ListMultipartUploadParts",
-          "s3:AbortMultipartUpload",
-          "s3:PutObject"
-        ],
-        Resource = [
-          aws_s3_bucket.flights_bucket.arn,
-          "${aws_s3_bucket.flights_bucket.arn}/*",
-          aws_s3_bucket.athena_query_results.arn,
-          "${aws_s3_bucket.athena_query_results.arn}/*"
-        ]
-      }
-    ]
-  })
-}
-
-############################################################
 # ECS task execution role (image pull, log write)
 ############################################################
 resource "aws_iam_role" "ecs_task_execution_role" {
@@ -122,7 +73,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_s3_attach" {
 # Lambda role & policy
 ############################################################
 resource "aws_iam_role" "lambda_role" {
-  name = "flights-athena-lambda-role"
+  name = "flights-api-lambda-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -139,22 +90,12 @@ resource "aws_iam_role" "lambda_role" {
 }
 
 resource "aws_iam_role_policy" "lambda_policy" {
-  name = "flights-athena-lambda-policy"
+  name = "flights-api-lambda-policy"
   role = aws_iam_role.lambda_role.id
 
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
-      {
-        Effect = "Allow",
-        Action = [
-          "athena:StartQueryExecution",
-          "athena:GetQueryExecution",
-          "athena:GetQueryResults",
-          "athena:StopQueryExecution"
-        ],
-        Resource = "*"
-      },
       {
         Effect = "Allow",
         Action = [
@@ -165,44 +106,6 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "arn:aws:s3:::${aws_s3_bucket.flights_bucket.bucket}",
           "arn:aws:s3:::${aws_s3_bucket.flights_bucket.bucket}/*"
         ]
-      },
-      {
-        Effect = "Allow",
-        Action = [
-          "s3:GetBucketLocation",
-          "s3:GetObject",
-          "s3:ListBucket",
-          "s3:PutObject"
-        ],
-        Resource = [
-          "arn:aws:s3:::${aws_s3_bucket.athena_query_results.bucket}",
-          "arn:aws:s3:::${aws_s3_bucket.athena_query_results.bucket}/*"
-        ]
-      },
-      {
-        Effect = "Allow",
-        Action = [
-          "glue:GetDatabase",
-          "glue:GetDatabases",
-          "glue:GetTable",
-          "glue:GetTables",
-          "glue:GetPartition",
-          "glue:GetPartitions"
-        ],
-        Resource = [
-          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:catalog",
-          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:database/${aws_glue_catalog_database.flights_db.name}",
-          "arn:aws:glue:${var.region}:${data.aws_caller_identity.current.account_id}:table/${aws_glue_catalog_database.flights_db.name}/*"
-        ]
-      },
-      {
-        Effect = "Allow",
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem"
-        ],
-        Resource = aws_dynamodb_table.flights_query_cache.arn
       },
       {
         Effect = "Allow",

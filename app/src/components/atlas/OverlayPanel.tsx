@@ -39,8 +39,6 @@ const buildApiUrl = (
   snapshot: MonthOption | null,
 ) => {
   const params = snapshotParams(snapshot);
-  if (selectedAirport) params.set("airport", selectedAirport.properties.IATA);
-  if (selectedAirline) params.set("airline_code", selectedAirline);
   const path = selectedAirport || selectedAirline ? "/routes" : "/airports";
   const query = params.toString();
   return `${API_BASE}${path}${query ? `?${query}` : ""}`;
@@ -146,6 +144,7 @@ const OverlayPanelBase = ({
               }}
               options={airportOptions}
               isClearable
+              isDisabled={loading}
               placeholder="Search for an airport"
             />
 
@@ -169,6 +168,7 @@ const OverlayPanelBase = ({
                 }}
                 options={destinationOptions}
                 isClearable
+                isDisabled={loading}
                 placeholder="Search for a destination"
               />
             )}
@@ -187,6 +187,7 @@ const OverlayPanelBase = ({
                 }}
                 options={airlineOptions}
                 isClearable
+                isDisabled={loading}
                 placeholder="Search for an airline"
               />
             )}
@@ -233,6 +234,7 @@ const OverlayPanelBase = ({
                   if (option) setSnapshot(option);
                 }}
                 options={monthOptions}
+                isDisabled={loading}
                 placeholder="Select a month"
                 getOptionLabel={(o) => o.label}
                 getOptionValue={(o) => `${o.year}-${o.month}`}
@@ -248,7 +250,7 @@ const OverlayPanelBase = ({
           )}
 
           <div role="status" className={styles.status}>
-            {loading && "Loading routes…"}
+            {loading && "Loading airports and routes…"}
           </div>
           {error && (
             <p role="alert" className={styles.error}>

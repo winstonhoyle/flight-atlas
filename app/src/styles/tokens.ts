@@ -1,6 +1,6 @@
 const cache = new Map<string, string>();
 
-/** Leaflet paints on canvas and SVG attributes, where var() doesn't work. */
+/** OpenLayers paints on canvas, where var() doesn't work. */
 export const tokenValue = (name: `--${string}`): string => {
   let value = cache.get(name);
   if (value === undefined) {

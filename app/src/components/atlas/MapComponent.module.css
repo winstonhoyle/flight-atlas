@@ -9,6 +9,25 @@
   height: 100%;
 }
 
+/* Sits over the map, under the panels, and takes its clicks while a month loads. */
+.loading {
+  display: grid;
+  position: absolute;
+  inset: 0;
+  place-items: center;
+  background: var(--fa-color-scrim);
+  cursor: progress;
+}
+
+.loadingLabel {
+  padding: var(--fa-space-1) var(--fa-space-2);
+  border-radius: var(--fa-radius-md);
+  background: var(--fa-color-surface);
+  box-shadow: var(--fa-shadow-1);
+  color: var(--fa-color-text);
+  font-size: var(--fa-font-size-2xs);
+}
+
 .infoButton {
   position: absolute;
   right: var(--fa-space-105);

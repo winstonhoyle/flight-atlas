@@ -14,6 +14,7 @@ type ComboboxProps<T> = {
   onChange: (option: T | null) => void;
   placeholder?: string;
   isClearable?: boolean;
+  isDisabled?: boolean;
   size?: "sm" | "md";
   getOptionLabel?: (option: T) => string;
   getOptionValue?: (option: T) => string;
@@ -42,6 +43,7 @@ export function Combobox<T>({
   onChange,
   placeholder,
   isClearable = false,
+  isDisabled = false,
   size = "md",
   getOptionLabel,
   getOptionValue,
@@ -54,6 +56,12 @@ export function Combobox<T>({
       onChange={onChange}
       placeholder={placeholder}
       isClearable={isClearable}
+      isDisabled={isDisabled}
+      // The panel scrolls, which would clip a menu rendered inside it.
+      menuPortalTarget={document.body}
+      menuPosition="fixed"
+      // react-select sets the portal's z-index inline, so a class can't override it.
+      styles={{ menuPortal: (base) => ({ ...base, zIndex: "var(--fa-z-menu)" }) }}
       getOptionLabel={getOptionLabel}
       getOptionValue={getOptionValue}
       unstyled
@@ -61,12 +69,19 @@ export function Combobox<T>({
       classNames={{
         container: () => [styles.container, styles[size]].join(" "),
         control: (state) =>
-          [styles.control, state.isFocused && styles.controlFocused].filter(Boolean).join(" "),
+          [
+            styles.control,
+            state.isFocused && styles.controlFocused,
+            state.isDisabled && styles.controlDisabled,
+          ]
+            .filter(Boolean)
+            .join(" "),
         valueContainer: () => styles.valueContainer,
         placeholder: () => styles.placeholder,
         indicatorsContainer: () => styles.indicators,
         dropdownIndicator: () => styles.indicator,
         clearIndicator: () => styles.indicator,
+        menuPortal: () => [styles.container, styles[size]].join(" "),
         menu: () => styles.menu,
         menuList: () => styles.menuList,
         option: (state) =>

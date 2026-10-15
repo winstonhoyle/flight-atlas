@@ -52,7 +52,7 @@ lambda-run:
 		-e AWS_PROFILE=$${AWS_PROFILE:-default} -e AWS_REGION=$(AWS_REGION) \
 		$(LAMBDA_IMAGE)
 
-EVENT ?= lambda/events/routes_atl.json
+EVENT ?= lambda/events/routes.json
 lambda-invoke:
 	@curl -s http://localhost:9000/2015-03-31/functions/function/invocations -d @$(EVENT) | python3 -m json.tool | head -40
 
@@ -76,7 +76,7 @@ scrape-check: .venv/.deps
 
 LIMIT ?= 0
 scrape-dry-run: .venv/.deps
-	cd ecs && OUTPUT_BASE=./output RUN_ATHENA=false SCRAPE_LIMIT=$(LIMIT) AIRPORTS=$(AIRPORTS) $(CURDIR)/.venv/bin/python create_routes.py
+	cd ecs && OUTPUT_BASE=./output SCRAPE_LIMIT=$(LIMIT) AIRPORTS=$(AIRPORTS) $(CURDIR)/.venv/bin/python create_routes.py
 
 tf-init:
 	cd infra && terraform init

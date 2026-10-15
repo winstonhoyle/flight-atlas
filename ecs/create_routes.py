@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 import posixpath
+import re
 import shutil
 import sys
 import tempfile
@@ -12,13 +14,8 @@ from functools import cache
 from urllib.parse import urlparse
 
 import boto3
-import numpy as np
 import pandas as pd
-import pyarrow as pa
-import pyarrow.dataset as ds
-import pyarrow.fs as pafs
 import requests
-from shapely import wkt
 from shapely.geometry import Point
 from tqdm import tqdm
 
@@ -51,16 +48,11 @@ file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
 S3_ROUTES_BUCKET = os.environ.get("S3_ROUTES_BUCKET", "bucket-flight-atlas-routes")
-S3_RESULTS_BUCKET = os.environ.get("S3_RESULTS_BUCKET", "bucket-flight-atlas-query-results")
-S3_PREFIX = os.environ.get("S3_PREFIX", "flights")
 REGION = os.environ.get("REGION", "us-west-1")
-DATABASE = os.environ.get("ATHENA_DB", "flights_db")
 
-# Point OUTPUT_BASE at a local folder to write Parquet locally; Athena is
-# skipped by default for non-s3 output.
+# Point OUTPUT_BASE at a local folder to write the JSON there instead of S3.
 OUTPUT_BASE = os.environ.get("OUTPUT_BASE") or f"s3://{S3_ROUTES_BUCKET}"
 IS_LOCAL_OUTPUT = not OUTPUT_BASE.startswith("s3://")
-RUN_ATHENA = os.environ.get("RUN_ATHENA", "false" if IS_LOCAL_OUTPUT else "true").lower() in ("1", "true", "yes")
 
 SCRAPE_LIMIT = int(os.environ.get("SCRAPE_LIMIT", "0"))
 AIRPORTS = {code.strip().upper() for code in os.environ.get("AIRPORTS", "").split(",") if code.strip()}
@@ -280,20 +272,16 @@ def scrape_us_airports(failed: list[str]) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values("Enplanements", ascending=False).reset_index(drop=True)
 
 
-def snapshot_dir(dataset: str, snapshot: tuple[int, int]) -> str:
+# The scraper reads regional brands as their own airline; the map shows the parent.
+AIRLINE_NAME_OVERRIDES = {"Delta Connection": "Delta Air Lines"}
+
+SNAPSHOT_FILES = ("airports.json", "airlines.json", "routes.json")
+SNAPSHOT_KEY = re.compile(r"(\d{4})/(\d{2})/routes\.json")
+
+
+def snapshot_prefix(snapshot: tuple[int, int]) -> str:
     year, month = snapshot
-    return f"{OUTPUT_BASE}/{dataset}/year={year}/month={month}"
-
-
-def _filesystem(uri: str) -> tuple[pafs.FileSystem, str]:
-    return pafs.FileSystem.from_uri(uri if not IS_LOCAL_OUTPUT else os.path.abspath(uri))
-
-
-def read_snapshot(dataset: str, snapshot: tuple[int, int]) -> pd.DataFrame:
-    fs, path = _filesystem(snapshot_dir(dataset, snapshot))
-    if fs.get_file_info(path).type == pafs.FileType.NotFound:
-        return pd.DataFrame()
-    return ds.dataset(path, filesystem=fs, format="parquet", partitioning="hive").to_table().to_pandas()
+    return f"{year}/{month:02d}/"
 
 
 @cache
@@ -306,22 +294,106 @@ def _bucket_and_key(uri: str) -> tuple[str, str]:
     return parsed.netloc, parsed.path.lstrip("/")
 
 
+def _s3_key(key: str) -> tuple[str, str]:
+    bucket, prefix = _bucket_and_key(OUTPUT_BASE)
+    return bucket, posixpath.join(prefix, key)
+
+
+def _dump(path: str, body) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(body, f, separators=(",", ":"))
+
+
+def _read_json(key: str):
+    if IS_LOCAL_OUTPUT:
+        path = os.path.join(OUTPUT_BASE, key)
+        if not os.path.exists(path):
+            return None
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    bucket, key = _s3_key(key)
+    try:
+        return json.loads(_s3().get_object(Bucket=bucket, Key=key)["Body"].read())
+    except _s3().exceptions.NoSuchKey:
+        return None
+
+
+def _keys() -> list[str]:
+    if IS_LOCAL_OUTPUT:
+        return [
+            os.path.relpath(os.path.join(root, name), OUTPUT_BASE).replace(os.sep, "/")
+            for root, _, names in os.walk(OUTPUT_BASE)
+            for name in names
+        ]
+    bucket, prefix = _bucket_and_key(OUTPUT_BASE)
+    prefix = prefix and prefix.rstrip("/") + "/"
+    pages = _s3().get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
+    return [obj["Key"][len(prefix) :] for page in pages for obj in page.get("Contents", [])]
+
+
+def read_snapshot(snapshot: tuple[int, int]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    prefix = snapshot_prefix(snapshot)
+    routes = _read_json(prefix + "routes.json") or []
+    airports = (_read_json(prefix + "airports.json") or {}).get("features", [])
+    flights_df = pd.DataFrame(routes, columns=["airline_code", "src_airport", "dst_airport"])
+    airports_df = pd.DataFrame(
+        [
+            {
+                "IATA": f["properties"]["IATA"],
+                "url": f["properties"]["url"],
+                "title": f["properties"]["Name"],
+                "geometry": Point(f["geometry"]["coordinates"]),
+            }
+            for f in airports
+        ],
+        columns=["IATA", "url", "title", "geometry"],
+    )
+    return flights_df, airports_df
+
+
 def clear_snapshot(snapshot: tuple[int, int]) -> None:
-    for dataset in (S3_PREFIX, "airports", "airlines"):
-        path = snapshot_dir(dataset, snapshot)
-        if IS_LOCAL_OUTPUT:
-            shutil.rmtree(path, ignore_errors=True)
-            continue
-        # The trailing slash keeps month=1 from matching month=10, 11, and 12.
-        bucket, prefix = _bucket_and_key(path + "/")
-        for page in _s3().get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
-            keys = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
-            if keys:
-                _s3().delete_objects(Bucket=bucket, Delete={"Objects": keys})
+    prefix = snapshot_prefix(snapshot)
+    if IS_LOCAL_OUTPUT:
+        shutil.rmtree(os.path.join(OUTPUT_BASE, prefix), ignore_errors=True)
+        return
+    bucket, key_prefix = _s3_key(prefix)
+    for page in _s3().get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=key_prefix):
+        keys = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+        if keys:
+            _s3().delete_objects(Bucket=bucket, Delete={"Objects": keys})
+
+
+def write_snapshot_list() -> list[tuple[int, int]]:
+    found = sorted({(int(m[1]), int(m[2])) for key in _keys() if (m := SNAPSHOT_KEY.fullmatch(key))}, reverse=True)
+    body = [{"month": str(month), "year": str(year)} for year, month in found]
+    if IS_LOCAL_OUTPUT:
+        _dump(os.path.join(OUTPUT_BASE, "snapshots.json"), body)
+    else:
+        bucket, key = _s3_key("snapshots.json")
+        _s3().put_object(Bucket=bucket, Key=key, Body=json.dumps(body), ContentType="application/json")
+    return found
+
+
+def airports_body(airports_df: pd.DataFrame) -> dict:
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [round(row.geometry.x, 6), round(row.geometry.y, 6)]},
+            "properties": {
+                "FAA": row.FAA if isinstance(row.FAA, str) and row.FAA else None,
+                "IATA": row.IATA,
+                "Name": row.title,
+                "url": row.url,
+                "destinations": int(row.destinations),
+            },
+        }
+        for row in airports_df.itertuples()
+    ]
+    return {"type": "FeatureCollection", "features": features}
 
 
 def upload_dir(local_dir: str) -> None:
-    """boto3 instead of pyarrow's S3 writer, whose multipart uploads fail S3's CRC64NVME check."""
     bucket, prefix = _bucket_and_key(OUTPUT_BASE)
     files = [os.path.join(root, name) for root, _, names in os.walk(local_dir) for name in names]
 
@@ -356,7 +428,7 @@ def merge_into_snapshot(
         if row.IATA in still_served and row.IATA not in us_iatas and row.IATA not in known:
             additional_destinations[row.url] = {
                 "IATA": row.IATA,
-                "geometry": wkt.loads(row.geometry),
+                "geometry": row.geometry,
                 "url": row.url,
                 "title": row.title,
             }
@@ -444,7 +516,7 @@ def main() -> None:
         logger.error(f"Retry just these after the run: make scrape AIRPORTS={','.join(failed_iatas)}")
 
     if AIRPORTS:
-        existing_flights = read_snapshot(S3_PREFIX, snapshot)
+        existing_flights, existing_airports = read_snapshot(snapshot)
         if existing_flights.empty:
             raise SystemExit(f"No {snapshot[0]}-{snapshot[1]:02d} snapshot to update. Run a full scrape first.")
         routes = merge_into_snapshot(
@@ -452,7 +524,7 @@ def main() -> None:
             AIRPORTS,
             us_iatas,
             existing_flights,
-            read_snapshot("airports", snapshot),
+            existing_airports,
             additional_destinations,
         )
 
@@ -462,167 +534,63 @@ def main() -> None:
 def write_outputs(
     usa_airports_df: pd.DataFrame, routes: list, additional_destinations: dict, snapshot: tuple[int, int]
 ) -> None:
-    additional_airports_df = pd.DataFrame([airline_dict for _, airline_dict in additional_destinations.items()])
+    additional_airports_df = pd.DataFrame(
+        [info for info in additional_destinations.values()], columns=["IATA", "url", "geometry", "title"]
+    )
 
     routes_df = pd.DataFrame(routes, columns=["airline_code", "src_airport", "dst_airport"])
-
-    routes_df = routes_df.merge(
-        usa_airports_df.rename(columns={"IATA": "src_airport", "geometry": "geometry_src"})[
-            ["src_airport", "geometry_src"]
-        ],
-        on="src_airport",
-        how="left",
-    )
-    routes_df = routes_df.merge(
-        usa_airports_df.rename(columns={"IATA": "dst_airport", "geometry": "geometry_dst"})[
-            ["dst_airport", "geometry_dst"]
-        ],
-        on="dst_airport",
-        how="left",
-    )
-
-    if len(additional_airports_df) > 0:
-        routes_df = routes_df.merge(
-            additional_airports_df.rename(columns={"IATA": "dst_airport", "geometry": "geometry_dst_new"}),
-            on="dst_airport",
-            how="left",
-        )
-        routes_df = routes_df.merge(
-            additional_airports_df.rename(columns={"IATA": "src_airport", "geometry": "geometry_src_new"}),
-            on="src_airport",
-            how="left",
-        )
-
-        # U.S. airports' geometry comes from the first merge, foreign airports' from this one.
-        routes_df["geometry_src"] = routes_df["geometry_src"].combine_first(routes_df["geometry_src_new"])
-        routes_df["geometry_dst"] = routes_df["geometry_dst"].combine_first(routes_df["geometry_dst_new"])
-
-    routes_df["src_geometry"] = routes_df["geometry_src"].apply(lambda g: g.wkt)
-    routes_df["dst_geometry"] = routes_df["geometry_dst"].apply(lambda g: g.wkt)
+    routes_df = routes_df[(routes_df["src_airport"].str.len() == 3) & (routes_df["dst_airport"].str.len() == 3)]
 
     # An unordered pair, so A to B and B to A count as one route.
-    routes_df["airport1"] = routes_df[["src_airport", "dst_airport"]].min(axis=1)
-    routes_df["airport2"] = routes_df[["src_airport", "dst_airport"]].max(axis=1)
-
-    unique_routes = routes_df.drop_duplicates(subset=["airline_code", "airport1", "airport2"])
-
-    route_counts = unique_routes.groupby("airline_code").size().reset_index(name="route_count")
+    pairs = pd.DataFrame(
+        {
+            "airline_code": routes_df["airline_code"],
+            "airport1": routes_df[["src_airport", "dst_airport"]].min(axis=1),
+            "airport2": routes_df[["src_airport", "dst_airport"]].max(axis=1),
+        }
+    ).drop_duplicates()
+    route_counts = pairs.groupby("airline_code").size()
 
     airlines_df = pd.DataFrame(airline_codes_dict.items(), columns=["name", "airline_code"])
+    airlines_df = airlines_df[airlines_df["airline_code"].isin(route_counts.index)]
+    airlines_df = airlines_df.assign(route_count=airlines_df["airline_code"].map(route_counts))
+    airlines_df = airlines_df.sort_values("route_count", ascending=False, kind="stable")
 
-    airlines_df = airlines_df.merge(route_counts, on="airline_code")
-    airlines_df = airlines_df.sort_values("route_count", ascending=False)
+    airports_df = pd.concat([usa_airports_df, additional_airports_df], ignore_index=True)[
+        ["FAA", "IATA", "url", "geometry", "title"]
+    ]
+    airports_df = airports_df[airports_df["IATA"].str.len() == 3]
+    destinations = routes_df.groupby("src_airport")["dst_airport"].nunique()
+    airports_df = airports_df.assign(destinations=airports_df["IATA"].map(destinations).fillna(0).astype(int))
+    airports_df = airports_df.sort_values("destinations", ascending=False, kind="stable")
 
-    routes_df = routes_df[["airline_code", "src_airport", "dst_airport", "src_geometry", "dst_geometry"]]
+    unplaced = (set(routes_df["src_airport"]) | set(routes_df["dst_airport"])) - set(airports_df["IATA"])
+    if unplaced:
+        raise ValueError(f"Routes reference airports with no coordinates: {', '.join(sorted(unplaced))}")
 
-    routes_df["year"], routes_df["month"] = snapshot
+    bodies = {
+        "airports.json": airports_body(airports_df),
+        "airlines.json": {
+            row.airline_code: AIRLINE_NAME_OVERRIDES.get(row.name, row.name) for row in airlines_df.itertuples()
+        },
+        "routes.json": routes_df.values.tolist(),
+    }
 
     # S3 output is staged locally and uploaded once every file is written.
     stage = OUTPUT_BASE if IS_LOCAL_OUTPUT else tempfile.mkdtemp(prefix="flight-atlas-")
     if IS_LOCAL_OUTPUT:
         clear_snapshot(snapshot)
-    routes_table = pa.Table.from_pandas(routes_df)
-
-    routes_dir = f"{stage}/{S3_PREFIX}/"
-    logger.info(f"Writing routes to {routes_dir}")
-
-    ds.write_dataset(
-        routes_table,
-        base_dir=routes_dir,
-        format="parquet",
-        partitioning=["year", "month", "airline_code", "src_airport"],
-        partitioning_flavor="hive",
-        existing_data_behavior="overwrite_or_ignore",
-        max_partitions=10_000,
-    )
-
-    airports_df = pd.concat([usa_airports_df, additional_airports_df], ignore_index=True)[
-        ["FAA", "IATA", "url", "geometry", "title"]
-    ]
-
-    unique_pairs_count = routes_df.groupby("src_airport")["dst_airport"].nunique().reset_index()
-    unique_pairs_count.rename(columns={"src_airport": "IATA", "dst_airport": "destinations"}, inplace=True)
-    airports_df = airports_df.merge(unique_pairs_count, on="IATA", how="left")
-    airports_df = airports_df.replace(np.nan, 0.0)
-    airports_df["destinations"] = airports_df["destinations"].astype(int)
-    airports_df[["FAA", "IATA", "url", "title"]] = airports_df[["FAA", "IATA", "url", "title"]].astype(str)
-
-    airports_df["geometry"] = airports_df["geometry"].apply(lambda g: g.wkt)
-
-    airports_df["year"], airports_df["month"] = snapshot
-
-    airport_table = pa.Table.from_pandas(airports_df)
-
-    airports_dir = f"{stage}/airports/"
-    logger.info(f"Writing airports to {airports_dir}")
-
-    ds.write_dataset(
-        data=airport_table,
-        base_dir=airports_dir,
-        format="parquet",
-        partitioning=["year", "month"],
-        partitioning_flavor="hive",
-        existing_data_behavior="overwrite_or_ignore",
-        basename_template="part-{i}.parquet",
-        filesystem=None,
-    )
-
-    airlines_df[["name", "airline_code"]] = airlines_df[["name", "airline_code"]].astype(str)
-    airlines_df["route_count"] = airlines_df["route_count"].astype(int)
-
-    airlines_df["year"], airlines_df["month"] = snapshot
-
-    airlines_table = pa.Table.from_pandas(airlines_df)
-
-    airlines_dir = f"{stage}/airlines/"
-    logger.info(f"Writing airlines to {airlines_dir}")
-
-    ds.write_dataset(
-        data=airlines_table,
-        base_dir=airlines_dir,
-        format="parquet",
-        partitioning=["year", "month"],
-        partitioning_flavor="hive",
-        existing_data_behavior="overwrite_or_ignore",
-        basename_template="part-{i}.parquet",
-        filesystem=None,
-    )
+    for name in SNAPSHOT_FILES:
+        path = os.path.join(stage, snapshot_prefix(snapshot), name)
+        logger.info(f"Writing {path}")
+        _dump(path, bodies[name])
 
     if not IS_LOCAL_OUTPUT:
         clear_snapshot(snapshot)
         upload_dir(stage)
         shutil.rmtree(stage)
 
-    if not RUN_ATHENA:
-        logger.info("RUN_ATHENA disabled; skipping Athena MSCK REPAIR step.")
-    else:
-        logger.info("Enabling tables for Athena")
-        athena = boto3.client("athena", region_name=REGION)
-        athena_output_dir = f"s3://{S3_RESULTS_BUCKET}/"
-
-        for table in ["airports", "flights", "airlines"]:
-            query = f"MSCK REPAIR TABLE {table};"
-
-            response = athena.start_query_execution(
-                QueryString=query,
-                QueryExecutionContext={"Database": DATABASE},
-                ResultConfiguration={"OutputLocation": athena_output_dir},
-            )
-            query_execution_id = response["QueryExecutionId"]
-            logger.info(f"Athena query ({table}) started: {query_execution_id}")
-
-            while True:
-                status = athena.get_query_execution(QueryExecutionId=query_execution_id)
-                state = status["QueryExecution"]["Status"]["State"]
-
-                if state in ["SUCCEEDED", "FAILED", "CANCELLED"]:
-                    break
-                time.sleep(2)
-
-            if state == "SUCCEEDED":
-                logger.info("MSCK REPAIR TABLE completed successfully!")
-            else:
-                logger.error(f"Query failed or cancelled: {state}")
+    logger.info(f"Snapshots: {write_snapshot_list()}")
 
 
 if __name__ == "__main__":

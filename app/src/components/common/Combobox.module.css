@@ -18,6 +18,11 @@
   min-height: 2rem;
 }
 
+.controlDisabled {
+  background: var(--fa-color-surface-muted);
+  cursor: not-allowed;
+}
+
 .controlFocused {
   outline: 2px solid var(--fa-color-focus);
   outline-offset: 2px;
@@ -53,7 +58,6 @@
   border-radius: var(--fa-radius-md);
   background: var(--fa-color-surface);
   box-shadow: var(--fa-shadow-2);
-  z-index: var(--fa-z-menu);
 }
 
 .menuList {

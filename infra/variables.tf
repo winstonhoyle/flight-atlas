@@ -16,39 +16,6 @@ variable "routes_bucket_name" {
   default     = "bucket-flight-atlas-routes"
 }
 
-variable "results_bucket_name" {
-  description = "S3 bucket for Athena query results"
-  type        = string
-  default     = "bucket-flight-atlas-query-results"
-}
-
-# ------------------------------
-# Athena Configuration
-# ------------------------------
-variable "athena_database_name" {
-  description = "Athena database name"
-  type        = string
-  default     = "flights_db"
-}
-
-variable "athena_routes_table_name" {
-  description = "Athena routes table name"
-  type        = string
-  default     = "flights"
-}
-
-variable "athena_airports_table_name" {
-  description = "Athena airports table name"
-  type        = string
-  default     = "airports"
-}
-
-variable "athena_airlines_table_name" {
-  description = "Athena airlines table name"
-  type        = string
-  default     = "airlines"
-}
-
 # ------------------------------
 # Container images
 # ------------------------------

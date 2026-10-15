@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
-import { fetchAirlines, fetchAirports } from "@/services/api";
-import type { Airlines, Airport, MonthOption } from "@/types";
+import { fetchAirlines, fetchAirports, fetchRoutes } from "@/services/api";
+import type { Airlines, Airport, MonthOption, RouteRow } from "@/types";
 
 const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-/** `undefined` waits for the snapshot list; `null` asks for the newest snapshot. */
-export const useAtlasData = (snapshot: MonthOption | null | undefined) => {
+type Month = { key: string; airports: Airport[]; routes: RouteRow[] };
+
+/** `null` asks for the newest snapshot. Keeps showing the previous month while the next one loads. */
+export const useAtlasData = (snapshot: MonthOption | null) => {
   const [airlines, setAirlines] = useState<Airlines>({});
-  const [airports, setAirports] = useState<Airport[]>([]);
+  const [month, setMonth] = useState<Month | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -20,13 +22,12 @@ export const useAtlasData = (snapshot: MonthOption | null | undefined) => {
     };
   }, []);
 
-  const key = snapshot === undefined ? null : `${snapshot?.year}-${snapshot?.month}`;
+  const key = snapshot ? `${snapshot.year}-${snapshot.month}` : "newest";
 
   useEffect(() => {
-    if (snapshot === undefined) return;
     let cancelled = false;
-    fetchAirports(snapshot)
-      .then((data) => !cancelled && setAirports(data))
+    Promise.all([fetchAirports(snapshot), fetchRoutes(snapshot)])
+      .then(([airports, routes]) => !cancelled && setMonth({ key, airports, routes }))
       .catch((err: unknown) => !cancelled && setError(errorMessage(err)));
     return () => {
       cancelled = true;
@@ -35,5 +36,11 @@ export const useAtlasData = (snapshot: MonthOption | null | undefined) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return { airports, airlines, error };
+  return {
+    airports: month?.airports ?? [],
+    routes: month?.routes ?? null,
+    airlines,
+    loading: month?.key !== key && !error,
+    error,
+  };
 };

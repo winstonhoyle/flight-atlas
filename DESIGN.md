@@ -11,7 +11,7 @@ of their way.
 ## The one rule
 
 **No colors, font sizes, or spacing values outside `app/src/styles/tokens.css`.** Components
-read tokens through `var(--fa-…)` in their CSS modules. Map code, which paints through Leaflet
+read tokens through `var(--fa-…)` in their CSS modules. Map code, which paints on an OpenLayers canvas
 where `var()` doesn't work, reads them with `tokenValue()` from `app/src/styles/tokens.ts`.
 Check before review:
 
@@ -29,9 +29,9 @@ Each component is three flat files in its feature folder: `Name.tsx`, `Name.modu
 | Folder | What lives there |
 | --- | --- |
 | `app/src/components/common/` | Domain-free building blocks: `Button`, `IconButton`, `Combobox`, `Panel`, `Dialog`, `ExternalLink` |
-| `app/src/components/atlas/` | The map page: `MapComponent`, `OverlayPanel`, `RouteInfoPanel`, `Legend`, `AirportMarker`, `WelcomeDialog` |
+| `app/src/components/atlas/` | The map page: `MapComponent`, `OverlayPanel`, `RouteInfo`, `Legend`, `WelcomeDialog` |
 | `app/src/icons/` | Inline SVG icons |
-| `app/src/styles/` | `tokens.css` (every value), `tokens.ts` (reads them from JS), `index.css` (base styles, Leaflet panes) |
+| `app/src/styles/` | `tokens.css` (every value), `tokens.ts` (reads them from JS), `index.css` (base styles) |
 
 A piece with no knowledge of airports or routes goes in `common/`. When two components start
 to share a layout, move it into `common/` instead of copying it.
@@ -51,6 +51,7 @@ does, and components read only roles, so changing what a role looks like is one 
 | `--fa-color-surface` | white | Panels, dialogs |
 | `--fa-color-surface-muted` | gray-5 `#f0f0f0` | API request box, hover |
 | `--fa-color-border` | gray-cool-10 `#dfe1e2` | Panel edges |
+| `--fa-color-scrim` | gray-90 at 50% | Dialog backdrop, the map while a month loads |
 | `--fa-color-primary` | blue-60v `#005ea2` | Buttons, links, selected options |
 | `--fa-color-primary-hover` | blue-warm-70v `#1a4480` | Button hover |
 | `--fa-color-primary-tint` | blue-5 `#eff6fb` | Focused option, outline button hover |
@@ -92,7 +93,7 @@ Counts use `font-variant-numeric: tabular-nums` so columns line up.
 - Spacing is the USWDS unit grid: `--fa-space-05` 4px, `-1` 8px, `-105` 12px, `-2` 16px, `-3` 24px.
 - Radius is `--fa-radius-sm` 2px, `-md` 4px (controls), `-lg` 8px (panels, dialogs), `-pill`.
 - Elevation is the USWDS shadow scale: `--fa-shadow-1` tooltips, `-2` panels and floating buttons, `-3` dialogs.
-- Controls sit above Leaflet's panes: `--fa-z-panel` 1000, `-floating` 1100, `-route-info` 1500, `-dialog` 2000, `-menu` 3000.
+- Controls sit above the map: `--fa-z-panel` 1000, `-floating` 1100, `-route-info` 1500, `-dialog` 2000, `-menu` 3000.
 - Touch targets are at least `--fa-target-min` (44px), except the compact icon buttons inside panels.
 
 ## Icons

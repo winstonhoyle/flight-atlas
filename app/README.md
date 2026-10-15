@@ -1,6 +1,6 @@
 # Flight Atlas app
 
-The map at flightatlas.io: React, TypeScript, and Leaflet, built with Vite. All data comes from
+The map at flightatlas.io: React, TypeScript, and OpenLayers, built with Vite. All data comes from
 the Flight Atlas API, so a local run needs no backend.
 
 ## Prerequisites
@@ -50,8 +50,8 @@ link follow the selection, and Back/Forward step through it.
 
 ## Data source
 
-The API answers `202` while a query runs, and the client polls until it finishes; see
-[lambda/README.md](../lambda/README.md#request-flow). Requests go through `src/services/api.ts`, which reads `VITE_API_BASE` and falls back to
+The app loads a month's airports and routes once, then filters routes by airport or airline
+in the browser; see [lambda/README.md](../lambda/README.md#request-flow). Requests go through `src/services/api.ts`, which reads `VITE_API_BASE` and falls back to
 `https://api.flightatlas.io`. To point the app at a different API, create `.env.local`:
 
 ```
@@ -64,13 +64,13 @@ VITE_API_BASE=https://your-api-host
 
 | Path                     | Contents                                                                                  |
 | ------------------------ | ----------------------------------------------------------------------------------------- |
-| `src/components/atlas/`  | The map page: map, overlay panel, route info, legend, markers, welcome dialog             |
+| `src/components/atlas/`  | The map page: map, airport tooltip, overlay panel, route info, legend, welcome dialog     |
 | `src/components/common/` | Domain-free pieces: `Button`, `IconButton`, `Combobox`, `Panel`, `Dialog`, `ExternalLink` |
 | `src/icons/`             | Inline SVG icons                                                                          |
 | `src/hooks/`             | Data hooks (airports and airlines, routes, months) and the URL sync                       |
-| `src/services/api.ts`    | API client, including polling while the API answers `202`                                 |
-| `src/styles/`            | `tokens.css` (every color, size, and space), base styles, Leaflet panes                   |
-| `src/utils/`             | Path parsing, destination bins, great-circle distance                                     |
+| `src/services/api.ts`    | API client; checks each response's shape                                                  |
+| `src/styles/`            | `tokens.css` (every color, size, and space), base styles                                  |
+| `src/utils/`             | Path parsing, destination bins, great-circle distance and arcs                            |
 | `src/types.ts`           | API response types                                                                        |
 | `scripts/`               | `build-pages.js` and `pages.js`, run after every build                                    |
 
@@ -87,5 +87,5 @@ runs. If the API is down, only the sitemap's home page is written.
 ## Tests
 
 Vitest with Testing Library in jsdom covers the API client, path parsing, destination bins,
-distance, and the combobox, dialog, link, legend, and route info components. The Leaflet map has
-no automated tests.
+distance, great-circle arcs, route filtering, and the combobox, dialog, link, legend, and route
+info components. The OpenLayers map has no automated tests.

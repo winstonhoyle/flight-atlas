@@ -6,7 +6,6 @@ const respond = (status: number, body: unknown) =>
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.useRealTimers();
 });
 
 describe("fetchMonths", () => {
@@ -29,52 +28,39 @@ describe("fetchMonths", () => {
     ]);
   });
 
-  it("polls past a 202 while the query runs", async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(respond(202, { status: "started", query_id: "q1" }))
-      .mockResolvedValueOnce(respond(200, [{ month: "10", year: "2026" }]));
-    vi.stubGlobal("fetch", fetchMock);
-
-    const pending = fetchMonths();
-    await vi.runAllTimersAsync();
-
-    expect(await pending).toEqual([{ label: "October 2026", month: "10", year: 2026 }]);
-  });
-
-  it("gives up on a shape that never matches", async () => {
-    vi.useFakeTimers();
+  it("rejects a response of the wrong shape", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => respond(200, { error: "nope" })),
     );
+    await expect(fetchMonths()).rejects.toThrow("Unexpected response from /available_months");
+  });
 
-    const pending = expect(fetchMonths()).rejects.toThrow("Exceeded maximum attempts");
-    await vi.runAllTimersAsync();
-    await pending;
+  it("rejects an HTTP error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => respond(404, { error: "No data for that month" })),
+    );
+    await expect(fetchMonths()).rejects.toThrow("HTTP error 404");
   });
 });
 
 describe("fetchRoutes", () => {
-  it("polls past 202 responses until the routes arrive", async () => {
-    vi.useFakeTimers();
-    const routes = { type: "FeatureCollection", features: [] };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(respond(202, { status: "started", query_id: "q1" }))
-      .mockResolvedValueOnce(respond(200, routes));
+  it("fetches the whole month's routes", async () => {
+    const rows = [["DL", "ATL", "BOS"]];
+    const fetchMock = vi.fn(async () => respond(200, rows));
     vi.stubGlobal("fetch", fetchMock);
 
-    const pending = fetchRoutes({
-      airportIata: "ATL",
-      snapshot: { label: "October 2026", month: "10", year: 2026 },
-    });
-    await vi.runAllTimersAsync();
+    expect(await fetchRoutes({ label: "October 2026", month: "10", year: 2026 })).toEqual(rows);
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/routes\?year=2026&month=10$/));
+  });
 
-    expect(await pending).toEqual(routes);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0][0]).toContain("/routes?year=2026&month=10&airport=ATL");
+  it("rejects rows that aren't [airline, src, dst]", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => respond(200, [["DL", "ATL"]])),
+    );
+    await expect(fetchRoutes(null)).rejects.toThrow("Unexpected response from /routes");
   });
 });
 

@@ -26,4 +26,11 @@ describe("Combobox", () => {
     render(<Combobox label="Airport" options={OPTIONS} value={OPTIONS[0]} onChange={() => {}} />);
     expect(screen.getByText("Atlanta (ATL)")).toBeInTheDocument();
   });
+
+  it("can't be used while disabled", () => {
+    render(
+      <Combobox label="Airport" options={OPTIONS} value={null} onChange={() => {}} isDisabled />,
+    );
+    expect(screen.getByLabelText("Airport")).toBeDisabled();
+  });
 });

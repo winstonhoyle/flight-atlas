@@ -10,8 +10,6 @@ botocore==1.43.42
     # via
     #   boto3
     #   s3transfer
-geojson==3.3.0
-    # via -r requirements.in
 jmespath==1.1.0
     # via
     #   boto3

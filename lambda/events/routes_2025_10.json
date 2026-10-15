@@ -1,9 +1,10 @@
 {
   "version": "2.0",
   "rawPath": "/routes",
-  "rawQueryString": "airport=ATL",
+  "rawQueryString": "year=2025&month=10",
   "queryStringParameters": {
-    "airport": "ATL"
+    "year": "2025",
+    "month": "10"
   },
   "requestContext": {
     "http": {

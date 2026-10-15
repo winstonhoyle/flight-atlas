@@ -36,22 +36,6 @@ body {
   }
 }
 
-.leaflet-container {
+.ol-viewport {
   font-family: var(--fa-font-sans);
-}
-
-.leaflet-routesPane-pane {
-  z-index: 400;
-}
-
-.leaflet-highlightPane-pane {
-  z-index: 450;
-}
-
-.leaflet-airportsPane-pane {
-  z-index: 500;
-}
-
-.leaflet-airportTooltipPane-pane {
-  z-index: 1200 !important;
 }

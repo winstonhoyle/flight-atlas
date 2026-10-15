@@ -18,6 +18,8 @@ export type RouteProperties = {
 
 export type Routes = FeatureCollection<LineString, RouteProperties>;
 
+export type RouteRow = [airline_code: string, src_airport: string, dst_airport: string];
+
 export type Airlines = Record<string, string>;
 
 export type AirlineSummary = {

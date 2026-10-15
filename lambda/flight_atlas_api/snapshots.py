@@ -1,3 +1,4 @@
+import json
 import time
 
 from . import aws
@@ -16,18 +17,8 @@ def available(settings: Settings) -> list[Snapshot]:
     if _cached and time.monotonic() - _cached[0] < _TTL_SECONDS:
         return _cached[1]
 
-    found: set[Snapshot] = set()
-    pages = (
-        aws.glue()
-        .get_paginator("get_partitions")
-        .paginate(DatabaseName=settings.database, TableName=settings.airlines_table)
-    )
-    for page in pages:
-        for partition in page["Partitions"]:
-            year, month = partition["Values"][:2]
-            found.add((int(year), int(month)))
-
-    snapshots = sorted(found, reverse=True)
+    body = aws.s3().get_object(Bucket=settings.bucket, Key="snapshots.json")["Body"].read()
+    snapshots = [(int(s["year"]), int(s["month"])) for s in json.loads(body)]
     _cached = (time.monotonic(), snapshots)
     return snapshots
 

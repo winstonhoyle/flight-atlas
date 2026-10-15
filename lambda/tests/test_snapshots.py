@@ -8,8 +8,7 @@ SNAPSHOTS = [(2026, 2), (2026, 1), (2025, 12), (2025, 10)]
 
 
 def test_lists_snapshots_newest_first(fake):
-    fake.partitions = [(2025, 10), (2026, 2), (2025, 10), (2026, 1)]
-    assert snapshots.available(settings()) == [(2026, 2), (2026, 1), (2025, 10)]
+    assert snapshots.available(settings()) == [(2026, 2), (2026, 1), (2025, 12), (2025, 10)]
 
 
 @pytest.mark.parametrize(

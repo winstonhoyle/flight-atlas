@@ -2,17 +2,17 @@
 
 The scraper builds the monthly data snapshot from English Wikipedia. It reads the
 [list of U.S. airports](https://en.wikipedia.org/wiki/List_of_airports_in_the_United_States),
-then each airport's "Airlines and destinations" table, and writes three Parquet datasets to S3
-partitioned by `year` and `month`:
+then each airport's "Airlines and destinations" table, and writes three JSON files to
+`YYYY/MM/` in S3:
 
-| Dataset | Rows | Extra partitions |
-| --- | --- | --- |
-| `flights/` | One per airline, origin, and destination, with both airports' coordinates | `airline_code`, `src_airport` |
-| `airports/` | U.S. airports plus the foreign and remote airports they fly to, with destination counts | |
-| `airlines/` | Airline names, codes, and route counts | |
+| File | Contents |
+| --- | --- |
+| `airports.json` | GeoJSON points: U.S. airports plus the foreign and remote airports they fly to, with destination counts |
+| `airlines.json` | Airline code to name |
+| `routes.json` | Every route as `[airline_code, src_airport, dst_airport]` |
 
-Then it runs `MSCK REPAIR TABLE` so Athena sees the new partitions. A full run takes 30 to 45
-minutes.
+It then rewrites `snapshots.json` at the bucket root with every month that has data. A full
+run takes 30 to 45 minutes.
 
 ## Monthly refresh
 
@@ -22,7 +22,7 @@ AWS blocks ECS task launches for this account (`RunTask` returns `BlockedExcepti
 ```bash
 cp ecs/.env.sample ecs/.env       # once
 make scrape-check                 # a few minutes: reads every airport page, writes nothing
-make scrape                       # 30 to 45 minutes: writes this month's snapshot to S3, repairs Athena
+make scrape                       # 30 to 45 minutes: writes this month's snapshot to S3
 make scrape AIRPORTS=DFW,ORD      # re-scrapes only these airports into this month's snapshot
 ```
 
@@ -36,21 +36,21 @@ with the return legs to foreign airports that came from their pages, and recompu
 airport and airline totals. It needs a full snapshot for the month to exist. Every write
 clears the month's snapshot first, so routes an airline dropped don't linger.
 
-The API serves the new snapshot within ten minutes, as soon as its snapshot list refreshes
-(see [lambda/README.md](../lambda/README.md#request-flow)).
+The site shows the new snapshot within an hour: the Lambda rereads `snapshots.json` every ten
+minutes, and Cloudflare caches the newest month for an hour (see
+[lambda/README.md](../lambda/README.md#request-flow)).
 
 To try a run against live Wikipedia without touching AWS:
 
 ```bash
-make scrape-dry-run LIMIT=2       # the two busiest airports, Parquet to ecs/output/
+make scrape-dry-run LIMIT=2       # the two busiest airports, JSON to ecs/output/
 ```
 
 Destination links are resolved through the MediaWiki API, 50 titles per request and cached
 for the run. When Wikipedia answers `429`, the scraper waits as long as it asks and retries.
 
-For S3 output, the datasets are written to a local temp folder first and uploaded with boto3
-once every file exists; pyarrow's own S3 writer fails S3's CRC64NVME checksum on multipart
-uploads. Every run appends its log to `ecs/scrape.log` (gitignored), including the traceback
+For S3 output, the files are written to a local temp folder first and uploaded once every
+file exists. Every run appends its log to `ecs/scrape.log` (gitignored), including the traceback
 if it crashes.
 
 ## Settings
@@ -60,16 +60,15 @@ From `ecs/.env` (copy [`.env.sample`](.env.sample)) or the environment:
 | Variable | Purpose |
 | --- | --- |
 | `OUTPUT_BASE` | Where to write. Unset writes to `s3://$S3_ROUTES_BUCKET`; a folder path writes locally |
-| `RUN_ATHENA` | `true` runs `MSCK REPAIR TABLE` after writing |
 | `SCRAPE_LIMIT` | Scrape only the N busiest airports. `0` scrapes all |
 | `AIRPORTS` | Comma-separated IATA codes to re-scrape or check; empty means all |
-| `S3_ROUTES_BUCKET`, `S3_RESULTS_BUCKET`, `S3_PREFIX`, `ATHENA_DB`, `REGION` | AWS targets |
+| `S3_ROUTES_BUCKET`, `REGION` | AWS targets |
 
 ## Layout
 
 | File | Job |
 | --- | --- |
-| `create_routes.py` | The run: fetches pages, resolves redirects and airline codes, writes the datasets |
+| `create_routes.py` | The run: fetches pages, resolves redirects and airline codes, writes the JSON |
 | `wiki_parse.py` | Every function that reads Wikipedia HTML. No network calls |
 | `tests/` | pytest for both, with saved pages in `tests/fixtures/` |
 
