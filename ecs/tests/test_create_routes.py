@@ -141,7 +141,7 @@ FULL_ROUTES = [
 
 def write_full_snapshot(listed_airports):
     listed_airports = listed_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"])
-    extra = foreign("OME", -165.44, 64.51) | foreign("AUK", -164.66, 62.68)
+    extra = foreign("OME", -165.44, 64.51) | foreign("AUK", -164.66, 62.68) | foreign("KWT", -161.44, 60.79)
     create_routes.write_outputs(listed_airports, FULL_ROUTES, extra, SNAPSHOT)
     return listed_airports
 

@@ -643,13 +643,14 @@ def write_outputs(
         ["FAA", "IATA", "url", "geometry", "title"]
     ]
     airports_df = airports_df[airports_df["IATA"].str.len() == 3]
-    destinations = routes_df.groupby("src_airport")["dst_airport"].nunique()
-    airports_df = airports_df.assign(destinations=airports_df["IATA"].map(destinations).fillna(0).astype(int))
-    airports_df = airports_df.sort_values("destinations", ascending=False, kind="stable")
-
     unplaced = (set(routes_df["src_airport"]) | set(routes_df["dst_airport"])) - set(airports_df["IATA"])
     if unplaced:
         raise ValueError(f"Routes reference airports with no coordinates: {', '.join(sorted(unplaced))}")
+
+    destinations = routes_df.groupby("src_airport")["dst_airport"].nunique()
+    airports_df = airports_df[airports_df["IATA"].isin(destinations.index)]
+    airports_df = airports_df.assign(destinations=airports_df["IATA"].map(destinations).astype(int))
+    airports_df = airports_df.sort_values("destinations", ascending=False, kind="stable")
 
     bodies = {
         "airports.json": airports_body(airports_df),
