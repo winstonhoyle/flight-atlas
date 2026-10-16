@@ -21,7 +21,7 @@ rewrites it. A past snapshot requested by `year` and `month` never changes and g
 | Module | Job |
 | --- | --- |
 | `flight_atlas_api/handler.py` | Entry point: dispatches by path, maps errors to responses |
-| `flight_atlas_api/params.py` | Validates `year` and `month` |
+| `flight_atlas_api/params.py` | Validates `airport`, `airline_code`, `year`, `month` |
 | `flight_atlas_api/snapshots.py` | Reads `snapshots.json` (cached 10 minutes) and picks one |
 | `flight_atlas_api/responses.py` | JSON responses, CORS and `Cache-Control` headers |
 | `flight_atlas_api/config.py`, `aws.py` | Bucket name from env, S3 client created on first use |

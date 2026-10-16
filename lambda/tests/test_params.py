@@ -7,6 +7,10 @@ def test_reads_dates():
     assert parse_query({"year": "2026", "month": "2"}) == Query(year=2026, month=2)
 
 
+def test_reads_codes_in_any_case():
+    assert parse_query({"airport": " gso", "airline_code": "aa"}) == Query(airport="GSO", airline="AA")
+
+
 @pytest.mark.parametrize(
     "params, message",
     [

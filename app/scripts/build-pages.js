@@ -36,7 +36,7 @@ const main = async () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, renderPage(template, page));
   }
-  const urls = [`${SITE_URL}/`, ...pages.map((p) => p.url).sort()];
+  const urls = [`${SITE_URL}/`, `${SITE_URL}/docs`, ...pages.map((p) => p.url).sort()];
   fs.writeFileSync(
     path.join(DIST, "sitemap.xml"),
     sitemapXml(urls, new Date().toISOString().slice(0, 10)),

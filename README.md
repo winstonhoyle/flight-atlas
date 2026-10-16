@@ -31,7 +31,7 @@ container images, pushes them to ECR tagged with the commit SHA, and applies Ter
 
 ## API
 
-All endpoints are `GET` and return JSON. The data comes in monthly snapshots, listed by
+Interactive docs: [flightatlas.io/docs](https://flightatlas.io/docs). All endpoints are `GET` and return JSON. The data comes in monthly snapshots, listed by
 `/available_months`. `/airports`, `/airlines`, and `/routes` take optional `year` and `month`
 parameters to pick one:
 
@@ -108,10 +108,13 @@ Responses for the newest snapshot are cached for an hour; a past snapshot named 
 
 **Method:** GET  
 
-**Parameters:** `year`, `month`: the snapshot (optional, see above)
+**Parameters:**
+- `airport`: IATA code of the origin airport (optional)
+- `airline_code`: IATA code of the airline (optional)
+- `year`, `month`: the snapshot (optional, see above)
 
-Every route in the snapshot, as `[airline_code, src_airport, dst_airport]`. Airport coordinates
-are in `/airports`.
+The snapshot's routes as `[airline_code, src_airport, dst_airport]`, filtered by `airport`
+and `airline_code` when given. Airport coordinates are in `/airports`.
 
 **Response:**
 ```json

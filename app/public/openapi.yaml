@@ -1,0 +1,148 @@
+openapi: 3.0.3
+info:
+  title: Flight Atlas API
+  version: "1.0"
+  description: |
+    Direct U.S. flight routes, scraped from Wikipedia in monthly snapshots.
+
+    Each IP may make 100 requests in 10 seconds; after that, its requests get `429` for 10 seconds.
+    Responses for the newest snapshot are cached for an hour; a past snapshot named by `year`
+    and `month` is cached for a year.
+servers:
+  - url: https://api.flightatlas.io
+components:
+  parameters:
+    year:
+      name: year
+      in: query
+      description: Four-digit year. Requires `month`, and returns `404` if that snapshot doesn't exist.
+      schema: { type: integer, minimum: 2000, maximum: 2100, example: 2026 }
+    month:
+      name: month
+      in: query
+      description: Month from 1 to 12. Without `year`, it picks that month's newest year, or the newest snapshot if that month has none. Leave out both to get the newest snapshot.
+      schema: { type: integer, minimum: 1, maximum: 12, example: 10 }
+  responses:
+    BadRequest:
+      description: Invalid parameter
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No snapshot for that year and month
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Rate limit exceeded. Back off and retry.
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, example: No data for that month }
+paths:
+  /routes:
+    get:
+      summary: Routes in a snapshot
+      description: Every route as `[airline_code, src_airport, dst_airport]`, filtered by `airport` and `airline_code` when given. Airport coordinates are in `/airports`.
+      parameters:
+        - $ref: "#/components/parameters/year"
+        - $ref: "#/components/parameters/month"
+        - name: airport
+          in: query
+          description: IATA code of the origin airport (any case)
+          schema: { type: string, pattern: "^[A-Za-z]{3}$", example: GSO }
+        - name: airline_code
+          in: query
+          description: IATA code of the airline (any case)
+          schema: { type: string, pattern: "^[A-Za-z0-9]{2,3}$", example: AA }
+      responses:
+        "200":
+          description: Routes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: array
+                  minItems: 3
+                  maxItems: 3
+                  items: { type: string }
+                example: [["G4", "GSO", "PIE"], ["AA", "GSO", "CLT"]]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /airports:
+    get:
+      summary: Airports in a snapshot
+      parameters:
+        - $ref: "#/components/parameters/year"
+        - $ref: "#/components/parameters/month"
+      responses:
+        "200":
+          description: GeoJSON FeatureCollection of airport points
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type: { type: string, example: FeatureCollection }
+                  features:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type: { type: string, example: Feature }
+                        geometry:
+                          type: object
+                          properties:
+                            type: { type: string, example: Point }
+                            coordinates:
+                              type: array
+                              items: { type: number }
+                              example: [-84.42806, 33.63667]
+                        properties:
+                          type: object
+                          properties:
+                            FAA: { type: string, example: ATL }
+                            IATA: { type: string, example: ATL }
+                            Name: { type: string, example: Hartsfield–Jackson Atlanta International Airport }
+                            url: { type: string }
+                            destinations: { type: integer, example: 247 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /airlines:
+    get:
+      summary: Airlines in a snapshot
+      parameters:
+        - $ref: "#/components/parameters/year"
+        - $ref: "#/components/parameters/month"
+      responses:
+        "200":
+          description: Airline names keyed by IATA code
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: { type: string }
+                example: { AA: American Airlines, DL: Delta Air Lines }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /available_months:
+    get:
+      summary: Snapshots, newest first
+      responses:
+        "200":
+          description: Months with data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    month: { type: string, example: "10" }
+                    year: { type: string, example: "2026" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }

@@ -1,3 +1,4 @@
+import json
 import logging
 
 from . import aws, snapshots
@@ -14,6 +15,11 @@ def _available_months(_query: Query, config: Settings) -> dict:
     return json_response(200, body)
 
 
+def _matches(route: list[str], query: Query) -> bool:
+    airline, src, _dst = route
+    return (query.airport in (None, src)) and (query.airline in (None, airline))
+
+
 def _snapshot_file(name: str):
     def endpoint(query: Query, config: Settings) -> dict:
         available = snapshots.available(config)
@@ -27,6 +33,8 @@ def _snapshot_file(name: str):
         except s3.exceptions.NoSuchKey:
             return error(404, "No data for that month")
         pinned = query.year is not None and snapshot != available[0]
+        if name == "routes.json" and (query.airport or query.airline):
+            body = json.dumps([r for r in json.loads(body) if _matches(r, query)]).encode()
         return raw_response(200, body.decode(), CACHE_FOREVER if pinned else CACHE_OK)
 
     return endpoint

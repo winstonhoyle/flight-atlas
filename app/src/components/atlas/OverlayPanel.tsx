@@ -39,6 +39,8 @@ const buildApiUrl = (
   snapshot: MonthOption | null,
 ) => {
   const params = snapshotParams(snapshot);
+  if (selectedAirport) params.set("airport", selectedAirport.properties.IATA);
+  if (selectedAirline) params.set("airline_code", selectedAirline);
   const path = selectedAirport || selectedAirline ? "/routes" : "/airports";
   const query = params.toString();
   return `${API_BASE}${path}${query ? `?${query}` : ""}`;

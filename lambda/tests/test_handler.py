@@ -20,6 +20,14 @@ def test_serves_the_newest_snapshots_file(fake):
     assert headers["Cache-Control"].startswith("public, max-age=3600")
 
 
+def test_routes_filter_by_origin_and_airline(fake):
+    rows = [["DL", "ATL", "BOS"], ["AA", "ATL", "DFW"], ["AA", "GSO", "CLT"]]
+    fake.objects["2026/02/routes.json"] = json.dumps(rows).encode()
+    assert call("/routes", airport="atl")[1] == rows[:2]
+    assert call("/routes", airline_code="AA")[1] == rows[1:]
+    assert call("/routes", airport="ATL", airline_code="AA")[1] == [rows[1]]
+
+
 def test_a_past_month_is_cached_forever(fake):
     fake.objects["2025/12/airlines.json"] = b'{"DL": "Delta Air Lines"}'
     status, body, headers = call("/airlines", year="2025", month="12")
@@ -50,6 +58,7 @@ def test_available_months_come_from_the_snapshot_list(fake):
         ("/airports", {"month": "13"}, 400, "Invalid month. Must be an integer between 1 and 12"),
         ("/airports", {"year": "2024", "month": "5"}, 404, "No data for that month"),
         ("/airports", {"year": "2026", "month": "1"}, 404, "No data for that month"),
+        ("/routes", {"airport": "ATLX"}, 400, "Invalid parameter: ATLX"),
         ("/nowhere", {}, 404, "Not found"),
     ],
 )
