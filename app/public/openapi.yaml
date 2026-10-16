@@ -3,7 +3,7 @@ info:
   title: Flight Atlas API
   version: "1.0"
   description: |
-    Direct U.S. flight routes, scraped from Wikipedia in monthly snapshots.
+    Direct North American flight routes, scraped from Wikipedia in monthly snapshots.
 
     Each IP may make 100 requests in 10 seconds; after that, its requests get `429` for 10 seconds.
     Responses for the newest snapshot are cached for an hour; a past snapshot named by `year`

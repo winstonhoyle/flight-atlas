@@ -47,6 +47,24 @@ file_handler = logging.FileHandler(os.path.join(os.path.dirname(os.path.abspath(
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
+REPORT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scrape-report.json")
+
+
+class _Problems(logging.Handler):
+    """Collects this run's warnings and errors for scrape-report.json."""
+
+    def __init__(self):
+        super().__init__(logging.WARNING)
+        self.records: list[dict] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append({"level": record.levelname, "message": record.getMessage()})
+
+
+problems = _Problems()
+logger.addHandler(problems)
+report: dict = {}
+
 S3_ROUTES_BUCKET = os.environ.get("S3_ROUTES_BUCKET", "bucket-flight-atlas-routes")
 REGION = os.environ.get("REGION", "us-west-1")
 
@@ -56,6 +74,7 @@ IS_LOCAL_OUTPUT = not OUTPUT_BASE.startswith("s3://")
 
 SCRAPE_LIMIT = int(os.environ.get("SCRAPE_LIMIT", "0"))
 AIRPORTS = {code.strip().upper() for code in os.environ.get("AIRPORTS", "").split(",") if code.strip()}
+COUNTRIES = {code.strip().upper() for code in os.environ.get("COUNTRIES", "").split(",") if code.strip()}
 
 USER_AGENT = "FlightAtlasBot/1.0 (https://github.com/winstonhoyle)"
 
@@ -215,7 +234,7 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destin
             known = airports_df.loc[airports_df["url"] == dst_url, "IATA"]
 
             if not known.empty:
-                # Both ends are U.S. airports; the reverse route comes from the other page.
+                # Both ends are listed airports; the reverse route comes from the other page.
                 destinations.append([airline_code, src_iata, known.iloc[0]])
                 continue
 
@@ -231,7 +250,7 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destin
                     "title": page.title,
                 }
 
-            # International and remote airports have no page of their own here, so add both ways.
+            # Unlisted airports (overseas, remote villages) aren't scraped themselves, so add both ways.
             dst_iata = additional_destinations[dst_url]["IATA"]
             destinations.append([airline_code, src_iata, dst_iata])
             destinations.append([airline_code, dst_iata, src_iata])
@@ -239,28 +258,52 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destin
     return destinations
 
 
-def scrape_us_airports(failed: list[str]) -> pd.DataFrame:
-    soup = fetch_soup("https://en.wikipedia.org/wiki/List_of_airports_in_the_United_States")
-    listed = sorted(
-        wiki_parse.parse_airport_list(soup),
-        key=lambda a: a.enplanements or 0,
-        reverse=True,
-    )
+def list_airports() -> list[tuple[str, wiki_parse.ListedAirport]]:
+    """(country, airport) from every country's list pages, deduplicated by IATA, busiest first."""
+    canada_index = fetch_soup(wiki_parse.wiki_url("List_of_airports_in_Canada"))
+    airport_lists = {
+        "US": ["List_of_airports_in_the_United_States"],
+        "MX": ["List_of_airports_in_Mexico"],
+        "CA": wiki_parse.parse_list_links(canada_index, "List_of_airports_in_Canada_("),
+    }
+    unknown = COUNTRIES - airport_lists.keys()
+    if unknown:
+        raise SystemExit(f"Unknown COUNTRIES: {', '.join(sorted(unknown))}. Use {', '.join(airport_lists)}")
+
+    listed: dict[str, tuple[str, wiki_parse.ListedAirport]] = {}
+    for country, titles in airport_lists.items():
+        for title in titles:
+            for airport in wiki_parse.parse_airport_list(fetch_soup(wiki_parse.wiki_url(title))):
+                listed.setdefault(airport.iata, (country, airport))
+    # Busiest first, so the largest airlines' codes are looked up early.
+    return sorted(listed.values(), key=lambda item: (item[1].enplanements is None, -(item[1].enplanements or 0)))
+
+
+def is_target(country: str, iata: str) -> bool:
+    return iata in AIRPORTS or country in COUNTRIES
+
+
+def scrape_listed_airports(failed: list[str], known_points: dict[str, Point]) -> pd.DataFrame:
+    """Every listed airport with its coordinates. Non-targets reuse `known_points` (IATA to Point) when present."""
+    listed = list_airports()
     if SCRAPE_LIMIT:
         listed = listed[:SCRAPE_LIMIT]
-    pages = resolve_pages([a.airport_title for a in listed if a.airport_title])
+    pages = resolve_pages([a.airport_title for _, a in listed])
     rows = []
-    for airport in tqdm(listed, desc="Parsing Airports"):
-        page = pages.get(airport.airport_title) if airport.airport_title else None
-        point = get_coordinate(page.url) if page else None
+    for country, airport in tqdm(listed, desc="Parsing Airports"):
+        page = pages.get(airport.airport_title)
+        point = None if is_target(country, airport.iata) else known_points.get(airport.iata)
+        if page and point is None:
+            point = get_coordinate(page.url)
         if page is None or point is None:
-            failed.append(airport.airport_title or airport.iata)
+            failed.append(airport.airport_title)
             continue
         rows.append(
             {
                 "FAA": airport.faa,
                 "IATA": airport.iata,
                 "ICAO": airport.icao,
+                "Country": country,
                 "url": page.url,
                 "Role": airport.role,
                 "Enplanements": airport.enplanements,
@@ -268,8 +311,7 @@ def scrape_us_airports(failed: list[str]) -> pd.DataFrame:
                 "title": page.title,
             }
         )
-    # Busiest first, so the largest airlines' codes are looked up early.
-    return pd.DataFrame(rows).sort_values("Enplanements", ascending=False).reset_index(drop=True)
+    return pd.DataFrame(rows)
 
 
 # The scraper reads regional brands as their own airline; the map shows the parent.
@@ -406,26 +448,44 @@ def upload_dir(local_dir: str) -> None:
     logger.info(f"Uploaded {len(files)} files to s3://{bucket}/{prefix}")
 
 
+def load_airline_codes(snapshot: tuple[int, int]) -> None:
+    """Adds the snapshot's airline names, so airlines on carried-over routes stay in airlines.json."""
+    for code, name in (_read_json(snapshot_prefix(snapshot) + "airlines.json") or {}).items():
+        airline_codes_dict.setdefault(name, code)
+
+
+def one_sided_routes(routes: list[list[str]], scraped_iatas: set[str]) -> list[dict]:
+    """Legs between two scraped airports whose reverse leg the other airport's page doesn't list."""
+    legs = {tuple(r) for r in routes}
+    # Airports with no outgoing legs had no readable table; check_airport reports those already.
+    has_table = {src for _, src, _ in legs}
+    return [
+        {"airline": airline, "listed_by": src, "missing_from": dst}
+        for airline, src, dst in sorted(legs)
+        if src in scraped_iatas and dst in scraped_iatas and dst in has_table and (airline, dst, src) not in legs
+    ]
+
+
 def merge_into_snapshot(
     new_routes: list[list[str]],
     targets: set[str],
-    us_iatas: set[str],
+    scraped_iatas: set[str],
     existing_flights: pd.DataFrame,
     existing_airports: pd.DataFrame,
     additional_destinations: dict,
 ) -> list[list[str]]:
     """
     Replaces the targets' routes in an existing snapshot. A target's page also produced the
-    return legs from foreign airports, so those go too; routes from other U.S. airports stay.
+    return legs from unlisted airports, so those go too; routes from other listed airports stay.
     """
     src, dst = existing_flights["src_airport"], existing_flights["dst_airport"]
-    replaced = src.isin(targets) | (dst.isin(targets) & ~src.isin(us_iatas))
+    replaced = src.isin(targets) | (dst.isin(targets) & ~src.isin(scraped_iatas))
     kept = existing_flights.loc[~replaced, ["airline_code", "src_airport", "dst_airport"]]
 
     known = {info["IATA"] for info in additional_destinations.values()}
     still_served = set(kept["src_airport"]) | set(kept["dst_airport"])
     for row in existing_airports.itertuples():
-        if row.IATA in still_served and row.IATA not in us_iatas and row.IATA not in known:
+        if row.IATA in still_served and row.IATA not in scraped_iatas and row.IATA not in known:
             additional_destinations[row.url] = {
                 "IATA": row.IATA,
                 "geometry": row.geometry,
@@ -457,12 +517,11 @@ def check_airport(url: str) -> list[str]:
 
 def check_airports() -> int:
     """Reads every listed airport's page without writing anything. Returns the number of airports with problems."""
-    soup = fetch_soup("https://en.wikipedia.org/wiki/List_of_airports_in_the_United_States")
-    listed = [a for a in wiki_parse.parse_airport_list(soup) if not AIRPORTS or a.iata in AIRPORTS]
-    pages = resolve_pages([a.airport_title for a in listed if a.airport_title])
+    listed = [a for country, a in list_airports() if not (AIRPORTS or COUNTRIES) or is_target(country, a.iata)]
+    pages = resolve_pages([a.airport_title for a in listed])
     report: dict[str, list[str]] = {}
     for airport in tqdm(listed, desc="Checking airports"):
-        page = pages.get(airport.airport_title) if airport.airport_title else None
+        page = pages.get(airport.airport_title)
         if page is None:
             report[airport.iata] = ["no Wikipedia page"]
             continue
@@ -486,24 +545,35 @@ def main() -> None:
     if IS_LOCAL_OUTPUT:
         os.makedirs(OUTPUT_BASE, exist_ok=True)
     snapshot = (datetime.now().year, datetime.now().month)
+    partial = bool(AIRPORTS or COUNTRIES)
+
+    known_points: dict[str, Point] = {}
+    if partial:
+        existing_flights, existing_airports = read_snapshot(snapshot)
+        if existing_flights.empty:
+            raise SystemExit(f"No {snapshot[0]}-{snapshot[1]:02d} snapshot to update. Run a full scrape first.")
+        known_points = dict(zip(existing_airports["IATA"], existing_airports["geometry"], strict=True))
+        load_airline_codes(snapshot)
 
     failed: list[str] = []
-    usa_airports_df = scrape_us_airports(failed)
-    us_iatas = set(usa_airports_df["IATA"])
+    listed_airports_df = scrape_listed_airports(failed, known_points)
+    scraped_iatas = set(listed_airports_df["IATA"])
 
-    targets = usa_airports_df
-    if AIRPORTS:
-        unknown = AIRPORTS - us_iatas
+    targets = listed_airports_df
+    if partial:
+        unknown = AIRPORTS - scraped_iatas
         if unknown:
-            raise SystemExit(f"Not in the U.S. airport list: {', '.join(sorted(unknown))}")
-        targets = usa_airports_df[usa_airports_df["IATA"].isin(AIRPORTS)]
+            raise SystemExit(f"Not in the airport lists: {', '.join(sorted(unknown))}")
+        targets = listed_airports_df[
+            listed_airports_df["IATA"].isin(AIRPORTS) | listed_airports_df["Country"].isin(COUNTRIES)
+        ]
 
     routes: list[list[str]] = []
     additional_destinations: dict = {}
     for i in tqdm(range(len(targets)), desc="Parsing Airports"):
         src_iata = targets.iloc[i]["IATA"]
         try:
-            routes.extend(get_destinations(src_iata, usa_airports_df, additional_destinations))
+            routes.extend(get_destinations(src_iata, listed_airports_df, additional_destinations))
         except Exception as e:
             failed.append(targets.iloc[i]["url"])
             logger.error(f"Failure getting destinations, url: {targets.iloc[i]['url']}, Exception: {e}")
@@ -511,28 +581,38 @@ def main() -> None:
 
     for item in failed:
         logger.error(f"Failed: {item}")
-    failed_iatas = sorted(set(usa_airports_df.loc[usa_airports_df["url"].isin(failed), "IATA"]))
-    if failed_iatas:
-        logger.error(f"Retry just these after the run: make scrape AIRPORTS={','.join(failed_iatas)}")
+    failed_iatas = sorted(set(listed_airports_df.loc[listed_airports_df["url"].isin(failed), "IATA"]))
+    retry = f"make scrape AIRPORTS={','.join(failed_iatas)}" if failed_iatas else None
+    if retry:
+        logger.error(f"Retry just these after the run: {retry}")
 
-    if AIRPORTS:
-        existing_flights, existing_airports = read_snapshot(snapshot)
-        if existing_flights.empty:
-            raise SystemExit(f"No {snapshot[0]}-{snapshot[1]:02d} snapshot to update. Run a full scrape first.")
+    if partial:
         routes = merge_into_snapshot(
             routes,
-            AIRPORTS,
-            us_iatas,
+            set(targets["IATA"]),
+            scraped_iatas,
             existing_flights,
             existing_airports,
             additional_destinations,
         )
 
-    write_outputs(usa_airports_df, routes, additional_destinations, snapshot)
+    one_sided = one_sided_routes(routes, scraped_iatas)
+    logger.info(f"{len(one_sided)} routes are listed by only one of their airports; see {REPORT_PATH}")
+    report.update(
+        snapshot=f"{snapshot[0]}-{snapshot[1]:02d}",
+        airports=sorted(AIRPORTS),
+        countries=sorted(COUNTRIES),
+        targets=len(targets),
+        routes=len(routes),
+        failed=failed_iatas,
+        retry=retry,
+        one_sided_routes=one_sided,
+    )
+    write_outputs(listed_airports_df, routes, additional_destinations, snapshot)
 
 
 def write_outputs(
-    usa_airports_df: pd.DataFrame, routes: list, additional_destinations: dict, snapshot: tuple[int, int]
+    listed_airports_df: pd.DataFrame, routes: list, additional_destinations: dict, snapshot: tuple[int, int]
 ) -> None:
     additional_airports_df = pd.DataFrame(
         [info for info in additional_destinations.values()], columns=["IATA", "url", "geometry", "title"]
@@ -555,8 +635,11 @@ def write_outputs(
     airlines_df = airlines_df[airlines_df["airline_code"].isin(route_counts.index)]
     airlines_df = airlines_df.assign(route_count=airlines_df["airline_code"].map(route_counts))
     airlines_df = airlines_df.sort_values("route_count", ascending=False, kind="stable")
+    unnamed = set(route_counts.index) - set(airlines_df["airline_code"])
+    if unnamed:
+        raise ValueError(f"Routes reference airlines with no name: {', '.join(sorted(unnamed))}")
 
-    airports_df = pd.concat([usa_airports_df, additional_airports_df], ignore_index=True)[
+    airports_df = pd.concat([listed_airports_df, additional_airports_df], ignore_index=True)[
         ["FAA", "IATA", "url", "geometry", "title"]
     ]
     airports_df = airports_df[airports_df["IATA"].str.len() == 3]
@@ -598,6 +681,15 @@ if __name__ == "__main__":
         if "--check" in sys.argv:
             sys.exit(1 if check_airports() else 0)
         main()
-    except Exception:
+        report["status"] = "ok"
+    except BaseException as e:
         logger.exception("Scrape failed")
+        report["status"] = f"failed: {type(e).__name__}: {e}"
         raise
+    finally:
+        if "--check" not in sys.argv:
+            _dump(
+                REPORT_PATH,
+                report | {"finished": datetime.now().isoformat(timespec="seconds"), "problems": problems.records},
+            )
+            logger.info(f"Report: {REPORT_PATH}")

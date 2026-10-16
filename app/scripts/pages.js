@@ -42,10 +42,10 @@ export const airlinePage = (code, name) => {
   return {
     path: `airline/${code}`,
     title: `${name} routes | ${SITE_NAME}`,
-    description: `Every direct route ${name} (${code}) flies from U.S. airports, on a map.`,
+    description: `Every direct route ${name} (${code}) flies from North American airports, on a map.`,
     url,
     heading: `${name} (${code}) routes`,
-    summary: `The direct routes ${name} flies from U.S. airports.`,
+    summary: `The direct routes ${name} flies from North American airports.`,
     data: { "@context": "https://schema.org", "@type": "Airline", name, iataCode: code, url },
   };
 };

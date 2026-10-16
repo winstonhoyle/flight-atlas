@@ -31,7 +31,7 @@ def soup_of(html: str) -> BeautifulSoup:
 def wiki_title(href: str) -> str | None:
     """The article title an href points to, or None for non-article links."""
     href = unquote(href)
-    if "/wiki/" not in href:
+    if "/wiki/" not in href or "redlink=1" in href:
         return None
     title, _, fragment = href.split("/wiki/", 1)[1].partition("#")
     if fragment.startswith("cite_note") or title.startswith(_SKIPPED_NAMESPACES):
@@ -142,28 +142,65 @@ class ListedAirport:
     enplanements: int | None
 
 
+# The U.S., Mexico and Canada lists name and order their columns differently.
+_LIST_COLUMNS = {
+    "city": ("City", "City served", "Community"),
+    "faa": ("FAA",),
+    "iata": ("IATA",),
+    "icao": ("ICAO",),
+    "airport": ("Airport", "Airport name"),
+    "role": ("Role",),
+    "enplanements": ("Enplanements",),
+}
+_LIST_END_SECTIONS = {"Military only airports", "Defunct airports"}
+
+
 def parse_airport_list(soup: BeautifulSoup) -> list[ListedAirport]:
-    table = soup.find("table", {"class": "wikitable"})
-    if table is None:
+    """Rows with an IATA code and an airport link, from every wikitable with an IATA column."""
+    tables = []
+    for table in soup.find_all("table", {"class": "wikitable"}):
+        rows = table.find_all("tr")
+        names = [clean_text(th.get_text(" ")) for th in rows[0].find_all("th")] if rows else []
+        if "IATA" in names:
+            columns = {
+                key: next((names.index(a) for a in aliases if a in names), None)
+                for key, aliases in _LIST_COLUMNS.items()
+            }
+            tables.append((columns, rows[1:]))
+    if not tables:
         raise LookupError("No airports table")
 
     airports = []
-    for tr in table.find_all("tr"):
-        cells = tr.find_all("td")
-        if len(cells) < 7 or not clean_text(cells[1].text):
-            continue
-        city, faa, iata, icao, airport, role, enplanements = cells[:7]
-        link = airport.find("a", href=True)
-        count = clean_text(enplanements.text).replace(",", "")
-        airports.append(
-            ListedAirport(
-                city=clean_text(city.text),
-                faa=clean_text(faa.text),
-                iata=clean_text(iata.text),
-                icao=clean_text(icao.text),
-                airport_title=wiki_title(link["href"]) if link else None,
-                role=clean_text(role.text),
-                enplanements=int(count) if count.isdigit() else None,
+    for columns, rows in tables:
+        for tr in rows:
+            cells = tr.find_all("td")
+            if not cells:
+                if clean_text(tr.get_text()) in _LIST_END_SECTIONS:
+                    break
+                continue
+            by_key = {key: cells[i] for key, i in columns.items() if i is not None and i < len(cells)}
+            text = {key: clean_text(cell.get_text()) for key, cell in by_key.items()}
+            link = by_key["airport"].find("a", href=True) if "airport" in by_key else None
+            title = wiki_title(link["href"]) if link else None
+            # Canada links some small fields to a list page, whose coordinates aren't the airport's.
+            if not title or title.startswith("List_of_") or not re.fullmatch(r"[A-Z]{3}", text.get("iata", "")):
+                continue
+            count = text.get("enplanements", "").replace(",", "")
+            airports.append(
+                ListedAirport(
+                    city=text.get("city", ""),
+                    faa=text.get("faa", ""),
+                    iata=text["iata"],
+                    icao=text.get("icao", ""),
+                    airport_title=title,
+                    role=text.get("role", ""),
+                    enplanements=int(count) if count.isdigit() else None,
+                )
             )
-        )
     return airports
+
+
+def parse_list_links(soup: BeautifulSoup, prefix: str) -> list[str]:
+    """Distinct article titles starting with prefix, in page order."""
+    titles = (wiki_title(a["href"]) for a in soup.find_all("a", href=True))
+    return list(dict.fromkeys(t for t in titles if t and t.startswith(prefix)))

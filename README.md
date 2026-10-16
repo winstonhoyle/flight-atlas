@@ -1,6 +1,6 @@
 # Flight Atlas
 
-Flight Atlas maps the direct flight routes between U.S. airports, built from Wikipedia's
+Flight Atlas maps the direct flight routes between airports in the U.S., Canada and Mexico, built from Wikipedia's
 airline and destination tables. Live at [flightatlas.io](https://flightatlas.io).
 
 ![Flight Atlas logo](app/public/logo.svg)

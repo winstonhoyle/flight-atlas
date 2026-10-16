@@ -113,7 +113,7 @@ export const OverlayPanel = ({
     <Panel id="overlay-panel" className={styles.panel}>
       <div className={styles.header}>
         <div>
-          <h1 className={styles.title}>Direct U.S. flight routes</h1>
+          <h1 className={styles.title}>Direct flight routes</h1>
           {snapshot && <p className={styles.snapshot}>Data from {snapshot.label}</p>}
         </div>
         <IconButton

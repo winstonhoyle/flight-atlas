@@ -68,15 +68,16 @@ deploy-containers:
 	docker push $(ECR_REGISTRY)/$(LAMBDA_IMAGE)
 
 AIRPORTS ?=
+COUNTRIES ?=
 scrape: .venv/.deps
-	cd ecs && AIRPORTS=$(AIRPORTS) $(CURDIR)/.venv/bin/python create_routes.py
+	cd ecs && AIRPORTS=$(AIRPORTS) COUNTRIES=$(COUNTRIES) $(CURDIR)/.venv/bin/python create_routes.py
 
 scrape-check: .venv/.deps
-	cd ecs && AIRPORTS=$(AIRPORTS) $(CURDIR)/.venv/bin/python create_routes.py --check
+	cd ecs && AIRPORTS=$(AIRPORTS) COUNTRIES=$(COUNTRIES) $(CURDIR)/.venv/bin/python create_routes.py --check
 
 LIMIT ?= 0
 scrape-dry-run: .venv/.deps
-	cd ecs && OUTPUT_BASE=./output SCRAPE_LIMIT=$(LIMIT) AIRPORTS=$(AIRPORTS) $(CURDIR)/.venv/bin/python create_routes.py
+	cd ecs && OUTPUT_BASE=./output SCRAPE_LIMIT=$(LIMIT) AIRPORTS=$(AIRPORTS) COUNTRIES=$(COUNTRIES) $(CURDIR)/.venv/bin/python create_routes.py
 
 tf-init:
 	cd infra && terraform init

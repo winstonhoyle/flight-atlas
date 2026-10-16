@@ -10,6 +10,7 @@ from wiki_parse import (
     parse_coordinates,
     parse_destination_row,
     parse_iata,
+    parse_list_links,
     soup_of,
     wiki_title,
 )
@@ -106,6 +107,36 @@ def test_airport_list_skips_state_rows_and_reads_counts():
     assert bhm.enplanements == 1596510
 
 
+def test_mexico_list_keeps_civil_airports_with_an_iata_code():
+    airports = parse_airport_list(fixture("mexico_airport_list.html"))
+    assert [(a.iata, a.icao, a.airport_title) for a in airports] == [
+        ("ACA", "MMAA", "Acapulco_International_Airport"),
+        ("MEX", "MMMX", "Mexico_City_International_Airport"),
+    ]
+    assert (airports[0].city, airports[0].faa, airports[0].role, airports[0].enplanements) == ("Acapulco", "", "", None)
+
+
+def test_canada_list_reads_both_tables_and_skips_list_links():
+    airports = parse_airport_list(fixture("canada_airport_list.html"))
+    assert [(a.iata, a.icao, a.airport_title, a.city) for a in airports] == [
+        ("YXX", "CYXX", "Abbotsford_International_Airport", "Abbotsford"),
+        ("YBG", "CYBG", "CFB_Bagotville", "La Baie"),
+    ]
+
+
+def test_list_links():
+    soup = html(
+        '<a href="https://en.wikipedia.org/wiki/List_of_airports_in_Canada_(A–B)#A">A</a>'
+        '<a href="https://en.wikipedia.org/wiki/List_of_airports_in_Canada_(A–B)#B">B</a>'
+        '<a href="/wiki/List_of_airports_in_Canada_(C–D)">C</a>'
+        '<a href="/wiki/List_of_heliports_in_Canada">Heliports</a>'
+    )
+    assert parse_list_links(soup, "List_of_airports_in_Canada_(") == [
+        "List_of_airports_in_Canada_(A–B)",
+        "List_of_airports_in_Canada_(C–D)",
+    ]
+
+
 @pytest.mark.parametrize(
     "raw, cleaned",
     [
@@ -138,6 +169,7 @@ def test_clean_text_strips_footnotes(raw, cleaned):
         ("/wiki/Help:IPA", None),
         ("/wiki/File:Map.png", None),
         ("https://www.example.com/schedule", None),
+        ("https://en.wikipedia.org/wiki/Aerovega?action=edit&redlink=1", None),
     ],
 )
 def test_wiki_title(href, title):

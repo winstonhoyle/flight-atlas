@@ -1,13 +1,15 @@
 # Flight Atlas scraper
 
-The scraper builds the monthly data snapshot from English Wikipedia. It reads the
-[list of U.S. airports](https://en.wikipedia.org/wiki/List_of_airports_in_the_United_States),
-then each airport's "Airlines and destinations" table, and writes three JSON files to
+The scraper builds the monthly data snapshot from English Wikipedia. It reads the airport lists for the
+[U.S.](https://en.wikipedia.org/wiki/List_of_airports_in_the_United_States),
+[Mexico](https://en.wikipedia.org/wiki/List_of_airports_in_Mexico) and
+[Canada](https://en.wikipedia.org/wiki/List_of_airports_in_Canada) (split over sub-pages; only
+rows with an IATA code and their own article), then each airport's "Airlines and destinations" table, and writes three JSON files to
 `YYYY/MM/` in S3:
 
 | File | Contents |
 | --- | --- |
-| `airports.json` | GeoJSON points: U.S. airports plus the foreign and remote airports they fly to, with destination counts |
+| `airports.json` | GeoJSON points: listed airports plus the overseas and remote airports they fly to, with destination counts |
 | `airlines.json` | Airline code to name |
 | `routes.json` | Every route as `[airline_code, src_airport, dst_airport]` |
 
@@ -24,6 +26,7 @@ cp ecs/.env.sample ecs/.env       # once
 make scrape-check                 # a few minutes: reads every airport page, writes nothing
 make scrape                       # 30 to 45 minutes: writes this month's snapshot to S3
 make scrape AIRPORTS=DFW,ORD      # re-scrapes only these airports into this month's snapshot
+make scrape COUNTRIES=CA,MX       # re-scrapes only these countries' airports the same way
 ```
 
 `scrape-check` runs the same parsers as a scrape on every airport's page and lists the ones
@@ -31,9 +34,13 @@ with no coordinates, no destinations table, or airlines it can't identify, then 
 `AIRPORTS=` value to recheck them. A full scrape ends with the same kind of line for any
 airport that failed, so a retry never repeats the whole run.
 
-With `AIRPORTS`, the scraper replaces those airports' routes in this month's snapshot, along
-with the return legs to foreign airports that came from their pages, and recomputes the
-airport and airline totals. It needs a full snapshot for the month to exist. Every write
+With `AIRPORTS` or `COUNTRIES`, the scraper replaces those airports' routes in this month's
+snapshot, along with the return legs to unlisted airports that came from their pages, and
+recomputes the airport and airline totals. Other airports keep their coordinates from the
+snapshot instead of being refetched. `COUNTRIES=CA,MX` on top of a U.S.-only month adds
+Canada and Mexico without re-scraping the U.S.
+
+It needs a full snapshot for the month to exist. Every write
 clears the month's snapshot first, so routes an airline dropped don't linger.
 
 The site shows the new snapshot within an hour: the Lambda rereads `snapshots.json` every ten
@@ -53,6 +60,18 @@ For S3 output, the files are written to a local temp folder first and uploaded o
 file exists. Every run appends its log to `ecs/scrape.log` (gitignored), including the traceback
 if it crashes.
 
+Every scrape also overwrites `ecs/scrape-report.json` (gitignored) with:
+
+| Key | Contents |
+| --- | --- |
+| `status` | `ok`, or `failed: <exception>` |
+| `failed`, `retry` | Airports that failed, and the `make scrape AIRPORTS=...` line to retry them |
+| `one_sided_routes` | `{airline, listed_by, missing_from}` for routes between two listed airports that only one page lists. They stay in the snapshot; fix them on Wikipedia or ignore them |
+| `problems` | Every warning and error the run logged, as `{level, message}` |
+
+A run stops before writing if any route's airline has no name, so a partial run can't upload an
+`airlines.json` with gaps.
+
 ## Settings
 
 From `ecs/.env` (copy [`.env.sample`](.env.sample)) or the environment:
@@ -62,6 +81,7 @@ From `ecs/.env` (copy [`.env.sample`](.env.sample)) or the environment:
 | `OUTPUT_BASE` | Where to write. Unset writes to `s3://$S3_ROUTES_BUCKET`; a folder path writes locally |
 | `SCRAPE_LIMIT` | Scrape only the N busiest airports. `0` scrapes all |
 | `AIRPORTS` | Comma-separated IATA codes to re-scrape or check; empty means all |
+| `COUNTRIES` | Comma-separated country codes (`US`, `CA`, `MX`) to re-scrape or check, like `AIRPORTS` |
 | `S3_ROUTES_BUCKET`, `REGION` | AWS targets |
 
 ## Layout

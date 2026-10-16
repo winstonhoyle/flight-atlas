@@ -53,7 +53,7 @@ def wikipedia(monkeypatch):
 
 
 @pytest.fixture
-def us_airports():
+def listed_airports():
     return pd.DataFrame(
         [
             {
@@ -70,9 +70,9 @@ def us_airports():
     )
 
 
-def test_routes_from_a_real_page(wikipedia, us_airports):
+def test_routes_from_a_real_page(wikipedia, listed_airports):
     extra: dict = {}
-    routes = create_routes.get_destinations("BET", us_airports, extra)
+    routes = create_routes.get_destinations("BET", listed_airports, extra)
 
     # A U.S. destination gets one direction; the other comes from that airport's own page.
     assert ["AS", "BET", "ANC"] in routes
@@ -86,27 +86,27 @@ def test_routes_from_a_real_page(wikipedia, us_airports):
     assert all(len(code) == 3 for _, src, dst in routes for code in (src, dst))
 
 
-def test_airlines_without_a_code_are_skipped(wikipedia, us_airports):
-    routes = create_routes.get_destinations("BET", us_airports, {})
+def test_airlines_without_a_code_are_skipped(wikipedia, listed_airports):
+    routes = create_routes.get_destinations("BET", listed_airports, {})
     to_atmautluak = {airline for airline, src, dst in routes if dst == "4A2"}
     assert to_atmautluak == {"GV", "7H"}  # Ryan Air has no code on its page
     assert all(airline for airline, _, _ in routes)
 
 
-def test_a_bad_link_drops_only_that_destination(wikipedia, us_airports):
-    routes = create_routes.get_destinations("BET", us_airports, {})
+def test_a_bad_link_drops_only_that_destination(wikipedia, listed_airports):
+    routes = create_routes.get_destinations("BET", listed_airports, {})
     assert ["GV", "BET", "AUK"] in routes
     assert WIKI + "Chefornak_Airport" not in wikipedia
 
 
-def test_an_airport_missing_from_the_list_has_no_routes(wikipedia, us_airports):
-    assert create_routes.get_destinations("ZZZ", us_airports, {}) == []
+def test_an_airport_missing_from_the_list_has_no_routes(wikipedia, listed_airports):
+    assert create_routes.get_destinations("ZZZ", listed_airports, {}) == []
 
 
-def test_a_page_without_a_destinations_table_has_no_routes(wikipedia, us_airports):
+def test_a_page_without_a_destinations_table_has_no_routes(wikipedia, listed_airports):
     airports = pd.concat(
         [
-            us_airports,
+            listed_airports,
             pd.DataFrame([{"IATA": "XXX", "url": WIKI + "Stub_Airport", "geometry": Point(0, 0)}]),
         ]
     )
@@ -139,19 +139,19 @@ FULL_ROUTES = [
 ]
 
 
-def write_full_snapshot(us_airports):
-    us_airports = us_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"])
+def write_full_snapshot(listed_airports):
+    listed_airports = listed_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"])
     extra = foreign("OME", -165.44, 64.51) | foreign("AUK", -164.66, 62.68)
-    create_routes.write_outputs(us_airports, FULL_ROUTES, extra, SNAPSHOT)
-    return us_airports
+    create_routes.write_outputs(listed_airports, FULL_ROUTES, extra, SNAPSHOT)
+    return listed_airports
 
 
 def read_json(root, key):
     return json.loads((root / key).read_text(encoding="utf-8"))
 
 
-def test_write_outputs_writes_the_months_json(local_output, us_airports):
-    write_full_snapshot(us_airports)
+def test_write_outputs_writes_the_months_json(local_output, listed_airports):
+    write_full_snapshot(listed_airports)
 
     assert sorted(map(tuple, read_json(local_output, "2026/10/routes.json"))) == sorted(map(tuple, FULL_ROUTES))
 
@@ -170,10 +170,10 @@ def test_write_outputs_writes_the_months_json(local_output, us_airports):
     assert read_json(local_output, "snapshots.json") == [{"month": "10", "year": "2026"}]
 
 
-def test_routes_to_an_airport_without_coordinates_are_refused(local_output, us_airports):
+def test_routes_to_an_airport_without_coordinates_are_refused(local_output, listed_airports):
     with pytest.raises(ValueError, match="OME"):
         create_routes.write_outputs(
-            us_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"]),
+            listed_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"]),
             [["AS", "ANC", "OME"]],
             {},
             SNAPSHOT,
@@ -201,14 +201,41 @@ def test_merge_replaces_only_the_target_and_its_foreign_return_legs():
     assert [info["IATA"] for info in extra.values()] == ["OME"]
 
 
-def test_rescraping_one_airport_updates_the_snapshot_in_place(local_output, us_airports):
-    us_airports = write_full_snapshot(us_airports)
+def test_merging_mexico_keeps_us_routes_and_replaces_mexicos_own():
+    existing = pd.DataFrame(
+        [
+            ["AA", "DFW", "ORD"],
+            ["AA", "ORD", "DFW"],
+            ["AM", "DFW", "MEX"],
+            ["AM", "MEX", "DFW"],
+            ["AM", "MEX", "CUN"],
+            ["AM", "CUN", "MEX"],
+            ["AM", "MEX", "MAD"],
+            ["AM", "MAD", "MEX"],
+        ],
+        columns=["airline_code", "src_airport", "dst_airport"],
+    )
+    airports = pd.DataFrame(
+        [{"IATA": "MAD", "url": WIKI + "Madrid_Airport", "geometry": Point(-3.57, 40.47), "title": "Madrid"}]
+    )
+    new = [["Y4", "MEX", "DFW"], ["Y4", "MEX", "CUN"], ["Y4", "CUN", "MEX"]]
+
+    routes = create_routes.merge_into_snapshot(
+        new, {"MEX", "CUN"}, {"DFW", "ORD", "MEX", "CUN"}, existing, airports, extra := {}
+    )
+
+    assert sorted(routes) == sorted([["AA", "DFW", "ORD"], ["AA", "ORD", "DFW"], ["AM", "DFW", "MEX"], *new])
+    assert extra == {}
+
+
+def test_rescraping_one_airport_updates_the_snapshot_in_place(local_output, listed_airports):
+    listed_airports = write_full_snapshot(listed_airports)
 
     flights, airports = create_routes.read_snapshot(SNAPSHOT)
     routes = create_routes.merge_into_snapshot(
         [["AS", "BET", "ANC"]], {"BET"}, {"BET", "ANC"}, flights, airports, extra := {}
     )
-    create_routes.write_outputs(us_airports, routes, extra, SNAPSHOT)
+    create_routes.write_outputs(listed_airports, routes, extra, SNAPSHOT)
 
     flights, airports = create_routes.read_snapshot(SNAPSHOT)
     pairs = set(zip(flights["airline_code"], flights["src_airport"], flights["dst_airport"], strict=True))
@@ -216,10 +243,49 @@ def test_rescraping_one_airport_updates_the_snapshot_in_place(local_output, us_a
     assert "AUK" not in set(airports["IATA"])
 
 
-def test_clearing_a_snapshot_leaves_other_months(local_output, us_airports):
-    write_full_snapshot(us_airports)
+def test_a_partial_run_keeps_names_of_airlines_it_didnt_see(local_output, listed_airports, monkeypatch):
+    listed_airports = write_full_snapshot(listed_airports)
+    monkeypatch.setattr(create_routes, "airline_codes_dict", {"Alaska Airlines": "AS"})
+
+    create_routes.load_airline_codes(SNAPSHOT)
+    flights, airports = create_routes.read_snapshot(SNAPSHOT)
+    routes = create_routes.merge_into_snapshot(
+        [["AS", "BET", "ANC"]], {"BET"}, {"BET", "ANC"}, flights, airports, extra := {}
+    )
+    routes.append(["GV", "ANC", "OME"])
+    create_routes.write_outputs(listed_airports, routes, extra, SNAPSHOT)
+
+    assert read_json(local_output, "2026/10/airlines.json") == {"AS": "Alaska Airlines", "GV": "Grant Aviation"}
+
+
+def test_routes_on_an_unnamed_airline_are_refused(local_output, listed_airports, monkeypatch):
+    monkeypatch.setattr(create_routes, "airline_codes_dict", {"Alaska Airlines": "AS"})
+    with pytest.raises(ValueError, match="GV"):
+        create_routes.write_outputs(
+            listed_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"]),
+            [["AS", "BET", "ANC"], ["GV", "ANC", "BET"]],
+            {},
+            SNAPSHOT,
+        )
+
+
+def test_one_sided_routes():
+    routes = [
+        ["AA", "ATL", "GSO"],
+        ["AA", "GSO", "CLT"],
+        ["AA", "CLT", "GSO"],
+        ["AA", "ATL", "YYT"],  # YYT's page has no readable table, so it lists nothing
+        ["AC", "YYZ", "LHR"],  # LHR isn't scraped
+    ]
+    assert create_routes.one_sided_routes(routes, {"ATL", "GSO", "CLT", "YYT", "YYZ"}) == [
+        {"airline": "AA", "listed_by": "ATL", "missing_from": "GSO"}
+    ]
+
+
+def test_clearing_a_snapshot_leaves_other_months(local_output, listed_airports):
+    write_full_snapshot(listed_airports)
     create_routes.write_outputs(
-        us_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"]),
+        listed_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"]),
         [["AS", "BET", "ANC"]],
         {},
         (2026, 9),
@@ -348,10 +414,10 @@ def test_clearing_january_leaves_october(s3_output):
     assert list(s3_output.objects) == ["2026/10/routes.json"]
 
 
-def test_s3_write_replaces_the_month_through_boto3(s3_output, us_airports):
+def test_s3_write_replaces_the_month_through_boto3(s3_output, listed_airports):
     s3_output.objects = {"2026/10/stale.json": b"", "2026/09/routes.json": b"[]"}
 
-    write_full_snapshot(us_airports)
+    write_full_snapshot(listed_airports)
 
     assert set(s3_output.objects) == {
         "2026/09/routes.json",
