@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Feature, { type FeatureLike } from "ol/Feature";
 import OlMap from "ol/Map";
@@ -9,6 +9,7 @@ import type { Coordinate } from "ol/coordinate";
 import { createEmpty, extend, isEmpty, type Extent } from "ol/extent";
 import LineString from "ol/geom/LineString";
 import Point from "ol/geom/Point";
+import DragPan from "ol/interaction/DragPan";
 import { defaults as defaultInteractions } from "ol/interaction/defaults";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
@@ -46,7 +47,11 @@ const MAX_ZOOM = 10;
 const GEODESIC_MIN_MILES = 1000;
 const HIGHLIGHT_WEIGHT = 4;
 const HIT_TOLERANCE = 8;
+// Roughly half a tooltip's width and its height, in pixels.
+const TOOLTIP_ROOM = [150, 60];
 const WORLD_WIDTH = 2 * 20037508.342789244;
+
+const animationMs = () => (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 600);
 
 const TILE_URL =
   "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}";
@@ -64,26 +69,26 @@ const routeGeometry = ([a, b]: Position[]) =>
 const nearestCopy = (x: number, near: number) =>
   x + WORLD_WIDTH * Math.round((near - x) / WORLD_WIDTH);
 
-const fitTo = (map: OlMap | null, extent: Extent, padding = 15) => {
+const fitTo = (map: OlMap | null, extent: Extent, padding = 40) => {
   if (!map || isEmpty(extent)) return;
   const area = map.getViewport().getBoundingClientRect();
   const panel = document.getElementById("overlay-panel")?.getBoundingClientRect();
   const atSide = panel && panel.width < area.width / 2;
+  const legend = document.getElementById("legend")?.getBoundingClientRect();
   map.getView().fit(extent, {
     padding: [
       panel && !atSide ? panel.bottom - area.top + padding : padding,
       panel && atSide ? area.right - panel.left + padding : padding,
-      padding,
+      legend ? area.bottom - legend.top + padding : padding,
       padding,
     ],
     maxZoom: MAX_ZOOM,
+    duration: animationMs(),
   });
 };
 
-const resetView = (map: OlMap | null) => {
-  map?.getView().setCenter(DEFAULT_CENTER);
-  map?.getView().setZoom(DEFAULT_ZOOM);
-};
+const resetView = (map: OlMap | null) =>
+  map?.getView().animate({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, duration: animationMs() });
 
 const routesExtent = (source: VectorSource, airline = "") => {
   const extent = createEmpty();
@@ -152,7 +157,6 @@ const toAirlineSummaries = (airlines: Record<string, string>): AirlineSummary[] 
 export const MapComponent = () => {
   const [selectedAirport, setSelectedAirport] = useState<Airport | null>(null);
   const [selectedAirline, setSelectedAirline] = useState("");
-  const [selectedRoute, setSelectedRoute] = useState<string[]>([]);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem("hasVisited"));
   const [destinationAirport, setDestinationAirport] = useState<Airport | null>(null);
   const [chosenSnapshot, setChosenSnapshot] = useState<MonthOption | null>(null);
@@ -164,17 +168,28 @@ export const MapComponent = () => {
 
   const targetRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<OlMap | null>(null);
-  const handlersRef = useRef({
-    hover: (_airport: Airport | null, _coordinate: Coordinate) => {},
-    click: (_airport: Airport | null) => {},
+
+  const onClick = useEffectEvent((airport: Airport | null) => {
+    if (!airport) return;
+    if (selectedAirport) {
+      if (airport.properties.IATA !== selectedAirport.properties.IATA)
+        setDestinationAirport(airport);
+      return;
+    }
+    if (!selectedAirline) setSelectedAirport(airport);
   });
 
   const [map] = useState(() => {
-    const routesLayer = new VectorLayer({ source: new VectorSource(), zIndex: 1 });
+    const routesLayer = new VectorLayer({
+      source: new VectorSource(),
+      zIndex: 1,
+      updateWhileAnimating: true,
+    });
     const airportsLayer = new VectorLayer({
       source: new VectorSource(),
       style: airportStyle,
       zIndex: 2,
+      updateWhileAnimating: true,
     });
     const tooltipElement = document.createElement("div");
     const tooltip = new Overlay({
@@ -204,19 +219,30 @@ export const MapComponent = () => {
         rotate: false,
         attributionOptions: { collapsible: false },
       }),
-      interactions: defaultInteractions({ altShiftDragRotate: false, pinchRotate: false }),
+      interactions: defaultInteractions({
+        altShiftDragRotate: false,
+        pinchRotate: false,
+        dragPan: false,
+      }).extend([new DragPan()]),
     });
+    const hover = (airport: Airport | null, coordinate: Coordinate, [px, py]: Pixel) => {
+      const below = py < TOOLTIP_ROOM[1];
+      const width = olMap.getSize()![0];
+      const side =
+        px < TOOLTIP_ROOM[0] ? "left" : px > width - TOOLTIP_ROOM[0] ? "right" : "center";
+      tooltip.setPositioning(`${below ? "top" : "bottom"}-${side}`);
+      tooltip.setOffset([0, below ? 10 : -10]);
+      setHovered(airport);
+      const [x, y] = airport ? fromLonLat(airport.geometry.coordinates) : [0, 0];
+      tooltip.setPosition(airport ? [nearestCopy(x, coordinate[0]), y] : undefined);
+      olMap.getViewport().style.cursor = airport ? "pointer" : "";
+    };
     olMap.on("pointermove", (e) => {
-      if (e.dragging) return;
-      handlersRef.current.hover(
-        airportAt(olMap, airportsLayer, e.pixel, e.coordinate),
-        e.coordinate,
-      );
+      if (e.dragging || (e.originalEvent as PointerEvent).pointerType !== "mouse") return;
+      hover(airportAt(olMap, airportsLayer, e.pixel, e.coordinate), e.coordinate, e.pixel);
     });
-    olMap.on("click", (e) =>
-      handlersRef.current.click(airportAt(olMap, airportsLayer, e.pixel, e.coordinate)),
-    );
-    const leave = () => handlersRef.current.hover(null, [0, 0]);
+    olMap.on("click", (e) => onClick(airportAt(olMap, airportsLayer, e.pixel, e.coordinate)));
+    const leave = () => hover(null, [0, 0], [0, 0]);
     olMap.getViewport().addEventListener("mouseleave", leave);
     mapRef.current = olMap;
     return () => {
@@ -258,61 +284,44 @@ export const MapComponent = () => {
     apply: (selection: Selection) => {
       setSelectedAirport(findAirport(selection.airport));
       setDestinationAirport(selection.destination ? findAirport(selection.destination) : null);
-      setSelectedRoute(selection.destination ? [selection.airport, selection.destination] : []);
       setSelectedAirline(selection.airline);
-      if (!selection.airport && !selection.airline) resetView(mapRef.current);
     },
   });
 
   useEffect(() => {
-    handlersRef.current = {
-      hover: (airport, coordinate) => {
-        setHovered(airport);
-        const [x, y] = airport ? fromLonLat(airport.geometry.coordinates) : [0, 0];
-        map.tooltip.setPosition(airport ? [nearestCopy(x, coordinate[0]), y] : undefined);
-        mapRef.current!.getViewport().style.cursor = airport ? "pointer" : "";
-      },
-      click: (airport) => {
-        if (!airport) return;
-        if (selectedAirport) {
-          if (airport.properties.IATA === selectedAirport.properties.IATA) return;
-          setDestinationAirport(airport);
-          setSelectedRoute([selectedAirport.properties.IATA, airport.properties.IATA]);
-          return;
-        }
-        if (!selectedAirline) setSelectedAirport(airport);
-      },
-    };
-  });
-
-  useEffect(() => {
     routesSource.clear();
-    if (!routes?.features.length) return;
     routesSource.addFeatures(
-      routes.features.map(
+      (routes?.features ?? []).map(
         (f) => new Feature({ geometry: routeGeometry(f.geometry.coordinates), ...f.properties }),
       ),
     );
-    fitTo(mapRef.current, routesExtent(routesSource));
   }, [routes, routesSource]);
 
   useEffect(() => {
-    if (selectedAirline) fitTo(mapRef.current, routesExtent(routesSource, selectedAirline));
-  }, [selectedAirline, routes, routesSource]);
+    if (selectedAirport && destinationAirport) {
+      const ends = [selectedAirport, destinationAirport].map((a) => a.geometry.coordinates);
+      fitTo(mapRef.current, routeGeometry(ends).getExtent(), 60);
+    } else if (routes) {
+      fitTo(mapRef.current, routesExtent(routesSource, selectedAirline));
+    } else {
+      resetView(mapRef.current);
+    }
+  }, [routes, selectedAirline, selectedAirport, destinationAirport, routesSource]);
 
   const highlight = useMemo<RouteMatch | null>(() => {
     const between =
       (a: string, b: string): RouteMatch =>
       ({ src_airport: src, dst_airport: dst }) =>
         (src === a && dst === b) || (src === b && dst === a);
-    if (selectedRoute.length === 2) return between(selectedRoute[0], selectedRoute[1]);
+    const selectedIATA = selectedAirport?.properties.IATA;
+    if (selectedIATA && destinationAirport)
+      return between(selectedIATA, destinationAirport.properties.IATA);
     if (!hovered) return null;
     const hoveredIATA = hovered.properties.IATA;
-    const selectedIATA = selectedAirport?.properties.IATA;
     if (selectedIATA && selectedIATA !== hoveredIATA) return between(selectedIATA, hoveredIATA);
     const target = selectedIATA ?? hoveredIATA;
     return ({ src_airport: src, dst_airport: dst }) => src === target || dst === target;
-  }, [selectedRoute, hovered, selectedAirport]);
+  }, [hovered, selectedAirport, destinationAirport]);
 
   useEffect(() => {
     const weight = (routes?.features.length ?? 0) > 200 ? 1 : 2;
@@ -322,18 +331,6 @@ export const MapComponent = () => {
       return routeStyle(highlight?.(route) ?? false, weight);
     });
   }, [selectedAirline, highlight, routes, map]);
-
-  useEffect(() => {
-    if (selectedRoute.length < 2) return;
-    const ends = selectedRoute.map((iata) => airports.find((a) => a.properties.IATA === iata));
-    if (!ends[0] || !ends[1]) return;
-    const extent = createEmpty();
-    routeGeometry(ends.map((a) => a!.geometry.coordinates))
-      .getCoordinates()
-      .forEach((c) => extend(extent, [...c, ...c]));
-    fitTo(mapRef.current, extent, 30);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRoute]);
 
   // Empty means show every airport.
   const filteredAirports = useMemo(() => {
@@ -378,33 +375,16 @@ export const MapComponent = () => {
       .sort((a, b) => b.destinations - a.destinations);
   }, [selectedAirport, routes, airlines, baseAirlines]);
 
-  const fitToRoutes = () => fitTo(mapRef.current, routesExtent(routesSource));
-
   const handleBack = () => {
-    if (destinationAirport) {
-      setDestinationAirport(null);
-      setSelectedRoute([]);
-      fitToRoutes();
-      return;
-    }
+    if (destinationAirport) return setDestinationAirport(null);
+    setSelectedAirline("");
+    if (!selectedAirline) setSelectedAirport(null);
+  };
 
-    if (selectedAirport && selectedAirline) {
-      setSelectedAirline("");
-      fitToRoutes();
-      return;
-    }
-
-    if (selectedAirport) {
-      setSelectedAirport(null);
-      setSelectedAirline("");
-      resetView(mapRef.current);
-      return;
-    }
-
-    if (selectedAirline) {
-      setSelectedAirline("");
-      resetView(mapRef.current);
-    }
+  const exploreFrom = (airport: Airport) => {
+    setSelectedAirport(airport);
+    setDestinationAirport(null);
+    setSelectedAirline("");
   };
 
   return (
@@ -436,7 +416,6 @@ export const MapComponent = () => {
         setSelectedAirline={setSelectedAirline}
         selectedAirline={selectedAirline}
         filteredAirlines={filteredAirlines}
-        setSelectedRoute={setSelectedRoute}
         handleBack={handleBack}
         routes={routes}
         destinationAirport={destinationAirport}
@@ -454,6 +433,7 @@ export const MapComponent = () => {
             airlines={airlines}
             routes={routes}
             onClose={handleBack}
+            onExplore={exploreFrom}
           />
         )}
       </OverlayPanel>

@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/common/Button";
 import { Combobox } from "@/components/common/Combobox";
 import { ExternalLink } from "@/components/common/ExternalLink";
@@ -22,7 +22,6 @@ type OverlayPanelProps = {
   routes: Routes | null;
   destinationAirport: Airport | null;
   setDestinationAirport: (airport: Airport | null) => void;
-  setSelectedRoute: (route: string[]) => void;
   monthOptions: MonthOption[];
   snapshot: MonthOption | null;
   setSnapshot: (snapshot: MonthOption) => void;
@@ -46,7 +45,7 @@ const buildApiUrl = (
   return `${API_BASE}${path}${query ? `?${query}` : ""}`;
 };
 
-const OverlayPanelBase = ({
+export const OverlayPanel = ({
   airports,
   selectedAirport,
   setSelectedAirport,
@@ -57,7 +56,6 @@ const OverlayPanelBase = ({
   routes,
   destinationAirport,
   setDestinationAirport,
-  setSelectedRoute,
   monthOptions,
   snapshot,
   setSnapshot,
@@ -81,7 +79,11 @@ const OverlayPanelBase = ({
   const destinationOptions = useMemo<Option[]>(() => {
     if (!routes?.features.length || !airports.length) return [ALL_AIRPORTS];
 
-    const dstCodes = new Set(routes.features.map((f) => f.properties.dst_airport).filter(Boolean));
+    const dstCodes = new Set(
+      routes.features
+        .filter((f) => !selectedAirline || f.properties.airline_code === selectedAirline)
+        .map((f) => f.properties.dst_airport),
+    );
     const options = [...dstCodes]
       .map((code) => {
         const match = airports.find((a) => a.properties.IATA === code);
@@ -95,7 +97,7 @@ const OverlayPanelBase = ({
       .map(({ value, label }) => ({ value, label }));
 
     return [ALL_AIRPORTS, ...options];
-  }, [routes, airports]);
+  }, [routes, airports, selectedAirline]);
 
   const airlineOptions: Option[] = [
     { value: "", label: "All airlines" },
@@ -136,13 +138,9 @@ const OverlayPanelBase = ({
                   : null
               }
               onChange={(option) => {
-                if (!option) {
-                  handleBack();
-                  return;
-                }
-                if (destinationAirport) setDestinationAirport(null);
-                if (selectedAirline) setSelectedAirline("");
-                setSelectedAirport(findAirport(option.value));
+                setDestinationAirport(null);
+                setSelectedAirline("");
+                setSelectedAirport(option && findAirport(option.value));
               }}
               options={airportOptions}
               isClearable
@@ -160,14 +158,7 @@ const OverlayPanelBase = ({
                       ) ?? null)
                     : null
                 }
-                onChange={(option) => {
-                  if (!option) {
-                    handleBack();
-                    return;
-                  }
-                  setDestinationAirport(findAirport(option.value));
-                  setSelectedRoute([selectedAirport.properties.IATA, option.value]);
-                }}
+                onChange={(option) => setDestinationAirport(option && findAirport(option.value))}
                 options={destinationOptions}
                 isClearable
                 isDisabled={loading}
@@ -183,12 +174,9 @@ const OverlayPanelBase = ({
                     ? (airlineOptions.find((o) => o.value === selectedAirline) ?? null)
                     : airlineOptions[0]
                 }
-                onChange={(option) => {
-                  if (option) setSelectedAirline(option.value);
-                  else handleBack();
-                }}
+                onChange={(option) => setSelectedAirline(option?.value ?? "")}
                 options={airlineOptions}
-                isClearable
+                isClearable={!!selectedAirline}
                 isDisabled={loading}
                 placeholder="Search for an airline"
               />
@@ -248,6 +236,7 @@ const OverlayPanelBase = ({
               >
                 {apiUrl}
               </ExternalLink>
+              <ExternalLink href="/docs.html">API docs</ExternalLink>
             </div>
           )}
 
@@ -264,5 +253,3 @@ const OverlayPanelBase = ({
     </Panel>
   );
 };
-
-export const OverlayPanel = memo(OverlayPanelBase);

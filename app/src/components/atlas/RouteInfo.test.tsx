@@ -41,6 +41,7 @@ describe("RouteInfo", () => {
         routes={ROUTES}
         airlines={{ DL: "Delta Air Lines", B6: "JetBlue" }}
         onClose={() => {}}
+        onExplore={() => {}}
       />,
     );
 
@@ -65,9 +66,27 @@ describe("RouteInfo", () => {
         routes={ROUTES}
         airlines={{}}
         onClose={handleBack}
+        onExplore={() => {}}
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: "Close route" }));
     expect(handleBack).toHaveBeenCalledOnce();
+  });
+
+  it("switches to the destination's flights", async () => {
+    const onExplore = vi.fn();
+    const bos = airport("BOS", "Boston");
+    render(
+      <RouteInfo
+        selectedAirport={airport("ATL", "Atlanta")}
+        destinationAirport={bos}
+        routes={ROUTES}
+        airlines={{}}
+        onClose={() => {}}
+        onExplore={onExplore}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "See all flights from BOS" }));
+    expect(onExplore).toHaveBeenCalledWith(bos);
   });
 });

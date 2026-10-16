@@ -9,7 +9,7 @@ export const Legend = () => {
   const [open, setOpen] = useState(() => !window.matchMedia("(max-width: 40em)").matches);
 
   return (
-    <Panel className={styles.legend}>
+    <Panel id="legend" className={styles.legend}>
       <div className={styles.header}>
         <h2 className={styles.title} id="legend-title">
           Destinations

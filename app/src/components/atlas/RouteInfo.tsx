@@ -1,3 +1,4 @@
+import { Button } from "@/components/common/Button";
 import { ExternalLink } from "@/components/common/ExternalLink";
 import { IconButton } from "@/components/common/IconButton";
 import { CloseIcon } from "@/icons";
@@ -10,6 +11,7 @@ type RouteInfoProps = {
   routes: Routes;
   airlines: Airlines;
   onClose: () => void;
+  onExplore: (airport: Airport) => void;
 };
 
 const wikiHref = (airport: Airport) => `${airport.properties.url}#Airlines_and_destinations`;
@@ -20,6 +22,7 @@ export const RouteInfo = ({
   routes,
   airlines,
   onClose,
+  onExplore,
 }: RouteInfoProps) => {
   const src = selectedAirport.properties.IATA;
   const dst = destinationAirport.properties.IATA;
@@ -54,6 +57,10 @@ export const RouteInfo = ({
           </li>
         ))}
       </ul>
+
+      <Button variant="outline" onClick={() => onExplore(destinationAirport)}>
+        See all flights from {dst}
+      </Button>
 
       <p className={styles.sources}>
         Airport pages: <ExternalLink href={wikiHref(selectedAirport)}>{src}</ExternalLink>{" "}

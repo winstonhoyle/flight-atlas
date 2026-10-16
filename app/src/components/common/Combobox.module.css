@@ -83,3 +83,11 @@
   padding: var(--fa-space-1) var(--fa-space-105);
   color: var(--fa-color-text-muted);
 }
+
+/* iOS zooms the page into any input under 16px. */
+@media (pointer: coarse) {
+  .container,
+  .sm {
+    font-size: var(--fa-font-size-sm);
+  }
+}

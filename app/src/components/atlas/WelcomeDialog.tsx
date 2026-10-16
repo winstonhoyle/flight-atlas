@@ -19,7 +19,11 @@ export const WelcomeDialog = ({ open, onClose }: WelcomeDialogProps) => (
       </p>
       <p>
         Read the code on{" "}
-        <ExternalLink href="https://github.com/winstonhoyle/flight-atlas">GitHub</ExternalLink>.
+        <ExternalLink href="https://github.com/winstonhoyle/flight-atlas">GitHub</ExternalLink> or
+        use the data through the <ExternalLink href="/docs.html">API</ExternalLink>.
+      </p>
+      <p>
+        Made by <ExternalLink href="https://winstonhoyle.com">Winston Hoyle</ExternalLink>.
       </p>
       <Button onClick={onClose} data-autofocus>
         Close
