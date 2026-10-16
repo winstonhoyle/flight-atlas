@@ -130,6 +130,47 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /problems:
+    get:
+      summary: Wikipedia pages the scraper couldn't fully read in a snapshot
+      description: Months scraped before this report existed return `404`.
+      parameters:
+        - $ref: "#/components/parameters/year"
+        - $ref: "#/components/parameters/month"
+      responses:
+        "200":
+          description: One entry per problem, sorted by airport
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    kind:
+                      type: string
+                      enum:
+                        - destinations_table
+                        - destination_page
+                        - airline_code
+                        - airline_link
+                        - airport_page
+                        - coordinates
+                        - one_sided_route
+                      example: destinations_table
+                    airport: { type: string, nullable: true, description: IATA code of the airport whose data is affected, example: YYT }
+                    airport_name: { type: string, nullable: true, example: St. John's International Airport }
+                    airline: { type: string, nullable: true, description: Airline name, example: null }
+                    url: { type: string, nullable: true, description: The Wikipedia page at fault }
+                    message: { type: string, example: "No airlines table in the 'Airlines and destinations' section, so none of its routes were read" }
+                    coordinates:
+                      type: array
+                      nullable: true
+                      items: { type: number }
+                      example: [-52.75194, 47.61861]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /available_months:
     get:
       summary: Snapshots, newest first

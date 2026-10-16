@@ -10,14 +10,14 @@ airline and destination tables. Live at [flightatlas.io](https://flightatlas.io)
 | Part | Service | Folder |
 | --- | --- | --- |
 | Scraper | Python, run locally each month | [`ecs/`](ecs/README.md) |
-| Storage | S3: three JSON files per month | |
+| Storage | S3: four JSON files per month | |
 | API | API Gateway, Lambda | [`lambda/`](lambda/README.md) |
 | Frontend | React, TypeScript, and OpenLayers on Cloudflare Pages | [`app/`](app/README.md) |
 | Infrastructure | Terraform: AWS resources and Cloudflare DNS records | [`infra/`](infra/README.md) |
 
 How data moves:
 
-1. `make scrape` reads Wikipedia and writes the month's `airports.json`, `airlines.json` and `routes.json` to `s3://<bucket>/YYYY/MM/`, then rewrites the month list in `snapshots.json`.
+1. `make scrape` reads Wikipedia and writes the month's `airports.json`, `airlines.json`, `routes.json` and `problems.json` to `s3://<bucket>/YYYY/MM/`, then rewrites the month list in `snapshots.json`.
 2. The app calls `api.flightatlas.io`, where API Gateway invokes the Lambda.
 3. The Lambda picks the snapshot and returns its file from S3. Cloudflare caches the response.
 4. The app loads a month's airports and routes once and filters routes by airport or airline in the browser.
@@ -32,7 +32,7 @@ container images, pushes them to ECR tagged with the commit SHA, and applies Ter
 ## API
 
 Interactive docs: [flightatlas.io/docs](https://flightatlas.io/docs). All endpoints are `GET` and return JSON. The data comes in monthly snapshots, listed by
-`/available_months`. `/airports`, `/airlines`, and `/routes` take optional `year` and `month`
+`/available_months`. `/airports`, `/airlines`, `/routes`, and `/problems` take optional `year` and `month`
 parameters to pick one:
 
 - Neither: the newest snapshot.

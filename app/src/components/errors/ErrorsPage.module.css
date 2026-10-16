@@ -1,0 +1,95 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-2);
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--fa-space-3) var(--fa-space-2);
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fa-space-05);
+  align-self: flex-start;
+  color: var(--fa-color-link);
+  font-size: var(--fa-font-size-2xs);
+  text-underline-offset: 0.15em;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fa-font-size-lg);
+  line-height: var(--fa-leading-tight);
+}
+
+.intro,
+.summary,
+.error {
+  margin: 0;
+  max-width: 48rem;
+}
+
+.intro,
+.summary {
+  color: var(--fa-color-text-muted);
+}
+
+.error {
+  color: var(--fa-color-error);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--fa-space-1);
+  max-width: 40rem;
+}
+
+.heading {
+  margin: var(--fa-space-1) 0 0;
+  font-size: var(--fa-font-size-sm);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: var(--fa-space-105);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-1);
+  min-width: 0;
+  scroll-margin-top: var(--fa-space-2);
+}
+
+.card:target {
+  outline: 2px solid var(--fa-color-focus);
+  outline-offset: 2px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: var(--fa-font-size-xs);
+  line-height: var(--fa-leading-tight);
+}
+
+.mapLink {
+  align-self: flex-start;
+  color: var(--fa-color-link);
+  font-size: var(--fa-font-size-3xs);
+  text-underline-offset: 0.15em;
+}
+
+.footer {
+  color: var(--fa-color-text-muted);
+  font-size: var(--fa-font-size-2xs);
+}
+
+@media (max-width: 40em) {
+  .page {
+    padding: var(--fa-space-2) var(--fa-space-2);
+  }
+}

@@ -21,8 +21,10 @@ import { Circle, Fill, Stroke, Style } from "ol/style";
 import "ol/ol.css";
 import type { Position } from "geojson";
 
+import { ATTRIBUTION, DEFAULT_CENTER, DEFAULT_ZOOM, MAX_ZOOM, TILE_URL } from "./basemap";
 import { Legend } from "./Legend";
 import { OverlayPanel } from "./OverlayPanel";
+import { ProblemNotice } from "./ProblemNotice";
 import { RouteInfo } from "./RouteInfo";
 import { WelcomeDialog } from "./WelcomeDialog";
 import tooltipStyles from "./AirportTooltip.module.css";
@@ -39,11 +41,9 @@ import { tokenValue } from "@/styles/tokens";
 import type { AirlineSummary, Airport, MonthOption, RouteProperties } from "@/types";
 import { destinationBin, destinationColorToken } from "@/utils/destinations";
 import { distanceMiles, greatCircle } from "@/utils/geo";
+import { airlineAnchor, errorsUrl } from "@/utils/problems";
 import { EMPTY_SELECTION, type Selection } from "@/utils/selectionPath";
 
-const DEFAULT_CENTER = fromLonLat([-98.5795, 39.8283]); // center of continental US
-const DEFAULT_ZOOM = 4;
-const MAX_ZOOM = 10;
 const GEODESIC_MIN_MILES = 1000;
 const HIGHLIGHT_WEIGHT = 4;
 const HIT_TOLERANCE = 8;
@@ -52,11 +52,6 @@ const TOOLTIP_ROOM = [150, 60];
 const WORLD_WIDTH = 2 * 20037508.342789244;
 
 const animationMs = () => (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 600);
-
-const TILE_URL =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}";
-const ATTRIBUTION =
-  'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ | Route data from <a href="https://en.wikipedia.org/" target="_blank" rel="noopener noreferrer">Wikipedia</a> (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>)';
 
 type RouteMatch = (route: RouteProperties) => boolean;
 
@@ -132,7 +127,22 @@ const routeStyle = (highlighted: boolean, weight: number) =>
       }),
   );
 
+const unreadableStyle = () =>
+  cachedStyle(
+    "airport-unreadable",
+    () =>
+      new Style({
+        image: new Circle({
+          radius: 3,
+          fill: new Fill({ color: tokenValue("--fa-map-unreadable") }),
+          stroke: new Stroke({ color: tokenValue("--fa-map-marker-stroke"), width: 0.5 }),
+        }),
+        zIndex: -1,
+      }),
+  );
+
 const airportStyle = (feature: FeatureLike) => {
+  if (feature.get("unreadable")) return unreadableStyle();
   const destinations = (feature.get("airport") as Airport).properties.destinations || 0;
   return cachedStyle(
     `airport-${destinations}`,
@@ -151,6 +161,9 @@ const airportStyle = (feature: FeatureLike) => {
   );
 };
 
+// airports.json leaves out airports with no routes, so only the gray ones have 0.
+const isUnreadable = (airport: Airport) => airport.properties.destinations === 0;
+
 const toAirlineSummaries = (airlines: Record<string, string>): AirlineSummary[] =>
   Object.entries(airlines).map(([code, name]) => ({ code, name }));
 
@@ -161,6 +174,8 @@ export const MapComponent = () => {
   const [destinationAirport, setDestinationAirport] = useState<Airport | null>(null);
   const [chosenSnapshot, setChosenSnapshot] = useState<MonthOption | null>(null);
   const [hovered, setHovered] = useState<Airport | null>(null);
+  // An airport in the URL that isn't on the map, kept to explain why.
+  const [unmapped, setUnmapped] = useState("");
 
   useEffect(() => {
     localStorage.setItem("hasVisited", "true");
@@ -171,6 +186,7 @@ export const MapComponent = () => {
 
   const onClick = useEffectEvent((airport: Airport | null) => {
     if (!airport) return;
+    if (isUnreadable(airport)) return setUnmapped(airport.properties.IATA);
     if (selectedAirport) {
       if (airport.properties.IATA !== selectedAirport.properties.IATA)
         setDestinationAirport(airport);
@@ -256,12 +272,34 @@ export const MapComponent = () => {
   const {
     airports,
     routes: routeRows,
+    problems,
     airlines,
     loading,
     error: dataError,
   } = useAtlasData(chosenSnapshot);
   const routes = useRoutes(selectedAirport, selectedAirline, routeRows, airports);
   const locked = loading || monthsLoading;
+
+  // Airports whose pages gave no routes, so they're off the map; drawn gray to show why.
+  const unreadableAirports = useMemo<Airport[]>(() => {
+    const mapped = new Set(airports.map((a) => a.properties.IATA));
+    const found = new Map<string, Airport>();
+    for (const p of problems) {
+      if (!p.airport || !p.coordinates || mapped.has(p.airport) || found.has(p.airport)) continue;
+      found.set(p.airport, {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: p.coordinates },
+        properties: {
+          FAA: null,
+          IATA: p.airport,
+          Name: p.airport_name ?? p.airport,
+          url: "",
+          destinations: 0,
+        },
+      });
+    }
+    return [...found.values()];
+  }, [airports, problems]);
 
   const findAirport = (iata: string) => airports.find((a) => a.properties.IATA === iata) ?? null;
 
@@ -274,7 +312,10 @@ export const MapComponent = () => {
     },
     airlineName: airlines[selectedAirline],
     resolve: ({ airport, destination, airline }) => {
-      if (airport && !findAirport(airport)) return EMPTY_SELECTION;
+      if (airport && !findAirport(airport)) {
+        setUnmapped(airport);
+        return EMPTY_SELECTION;
+      }
       return {
         airport,
         destination: airport && findAirport(destination) ? destination : "",
@@ -348,14 +389,18 @@ export const MapComponent = () => {
   const visibleAirports = filteredAirports.length ? filteredAirports : airports;
 
   useEffect(() => {
+    const feature = (airport: Airport, unreadable: boolean) =>
+      new Feature({
+        geometry: new Point(fromLonLat(airport.geometry.coordinates)),
+        airport,
+        unreadable,
+      });
     airportsSource.clear();
-    airportsSource.addFeatures(
-      visibleAirports.map(
-        (airport) =>
-          new Feature({ geometry: new Point(fromLonLat(airport.geometry.coordinates)), airport }),
-      ),
-    );
-  }, [visibleAirports, airportsSource]);
+    airportsSource.addFeatures([
+      ...visibleAirports.map((airport) => feature(airport, false)),
+      ...(filteredAirports.length ? [] : unreadableAirports.map((a) => feature(a, true))),
+    ]);
+  }, [visibleAirports, filteredAirports, unreadableAirports, airportsSource]);
 
   const baseAirlines = useMemo(() => toAirlineSummaries(airlines), [airlines]);
 
@@ -374,6 +419,52 @@ export const MapComponent = () => {
       }))
       .sort((a, b) => b.destinations - a.destinations);
   }, [selectedAirport, routes, airlines, baseAirlines]);
+
+  if (unmapped && (selectedAirport || selectedAirline)) setUnmapped("");
+
+  const notice = useMemo(() => {
+    const snapshot = chosenSnapshot;
+    if (selectedAirport) {
+      const iata = selectedAirport.properties.IATA;
+      const found = problems.filter((p) => p.airport === iata);
+      return (
+        found.length > 0 && (
+          <ProblemNotice
+            title="Some of this airport's Wikipedia data couldn't be read"
+            problems={found}
+            groupedBy="airport"
+            href={errorsUrl(iata, snapshot)}
+          />
+        )
+      );
+    }
+    if (selectedAirline) {
+      const name = airlines[selectedAirline];
+      const found = problems.filter((p) => p.airline === name);
+      return (
+        found.length > 0 && (
+          <ProblemNotice
+            title="Some of this airline's Wikipedia data couldn't be read"
+            problems={found}
+            groupedBy="airline"
+            href={errorsUrl(airlineAnchor(name), snapshot)}
+          />
+        )
+      );
+    }
+    const found = problems.filter((p) => p.airport === unmapped);
+    return (
+      unmapped &&
+      found.length > 0 && (
+        <ProblemNotice
+          title={`${found[0].airport_name ?? unmapped} (${unmapped}) isn't on the map`}
+          problems={found}
+          groupedBy="airport"
+          href={errorsUrl(unmapped, snapshot)}
+        />
+      )
+    );
+  }, [selectedAirport, selectedAirline, unmapped, problems, airlines, chosenSnapshot]);
 
   const handleBack = () => {
     if (destinationAirport) return setDestinationAirport(null);
@@ -400,7 +491,10 @@ export const MapComponent = () => {
           <div className={tooltipStyles.tooltip}>
             <strong className={tooltipStyles.name}>{hovered.properties.Name}</strong>
             <span>
-              {hovered.properties.IATA} · {hovered.properties.destinations} destinations
+              {hovered.properties.IATA} ·{" "}
+              {isUnreadable(hovered)
+                ? "routes unreadable"
+                : `${hovered.properties.destinations} destinations`}
             </span>
           </div>
         ),
@@ -426,6 +520,7 @@ export const MapComponent = () => {
         loading={locked}
         error={monthsError || dataError}
       >
+        {!destinationAirport && notice}
         {selectedAirport && destinationAirport && routes && (
           <RouteInfo
             selectedAirport={selectedAirport}

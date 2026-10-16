@@ -1,0 +1,21 @@
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-1);
+  padding: var(--fa-space-1);
+  border-left: 3px solid var(--fa-color-error);
+  border-radius: var(--fa-radius-sm);
+  background: var(--fa-color-surface-muted);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fa-font-size-2xs);
+  font-weight: var(--fa-font-weight-bold);
+}
+
+.link {
+  color: var(--fa-color-link);
+  font-size: var(--fa-font-size-2xs);
+  text-underline-offset: 0.15em;
+}

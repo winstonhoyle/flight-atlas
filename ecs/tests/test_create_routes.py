@@ -49,6 +49,7 @@ def wikipedia(monkeypatch):
     monkeypatch.setattr(create_routes, "fetch_soup", fetch_soup)
     monkeypatch.setattr(create_routes, "resolve_pages", resolve_pages)
     monkeypatch.setattr(create_routes, "airline_codes_dict", dict(create_routes.airline_codes_dict))
+    monkeypatch.setattr(create_routes, "found_problems", [])
     return fetched
 
 
@@ -91,6 +92,13 @@ def test_airlines_without_a_code_are_skipped(wikipedia, listed_airports):
     to_atmautluak = {airline for airline, src, dst in routes if dst == "4A2"}
     assert to_atmautluak == {"GV", "7H"}  # Ryan Air has no code on its page
     assert all(airline for airline, _, _ in routes)
+    assert {
+        "kind": "airline_code",
+        "airport": "BET",
+        "airline": "Ryan Air",
+        "url": WIKI + "Ryan_Air_Services",
+        "message": "The airline's page has no IATA code, so its routes here were skipped",
+    } in create_routes.found_problems
 
 
 def test_a_bad_link_drops_only_that_destination(wikipedia, listed_airports):
@@ -111,6 +119,7 @@ def test_a_page_without_a_destinations_table_has_no_routes(wikipedia, listed_air
         ]
     )
     assert create_routes.get_destinations("XXX", airports, {}) == []
+    assert [(p["kind"], p["airport"]) for p in create_routes.found_problems] == [("destinations_table", "XXX")]
 
 
 SNAPSHOT = (2026, 10)
@@ -424,6 +433,7 @@ def test_s3_write_replaces_the_month_through_boto3(s3_output, listed_airports):
         "2026/10/airports.json",
         "2026/10/airlines.json",
         "2026/10/routes.json",
+        "2026/10/problems.json",
         "snapshots.json",
     }
     assert json.loads(s3_output.objects["snapshots.json"]) == [
@@ -432,3 +442,38 @@ def test_s3_write_replaces_the_month_through_boto3(s3_output, listed_airports):
     ]
     flights, airports = create_routes.read_snapshot(SNAPSHOT)
     assert len(flights) == 6 and len(airports) == 4
+
+
+def test_problems_are_written_once_each_with_the_airports_coordinates(local_output, listed_airports):
+    listed_airports = listed_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"])
+    unread = {"kind": "destinations_table", "airport": "ANC", "airline": None, "url": None, "message": "No table"}
+    lost = {"kind": "destination_page", "airport": "BET", "airline": None, "url": WIKI + "Eek", "message": "Skipped"}
+
+    # ANC lists nothing, so it's off the map, but its problem still has a place.
+    create_routes.write_outputs(
+        listed_airports,
+        [["AS", "BET", "OME"]],
+        foreign("OME", -165.44, 64.51),
+        SNAPSHOT,
+        [unread, lost, lost],
+    )
+
+    assert "ANC" not in {f["properties"]["IATA"] for f in read_json(local_output, "2026/10/airports.json")["features"]}
+    assert read_json(local_output, "2026/10/problems.json") == [
+        {**unread, "airport_name": "Anchorage", "coordinates": [-149.99833, 61.17417]},
+        {**lost, "airport_name": "Bethel Airport", "coordinates": [-161.83722, 60.77861]},
+    ]
+
+
+def test_a_partial_run_keeps_problems_it_didnt_recheck(local_output, listed_airports):
+    listed_airports = listed_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"])
+    old = [
+        {"kind": "destinations_table", "airport": "ANC", "airline": None, "url": None, "message": "No table"},
+        {"kind": "airline_code", "airport": "BET", "airline": "Ryan Air", "url": None, "message": "No code"},
+        {"kind": "one_sided_route", "airport": "ANC", "airline": "Alaska Airlines", "url": None, "message": "One"},
+    ]
+    create_routes.write_outputs(
+        listed_airports, FULL_ROUTES, foreign("OME", -165.44, 64.51) | foreign("AUK", -164.66, 62.68), SNAPSHOT, old
+    )
+
+    assert create_routes.kept_problems(SNAPSHOT, {"BET"}) == [old[0]]

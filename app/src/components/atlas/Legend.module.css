@@ -41,3 +41,8 @@
   border: 1px solid var(--fa-map-marker-stroke);
   border-radius: var(--fa-radius-pill);
 }
+
+.link {
+  color: var(--fa-color-link);
+  text-underline-offset: 0.15em;
+}

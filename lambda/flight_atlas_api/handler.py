@@ -44,6 +44,7 @@ ENDPOINTS = {
     "/routes": _snapshot_file("routes.json"),
     "/airports": _snapshot_file("airports.json"),
     "/airlines": _snapshot_file("airlines.json"),
+    "/problems": _snapshot_file("problems.json"),
     "/available_months": _available_months,
 }
 

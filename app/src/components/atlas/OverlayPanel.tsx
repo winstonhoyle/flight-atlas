@@ -237,6 +237,7 @@ export const OverlayPanel = ({
                 {apiUrl}
               </ExternalLink>
               <ExternalLink href="/docs.html">API docs</ExternalLink>
+              <ExternalLink href="/errors">Wikipedia data problems</ExternalLink>
             </div>
           )}
 

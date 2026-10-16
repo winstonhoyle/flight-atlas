@@ -1,0 +1,28 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fa-font-size-2xs);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fa-space-05);
+  overflow-wrap: anywhere;
+}
+
+.label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fa-space-1);
+  font-weight: var(--fa-font-weight-semibold);
+}
+
+.subject {
+  color: var(--fa-color-text-muted);
+  font-weight: var(--fa-font-weight-regular);
+}

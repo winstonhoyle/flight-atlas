@@ -23,6 +23,10 @@ export const WelcomeDialog = ({ open, onClose }: WelcomeDialogProps) => (
         use the data through the <ExternalLink href="/docs.html">API</ExternalLink>.
       </p>
       <p>
+        Routes come from Wikipedia. Gray airports have pages the scraper couldn&apos;t read; see the{" "}
+        <a href="/errors">data problems</a>.
+      </p>
+      <p>
         Made by <ExternalLink href="https://winstonhoyle.com">Winston Hoyle</ExternalLink>.
       </p>
       <Button onClick={onClose} data-autofocus>

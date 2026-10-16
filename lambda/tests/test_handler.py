@@ -20,6 +20,12 @@ def test_serves_the_newest_snapshots_file(fake):
     assert headers["Cache-Control"].startswith("public, max-age=3600")
 
 
+def test_serves_the_months_problems(fake):
+    problems = [{"kind": "destinations_table", "airport": "YYT", "airline": None, "url": None, "message": "No table"}]
+    fake.objects["2026/02/problems.json"] = json.dumps(problems).encode()
+    assert call("/problems")[:2] == (200, problems)
+
+
 def test_routes_filter_by_origin_and_airline(fake):
     rows = [["DL", "ATL", "BOS"], ["AA", "ATL", "DFW"], ["AA", "GSO", "CLT"]]
     fake.objects["2026/02/routes.json"] = json.dumps(rows).encode()

@@ -4,7 +4,7 @@ The scraper builds the monthly data snapshot from English Wikipedia. It reads th
 [U.S.](https://en.wikipedia.org/wiki/List_of_airports_in_the_United_States),
 [Mexico](https://en.wikipedia.org/wiki/List_of_airports_in_Mexico) and
 [Canada](https://en.wikipedia.org/wiki/List_of_airports_in_Canada) (split over sub-pages; only
-rows with an IATA code and their own article), then each airport's "Airlines and destinations" table, and writes three JSON files to
+rows with an IATA code and their own article), then each airport's "Airlines and destinations" table, and writes four JSON files to
 `YYYY/MM/` in S3:
 
 | File | Contents |
@@ -12,6 +12,7 @@ rows with an IATA code and their own article), then each airport's "Airlines and
 | `airports.json` | GeoJSON points: listed airports plus the overseas and remote airports they fly to, with destination counts |
 | `airlines.json` | Airline code to name |
 | `routes.json` | Every route as `[airline_code, src_airport, dst_airport]` |
+| `problems.json` | Wikipedia pages it couldn't fully read, by the airport and airline they affect; shown at [flightatlas.io/errors](https://flightatlas.io/errors) |
 
 It then rewrites `snapshots.json` at the bucket root with every month that has data. A full
 run takes 30 to 45 minutes.

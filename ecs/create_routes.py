@@ -65,6 +65,17 @@ problems = _Problems()
 logger.addHandler(problems)
 report: dict = {}
 
+# This run's unreadable pages, by airport and airline, for the month's problems.json.
+found_problems: list[dict] = []
+
+
+def note_problem(
+    kind: str, message: str, *, airport: str | None = None, airline: str | None = None, url: str | None = None
+) -> None:
+    logger.error(f"{message}, url: {url}" if url else message)
+    found_problems.append({"kind": kind, "airport": airport, "airline": airline, "url": url, "message": message})
+
+
 S3_ROUTES_BUCKET = os.environ.get("S3_ROUTES_BUCKET", "bucket-flight-atlas-routes")
 REGION = os.environ.get("REGION", "us-west-1")
 
@@ -174,7 +185,6 @@ def get_airport_information(url: str) -> tuple[str, Point] | None:
     iata = wiki_parse.parse_iata(soup)
     coordinates = wiki_parse.parse_coordinates(soup)
     if not iata or not coordinates:
-        logger.error(f"Unable to read IATA code or coordinates, url: {url}")
         return None
     return iata, Point(*coordinates)
 
@@ -184,7 +194,6 @@ def get_airline_code(url: str, name: str) -> str | None:
         return airline_codes_dict[name]
     code = wiki_parse.parse_airline_code(fetch_soup(url))
     if code is None:
-        logger.error(f"Cannot find airline code, url: {url}, name: {name}")
         return None
     airline_codes_dict[name] = code
     logger.info(f"Added new airline code, name: {name}, code: {code}")
@@ -194,7 +203,6 @@ def get_airline_code(url: str, name: str) -> str | None:
 def get_coordinate(url: str) -> Point | None:
     coordinates = wiki_parse.parse_coordinates(fetch_soup(url))
     if coordinates is None:
-        logger.error(f"Cannot find coordinates, url: {url}")
         return None
     return Point(*coordinates)
 
@@ -208,7 +216,7 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destin
     try:
         rows = wiki_parse.find_destination_rows(fetch_soup(url))
     except LookupError as e:
-        logger.error(f"Cannot find destination table, url: {url}, {e}")
+        note_problem("destinations_table", f"{e}, so none of its routes were read", airport=src_iata, url=url)
         return []
 
     parsed = [row for row in map(wiki_parse.parse_destination_row, rows) if row]
@@ -219,11 +227,25 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destin
         if row.airline_name in airline_codes_dict:
             airline_code = airline_codes_dict[row.airline_name]
         elif row.airline_title:
-            airline_code = get_airline_code(wiki_parse.wiki_url(row.airline_title), row.airline_name)
+            airline_url = wiki_parse.wiki_url(row.airline_title)
+            airline_code = get_airline_code(airline_url, row.airline_name)
+            if not airline_code:
+                note_problem(
+                    "airline_code",
+                    "The airline's page has no IATA code, so its routes here were skipped",
+                    airport=src_iata,
+                    airline=row.airline_name,
+                    url=airline_url,
+                )
+                continue
         else:
-            logger.error(f"Airline has no link or known code, url: {url}, name: {row.airline_name}")
-            continue
-        if not airline_code:
+            note_problem(
+                "airline_link",
+                "The airline isn't linked to its page and has no known code, so its routes here were skipped",
+                airport=src_iata,
+                airline=row.airline_name,
+                url=url,
+            )
             continue
 
         for title in row.destination_titles:
@@ -242,6 +264,12 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destin
                 logger.debug(f"Adding new airport, {row.airline_name} flying to {dst_url}")
                 info = get_airport_information(dst_url)
                 if info is None:
+                    note_problem(
+                        "destination_page",
+                        f"Skipped {page.title}: its page has no readable IATA code or coordinates",
+                        airport=src_iata,
+                        url=dst_url,
+                    )
                     continue
                 additional_destinations[dst_url] = {
                     "IATA": info[0],
@@ -293,8 +321,17 @@ def scrape_listed_airports(failed: list[str], known_points: dict[str, Point]) ->
     for country, airport in tqdm(listed, desc="Parsing Airports"):
         page = pages.get(airport.airport_title)
         point = None if is_target(country, airport.iata) else known_points.get(airport.iata)
-        if page and point is None:
+        if page is None:
+            note_problem(
+                "airport_page",
+                "The airport list links to a missing or disambiguation page",
+                airport=airport.iata,
+                url=wiki_parse.wiki_url(airport.airport_title),
+            )
+        elif point is None:
             point = get_coordinate(page.url)
+            if point is None:
+                note_problem("coordinates", "The page has no readable coordinates", airport=airport.iata, url=page.url)
         if page is None or point is None:
             failed.append(airport.airport_title)
             continue
@@ -317,7 +354,7 @@ def scrape_listed_airports(failed: list[str], known_points: dict[str, Point]) ->
 # The scraper reads regional brands as their own airline; the map shows the parent.
 AIRLINE_NAME_OVERRIDES = {"Delta Connection": "Delta Air Lines"}
 
-SNAPSHOT_FILES = ("airports.json", "airlines.json", "routes.json")
+SNAPSHOT_FILES = ("airports.json", "airlines.json", "routes.json", "problems.json")
 SNAPSHOT_KEY = re.compile(r"(\d{4})/(\d{2})/routes\.json")
 
 
@@ -598,6 +635,19 @@ def main() -> None:
 
     one_sided = one_sided_routes(routes, scraped_iatas)
     logger.info(f"{len(one_sided)} routes are listed by only one of their airports; see {REPORT_PATH}")
+    names = {code: AIRLINE_NAME_OVERRIDES.get(name, name) for name, code in airline_codes_dict.items()}
+    month_problems = found_problems + [
+        {
+            "kind": "one_sided_route",
+            "airport": r["missing_from"],
+            "airline": names.get(r["airline"], r["airline"]),
+            "url": None,
+            "message": f"{r['listed_by']}'s page lists this airline's route here, but this airport's page doesn't",
+        }
+        for r in one_sided
+    ]
+    if partial:
+        month_problems += kept_problems(snapshot, set(targets["IATA"]))
     report.update(
         snapshot=f"{snapshot[0]}-{snapshot[1]:02d}",
         airports=sorted(AIRPORTS),
@@ -608,11 +658,24 @@ def main() -> None:
         retry=retry,
         one_sided_routes=one_sided,
     )
-    write_outputs(listed_airports_df, routes, additional_destinations, snapshot)
+    write_outputs(listed_airports_df, routes, additional_destinations, snapshot, month_problems)
+
+
+def kept_problems(snapshot: tuple[int, int], targets: set[str]) -> list[dict]:
+    """The snapshot's problems a partial run didn't recheck. One-sided routes are always recomputed."""
+    return [
+        {k: v for k, v in p.items() if k not in ("airport_name", "coordinates")}
+        for p in _read_json(snapshot_prefix(snapshot) + "problems.json") or []
+        if p["airport"] not in targets and p["kind"] != "one_sided_route"
+    ]
 
 
 def write_outputs(
-    listed_airports_df: pd.DataFrame, routes: list, additional_destinations: dict, snapshot: tuple[int, int]
+    listed_airports_df: pd.DataFrame,
+    routes: list,
+    additional_destinations: dict,
+    snapshot: tuple[int, int],
+    problems: list[dict] | None = None,
 ) -> None:
     additional_airports_df = pd.DataFrame(
         [info for info in additional_destinations.values()], columns=["IATA", "url", "geometry", "title"]
@@ -647,6 +710,18 @@ def write_outputs(
     if unplaced:
         raise ValueError(f"Routes reference airports with no coordinates: {', '.join(sorted(unplaced))}")
 
+    # Before the filter below, so airports left off the map still place their problems.
+    places = {
+        row.IATA: {"airport_name": row.title, "coordinates": [round(row.geometry.x, 6), round(row.geometry.y, 6)]}
+        for row in airports_df.itertuples()
+    }
+    unplaced_problem = {"airport_name": None, "coordinates": None}
+    unique = {json.dumps(p, sort_keys=True): p for p in problems or []}
+    problems_body = sorted(
+        ({**p, **places.get(p["airport"], unplaced_problem)} for p in unique.values()),
+        key=lambda p: (p["airport"] or "", p["kind"], p["airline"] or "", p["url"] or ""),
+    )
+
     destinations = routes_df.groupby("src_airport")["dst_airport"].nunique()
     airports_df = airports_df[airports_df["IATA"].isin(destinations.index)]
     airports_df = airports_df.assign(destinations=airports_df["IATA"].map(destinations).astype(int))
@@ -658,6 +733,7 @@ def write_outputs(
             row.airline_code: AIRLINE_NAME_OVERRIDES.get(row.name, row.name) for row in airlines_df.itertuples()
         },
         "routes.json": routes_df.values.tolist(),
+        "problems.json": problems_body,
     }
 
     # S3 output is staged locally and uploaded once every file is written.

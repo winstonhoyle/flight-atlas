@@ -38,6 +38,16 @@ export const Legend = () => {
                 {bin.label}
               </li>
             ))}
+          <li className={styles.item}>
+            <span
+              className={styles.swatch}
+              style={{ background: "var(--fa-map-unreadable)" }}
+              aria-hidden
+            />
+            <a href="/errors" className={styles.link}>
+              Routes unreadable
+            </a>
+          </li>
         </ul>
       )}
     </Panel>

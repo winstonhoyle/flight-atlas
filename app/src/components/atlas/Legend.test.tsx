@@ -15,7 +15,12 @@ describe("Legend", () => {
       "21–50",
       "11–20",
       "1–10",
+      "Routes unreadable",
     ]);
+    expect(screen.getByRole("link", { name: "Routes unreadable" })).toHaveAttribute(
+      "href",
+      "/errors",
+    );
 
     const toggle = screen.getByRole("button", { name: "Collapse legend" });
     await userEvent.click(toggle);

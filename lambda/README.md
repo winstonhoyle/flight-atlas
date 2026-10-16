@@ -1,7 +1,7 @@
 # Flight Atlas API
 
 The API is one Lambda behind API Gateway at `https://api.flightatlas.io`. It answers
-`/airports`, `/airlines`, `/routes`, and `/available_months` from the JSON files the
+`/airports`, `/airlines`, `/routes`, `/problems`, and `/available_months` from the JSON files the
 [scraper](../ecs/README.md) writes to S3. The endpoints and parameters are in the
 [API reference](../README.md#api).
 
@@ -10,7 +10,8 @@ The API is one Lambda behind API Gateway at `https://api.flightatlas.io`. It ans
 1. `/available_months` returns the month list in `snapshots.json`.
 2. The other endpoints pick a snapshot: `year` and `month` give that one (or `404`), `month`
    alone gives that month's newest year, and neither gives the newest snapshot.
-3. The Lambda returns that month's `airports.json`, `airlines.json` or `routes.json` from S3.
+3. The Lambda returns that month's `airports.json`, `airlines.json`, `routes.json` or
+   `problems.json` from S3.
 
 The newest snapshot is served with `Cache-Control: public, max-age=3600`, since the scraper
 rewrites it. A past snapshot requested by `year` and `month` never changes and gets

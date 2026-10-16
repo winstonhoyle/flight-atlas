@@ -24,7 +24,7 @@ resource "aws_apigatewayv2_integration" "flights_integration" {
 }
 
 locals {
-  api_routes = ["GET /routes", "GET /airlines", "GET /airports", "GET /available_months"]
+  api_routes = ["GET /routes", "GET /airlines", "GET /airports", "GET /problems", "GET /available_months"]
 }
 
 resource "aws_apigatewayv2_route" "routes" {

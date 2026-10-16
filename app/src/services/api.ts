@@ -1,4 +1,4 @@
-import type { Airlines, Airport, MonthOption, RouteRow } from "@/types";
+import type { Airlines, Airport, MonthOption, Problem, RouteRow } from "@/types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "https://api.flightatlas.io";
 
@@ -29,8 +29,10 @@ const withQuery = (path: string, params: URLSearchParams) => {
 const fetchJSON = async <T>(
   endpoint: string,
   isValid: (data: unknown) => data is T,
+  ifMissing?: T,
 ): Promise<T> => {
   const res = await fetch(`${API_BASE}${endpoint}`);
+  if (res.status === 404 && ifMissing !== undefined) return ifMissing;
   if (!res.ok) throw new Error(`HTTP error ${res.status} on ${endpoint}`);
   const data: unknown = await res.json();
   if (!isValid(data)) throw new Error(`Unexpected response from ${endpoint}`);
@@ -49,6 +51,10 @@ const isFeatureCollection = (data: unknown): data is { features: unknown[] } =>
 const isRouteRows = (data: unknown): data is RouteRow[] =>
   Array.isArray(data) &&
   data.every((r) => Array.isArray(r) && r.length === 3 && r.every((c) => typeof c === "string"));
+
+const isProblems = (data: unknown): data is Problem[] =>
+  Array.isArray(data) &&
+  data.every((p) => isObject(p) && typeof p.kind === "string" && typeof p.message === "string");
 
 const isMonthRows = (data: unknown): data is { month: string; year: string }[] =>
   Array.isArray(data) &&
@@ -74,6 +80,10 @@ export const fetchAirports = async (snapshot: MonthOption | null): Promise<Airpo
 
 export const fetchRoutes = (snapshot: MonthOption | null): Promise<RouteRow[]> =>
   fetchJSON(snapshotPath("/routes", snapshot), isRouteRows);
+
+// Months scraped before problems.json existed have none.
+export const fetchProblems = (snapshot: MonthOption | null): Promise<Problem[]> =>
+  fetchJSON(snapshotPath("/problems", snapshot), isProblems, []);
 
 export const fetchMonths = async (): Promise<MonthOption[]> => {
   const data = await fetchJSON("/available_months", isMonthRows);

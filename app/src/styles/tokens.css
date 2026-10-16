@@ -43,6 +43,7 @@
   --map-yellow: #f2f700;
   --map-light-green: #62eb07;
   --map-green: #047a00;
+  --map-gray: #a9aeb1;
 
   /* Roles: surfaces and text */
   --fa-color-surface: var(--uswds-white);
@@ -70,6 +71,7 @@
   --fa-map-destinations-3: var(--map-yellow);
   --fa-map-destinations-4: var(--map-light-green);
   --fa-map-destinations-5: var(--map-green);
+  --fa-map-unreadable: var(--map-gray);
 
   /* Type */
   --fa-font-sans: "Public Sans", system-ui, sans-serif;

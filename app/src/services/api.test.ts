@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchMonths, fetchRoutes, snapshotParams } from "./api";
+import { fetchMonths, fetchProblems, fetchRoutes, snapshotParams } from "./api";
 
 const respond = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -70,5 +70,15 @@ describe("snapshotParams", () => {
       "year=2026&month=02",
     );
     expect(snapshotParams(null).toString()).toBe("");
+  });
+});
+
+describe("fetchProblems", () => {
+  it("treats a month without a report as having no problems", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => respond(404, { error: "No data for that month" })),
+    );
+    expect(await fetchProblems(null)).toEqual([]);
   });
 });
