@@ -423,44 +423,33 @@ export const MapComponent = () => {
   if (unmapped && (selectedAirport || selectedAirline)) setUnmapped("");
 
   const notice = useMemo(() => {
-    const snapshot = chosenSnapshot;
+    const plural = (n: number) => `${n} Wikipedia data ${n === 1 ? "problem" : "problems"}`;
     if (selectedAirport) {
       const iata = selectedAirport.properties.IATA;
-      const found = problems.filter((p) => p.airport === iata);
+      const count = problems.filter((p) => p.airport === iata).length;
       return (
-        found.length > 0 && (
-          <ProblemNotice
-            title="Some of this airport's Wikipedia data couldn't be read"
-            problems={found}
-            groupedBy="airport"
-            href={errorsUrl(iata, snapshot)}
-          />
-        )
+        count > 0 && <ProblemNotice text={plural(count)} href={errorsUrl(iata, chosenSnapshot)} />
       );
     }
     if (selectedAirline) {
       const name = airlines[selectedAirline];
-      const found = problems.filter((p) => p.airline === name);
+      const count = problems.filter((p) => p.airline === name).length;
       return (
-        found.length > 0 && (
+        count > 0 && (
           <ProblemNotice
-            title="Some of this airline's Wikipedia data couldn't be read"
-            problems={found}
-            groupedBy="airline"
-            href={errorsUrl(airlineAnchor(name), snapshot)}
+            text={plural(count)}
+            href={errorsUrl(airlineAnchor(name), chosenSnapshot)}
           />
         )
       );
     }
-    const found = problems.filter((p) => p.airport === unmapped);
+    const found = problems.find((p) => p.airport === unmapped);
     return (
       unmapped &&
-      found.length > 0 && (
+      found && (
         <ProblemNotice
-          title={`${found[0].airport_name ?? unmapped} (${unmapped}) isn't on the map`}
-          problems={found}
-          groupedBy="airport"
-          href={errorsUrl(unmapped, snapshot)}
+          text={`${found.airport_name ?? unmapped} (${unmapped}) isn't on the map: its Wikipedia routes couldn't be read.`}
+          href={errorsUrl(unmapped, chosenSnapshot)}
         />
       )
     );
