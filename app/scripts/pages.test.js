@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { airlinePage, airportPage, renderPage, sitemapXml } from "./pages.js";
+import { airlinePage, airportPage, errorsPage, renderPage, sitemapXml } from "./pages.js";
 
 const TEMPLATE = `<html><head>
 <title>Flight Atlas</title>
@@ -35,6 +35,14 @@ describe("renderPage", () => {
       "<h1>Direct flights from Hartsfield–Jackson Atlanta International Airport (ATL)</h1>",
     );
     expect(html).toContain('<script type="module" src="/assets/index.js"></script>');
+  });
+
+  it("gives the errors page its own canonical instead of the home page's", () => {
+    const html = renderPage(TEMPLATE, errorsPage());
+
+    expect(html).toContain('<link rel="canonical" href="https://flightatlas.io/errors" />');
+    expect(html).toContain("<title>Wikipedia data problems | Flight Atlas</title>");
+    expect(html).toContain('"@type":"WebPage"');
   });
 
   it("escapes names in HTML and in structured data", () => {

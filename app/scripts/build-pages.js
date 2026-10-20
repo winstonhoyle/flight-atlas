@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SITE_URL, airlinePage, airportPage, renderPage, sitemapXml } from "./pages.js";
+import { SITE_URL, airlinePage, airportPage, errorsPage, renderPage, sitemapXml } from "./pages.js";
 
 const API_BASE = process.env.VITE_API_BASE || "https://api.flightatlas.io";
 const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
@@ -14,7 +14,8 @@ const fetchJSON = async (endpoint) => {
 
 const main = async () => {
   const template = fs.readFileSync(path.join(DIST, "index.html"), "utf8");
-  const pages = [];
+  // Without its own page, /errors falls back to index.html, whose canonical points home.
+  const pages = [errorsPage()];
   try {
     const [airports, airlines] = await Promise.all([
       fetchJSON("/airports"),
@@ -36,12 +37,7 @@ const main = async () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, renderPage(template, page));
   }
-  const urls = [
-    `${SITE_URL}/`,
-    `${SITE_URL}/docs`,
-    `${SITE_URL}/errors`,
-    ...pages.map((p) => p.url).sort(),
-  ];
+  const urls = [`${SITE_URL}/`, `${SITE_URL}/docs`, ...pages.map((p) => p.url).sort()];
   fs.writeFileSync(
     path.join(DIST, "sitemap.xml"),
     sitemapXml(urls, new Date().toISOString().slice(0, 10)),

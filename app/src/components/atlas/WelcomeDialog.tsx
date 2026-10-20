@@ -20,7 +20,7 @@ export const WelcomeDialog = ({ open, onClose }: WelcomeDialogProps) => (
       <p>
         Read the code on{" "}
         <ExternalLink href="https://github.com/winstonhoyle/flight-atlas">GitHub</ExternalLink> or
-        use the data through the <ExternalLink href="/docs.html">API</ExternalLink>.
+        use the data through the <ExternalLink href="/docs">API</ExternalLink>.
       </p>
       <p>
         Routes come from Wikipedia. Gray airports have pages the scraper couldn&apos;t read; see the{" "}

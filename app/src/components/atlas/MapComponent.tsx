@@ -32,16 +32,24 @@ import styles from "./MapComponent.module.css";
 
 import { IconButton } from "@/components/common/IconButton";
 
-import { useAtlasData } from "@/hooks/useAtlasData";
+import { useAtlasData, useCompareData } from "@/hooks/useAtlasData";
 import { useMonths } from "@/hooks/useMonths";
-import { useRoutes } from "@/hooks/useRoutes";
+import { airlinesOn, routesFor, useRoutes } from "@/hooks/useRoutes";
 import { useSelectionUrl } from "@/hooks/useSelectionUrl";
 import { InfoIcon } from "@/icons";
 import { tokenValue } from "@/styles/tokens";
-import type { AirlineSummary, Airport, MonthOption, RouteProperties } from "@/types";
+import type {
+  AirlineSummary,
+  Airport,
+  Compare,
+  MonthOption,
+  RouteProperties,
+  RouteRow,
+} from "@/types";
 import { destinationBin, destinationColorToken } from "@/utils/destinations";
 import { distanceMiles, greatCircle } from "@/utils/geo";
 import { airlineAnchor, errorsUrl } from "@/utils/problems";
+import { changedAirports, changeProblems, routeChanges } from "@/utils/routeChanges";
 import { EMPTY_SELECTION, type Selection } from "@/utils/selectionPath";
 
 const GEODESIC_MIN_MILES = 1000;
@@ -141,9 +149,25 @@ const unreadableStyle = () =>
       }),
   );
 
+// Compare mode counts changes, not destinations, so the destinations ramp doesn't apply.
+const changedStyle = (changes: number) =>
+  cachedStyle(
+    `airport-changed-${changes}`,
+    () =>
+      new Style({
+        image: new Circle({
+          radius: 4 + Math.min(changes, 4),
+          fill: new Fill({ color: tokenValue("--fa-map-route-highlight") }),
+          stroke: new Stroke({ color: tokenValue("--fa-map-marker-stroke"), width: 0.5 }),
+        }),
+        zIndex: changes,
+      }),
+  );
+
 const airportStyle = (feature: FeatureLike) => {
   if (feature.get("unreadable")) return unreadableStyle();
   const destinations = (feature.get("airport") as Airport).properties.destinations || 0;
+  if (feature.get("changed")) return changedStyle(destinations);
   return cachedStyle(
     `airport-${destinations}`,
     () =>
@@ -164,15 +188,13 @@ const airportStyle = (feature: FeatureLike) => {
 // airports.json leaves out airports with no routes, so only the gray ones have 0.
 const isUnreadable = (airport: Airport) => airport.properties.destinations === 0;
 
-const toAirlineSummaries = (airlines: Record<string, string>): AirlineSummary[] =>
-  Object.entries(airlines).map(([code, name]) => ({ code, name }));
-
 export const MapComponent = () => {
   const [selectedAirport, setSelectedAirport] = useState<Airport | null>(null);
   const [selectedAirline, setSelectedAirline] = useState("");
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem("hasVisited"));
   const [destinationAirport, setDestinationAirport] = useState<Airport | null>(null);
   const [chosenSnapshot, setChosenSnapshot] = useState<MonthOption | null>(null);
+  const [compare, setCompare] = useState<Compare | null>(null);
   const [hovered, setHovered] = useState<Airport | null>(null);
   // An airport in the URL that isn't on the map, kept to explain why.
   const [unmapped, setUnmapped] = useState("");
@@ -270,21 +292,47 @@ export const MapComponent = () => {
 
   const { months, loading: monthsLoading, error: monthsError } = useMonths();
   const {
-    airports,
-    routes: routeRows,
-    problems,
+    airports: monthAirports,
+    routes: monthRows,
+    problems: monthProblems,
     airlines,
     loading,
     error: dataError,
   } = useAtlasData(chosenSnapshot);
-  const routes = useRoutes(selectedAirport, selectedAirline, routeRows, airports);
-  const locked = loading || monthsLoading;
+  const earlier = useCompareData(compare?.from ?? null);
+
+  const changedRows = useMemo(() => {
+    if (!compare || !monthRows || !earlier.routes) return null;
+    return routeChanges(earlier.routes, monthRows)[compare.show];
+  }, [compare, monthRows, earlier.routes]);
+
+  const changed = useMemo(
+    () => changedRows && changedAirports(changedRows, monthAirports, earlier.airports),
+    [changedRows, monthAirports, earlier.airports],
+  );
+
+  const airports = changed ?? monthAirports;
+  const routeRows = changedRows ?? monthRows;
+  // A new route may be missing from the earlier month's data, a lost one from the later month's.
+  const problems = compare?.show === "added" ? earlier.problems : monthProblems;
+  const snapshot = chosenSnapshot ?? months[0] ?? null;
+  const problemsMonth = compare?.show === "added" ? compare.from : snapshot;
+
+  const routes = useRoutes(selectedAirport, selectedAirline, routeRows, airports, !!changed);
+  const locked = loading || monthsLoading || earlier.loading;
+
+  const changeCompare = (next: Compare | null) => {
+    setCompare(next);
+    setSelectedAirport(null);
+    setDestinationAirport(null);
+  };
 
   // Airports whose pages gave no routes, so they're off the map; drawn gray to show why.
   const unreadableAirports = useMemo<Airport[]>(() => {
-    const mapped = new Set(airports.map((a) => a.properties.IATA));
+    if (changed) return [];
+    const mapped = new Set(monthAirports.map((a) => a.properties.IATA));
     const found = new Map<string, Airport>();
-    for (const p of problems) {
+    for (const p of monthProblems) {
       if (!p.airport || !p.coordinates || mapped.has(p.airport) || found.has(p.airport)) continue;
       found.set(p.airport, {
         type: "Feature",
@@ -299,7 +347,7 @@ export const MapComponent = () => {
       });
     }
     return [...found.values()];
-  }, [airports, problems]);
+  }, [changed, monthAirports, monthProblems]);
 
   const findAirport = (iata: string) => airports.find((a) => a.properties.IATA === iata) ?? null;
 
@@ -394,36 +442,41 @@ export const MapComponent = () => {
         geometry: new Point(fromLonLat(airport.geometry.coordinates)),
         airport,
         unreadable,
+        changed: !!changed,
       });
     airportsSource.clear();
     airportsSource.addFeatures([
       ...visibleAirports.map((airport) => feature(airport, false)),
       ...(filteredAirports.length ? [] : unreadableAirports.map((a) => feature(a, true))),
     ]);
-  }, [visibleAirports, filteredAirports, unreadableAirports, airportsSource]);
+  }, [visibleAirports, filteredAirports, unreadableAirports, changed, airportsSource]);
 
-  const baseAirlines = useMemo(() => toAirlineSummaries(airlines), [airlines]);
-
+  // What the map draws before an airline is picked, so picking one still offers the rest.
   const filteredAirlines = useMemo<AirlineSummary[]>(() => {
-    if (!selectedAirport || !routes) return baseAirlines;
-    const destinations = new Map<string, Set<string>>();
-    routes.features.forEach(({ properties: { airline_code, dst_airport } }) => {
-      if (!destinations.has(airline_code)) destinations.set(airline_code, new Set());
-      destinations.get(airline_code)!.add(dst_airport);
-    });
-    return [...destinations.entries()]
-      .map(([code, dsts]) => ({
-        code,
-        name: airlines[code] || "Unknown Airline",
-        destinations: dsts.size,
-      }))
-      .sort((a, b) => b.destinations - a.destinations);
-  }, [selectedAirport, routes, airlines, baseAirlines]);
+    const shown = routesFor(selectedAirport, "", routeRows, airports, true);
+    return shown ? airlinesOn(shown, airlines) : [];
+  }, [selectedAirport, routeRows, airports, airlines]);
 
   if (unmapped && (selectedAirport || selectedAirline)) setUnmapped("");
 
   const notice = useMemo(() => {
     const plural = (n: number) => `${n} Wikipedia data ${n === 1 ? "problem" : "problems"}`;
+    if (changed) {
+      // The whole comparison's count is too broad to act on; show it once narrowed down.
+      if (!selectedAirport && !selectedAirline) return null;
+      const shown = (routes?.features ?? [])
+        .filter((f) => !selectedAirline || f.properties.airline_code === selectedAirline)
+        .map(({ properties: p }): RouteRow => [p.airline_code, p.src_airport, p.dst_airport]);
+      const found = changeProblems(shown, problems);
+      return (
+        found.length > 0 && (
+          <ProblemNotice
+            text={`${plural(found.length)} in ${problemsMonth?.label} may explain some of these changes.`}
+            href={errorsUrl(selectedAirport?.properties.IATA ?? found[0].airport!, problemsMonth)}
+          />
+        )
+      );
+    }
     if (selectedAirport) {
       const iata = selectedAirport.properties.IATA;
       const count = problems.filter((p) => p.airport === iata).length;
@@ -453,7 +506,17 @@ export const MapComponent = () => {
         />
       )
     );
-  }, [selectedAirport, selectedAirline, unmapped, problems, airlines, chosenSnapshot]);
+  }, [
+    changed,
+    routes,
+    problemsMonth,
+    selectedAirport,
+    selectedAirline,
+    unmapped,
+    problems,
+    airlines,
+    chosenSnapshot,
+  ]);
 
   const handleBack = () => {
     if (destinationAirport) return setDestinationAirport(null);
@@ -490,7 +553,7 @@ export const MapComponent = () => {
         map.tooltipElement,
       )}
 
-      <Legend />
+      {!changed && <Legend />}
 
       <OverlayPanel
         airports={airports}
@@ -504,10 +567,13 @@ export const MapComponent = () => {
         destinationAirport={destinationAirport}
         setDestinationAirport={setDestinationAirport}
         monthOptions={months}
-        snapshot={chosenSnapshot ?? months[0] ?? null}
+        snapshot={snapshot}
         setSnapshot={setChosenSnapshot}
+        compare={compare}
+        setCompare={changeCompare}
+        changeCount={changedRows?.length ?? null}
         loading={locked}
-        error={monthsError || dataError}
+        error={monthsError || dataError || earlier.error}
       >
         {!destinationAirport && notice}
         {selectedAirport && destinationAirport && routes && (

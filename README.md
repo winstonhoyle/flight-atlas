@@ -20,7 +20,7 @@ How data moves:
 1. `make scrape` reads Wikipedia and writes the month's `airports.json`, `airlines.json`, `routes.json` and `problems.json` to `s3://<bucket>/YYYY/MM/`, then rewrites the month list in `snapshots.json`.
 2. The app calls `api.flightatlas.io`, where API Gateway invokes the Lambda.
 3. The Lambda picks the snapshot and returns its file from S3. Cloudflare caches the response.
-4. The app loads a month's airports and routes once and filters routes by airport or airline in the browser.
+4. The app loads a month's airports and routes once and filters routes by airport or airline in the browser. To compare months, it loads both and works out the new and lost routes in the browser too.
 
 The scraper is packaged for ECS with a monthly EventBridge schedule, but AWS blocks ECS task
 launches for this account, so it runs locally.

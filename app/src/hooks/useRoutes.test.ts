@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Airport, RouteRow } from "@/types";
-import { routesFor } from "./useRoutes";
+import { airlinesOn, routesFor } from "./useRoutes";
 
 const airport = (IATA: string, lng: number, lat: number): Airport => ({
   type: "Feature",
@@ -44,8 +44,26 @@ describe("routesFor", () => {
     ]);
   });
 
+  it("draws every route with nothing selected when asked to", () => {
+    expect(pairs(routesFor(null, "", ROWS, AIRPORTS, true))).toEqual([
+      "DL ATL-BOS",
+      "B6 ATL-JFK",
+      "DL BOS-ATL",
+    ]);
+  });
+
   it("has nothing to show without a selection or data", () => {
     expect(routesFor(null, "", ROWS, AIRPORTS)).toBeNull();
     expect(routesFor(AIRPORTS[0], "", null, AIRPORTS)).toBeNull();
+  });
+});
+
+describe("airlinesOn", () => {
+  it("lists only the airlines on the drawn routes, most destinations first", () => {
+    const routes = routesFor(null, "", ROWS, AIRPORTS, true)!;
+    expect(airlinesOn(routes, { DL: "Delta", B6: "JetBlue", UA: "United" })).toEqual([
+      { code: "DL", name: "Delta", destinations: 2 },
+      { code: "B6", name: "JetBlue", destinations: 1 },
+    ]);
   });
 });

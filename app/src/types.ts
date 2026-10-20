@@ -54,3 +54,8 @@ export type MonthOption = {
   month: string;
   year: number;
 };
+
+export type RouteChange = "added" | "lost";
+
+/** Compares `from` with the later month the map shows. */
+export type Compare = { from: MonthOption; show: RouteChange };

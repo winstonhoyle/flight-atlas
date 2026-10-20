@@ -28,8 +28,8 @@ Each component is three flat files in its feature folder: `Name.tsx`, `Name.modu
 
 | Folder | What lives there |
 | --- | --- |
-| `app/src/components/common/` | Domain-free building blocks: `Button`, `IconButton`, `Combobox`, `Panel`, `Dialog`, `ExternalLink` |
-| `app/src/components/atlas/` | The map page: `MapComponent`, `OverlayPanel`, `RouteInfo`, `Legend`, `WelcomeDialog` |
+| `app/src/components/common/` | Domain-free building blocks: `Button`, `IconButton`, `Combobox`, `SegmentedControl`, `Panel`, `Dialog`, `ExternalLink` |
+| `app/src/components/atlas/` | The map page: `MapComponent`, `OverlayPanel`, `MonthControls`, `ChangedAirports`, `RouteInfo`, `Legend`, `WelcomeDialog` |
 | `app/src/icons/` | Inline SVG icons |
 | `app/src/styles/` | `tokens.css` (every value), `tokens.ts` (reads them from JS), `index.css` (base styles) |
 
@@ -63,13 +63,17 @@ does, and components read only roles, so changing what a role looks like is one 
 | Role | Value | Used for |
 | --- | --- | --- |
 | `--fa-map-route` | `#64b5f7` | Every drawn route |
-| `--fa-map-route-highlight` | `#004c97` | Hovered airport's routes, the selected route |
+| `--fa-map-route-highlight` | `#004c97` | Hovered airport's routes, the selected route, airport markers when comparing months |
 | `--fa-map-marker-stroke` | gray-90 `#1b1b1b` | Airport marker outline |
 | `--fa-map-destinations-1` to `-5` | `#ff0000`, `#fc8d59`, `#f2f700`, `#62eb07`, `#047a00` | Airport marker fill, 1 to 10 destinations up to over 100 |
 
 The map keeps its original colors, which aren't USWDS colors. The destinations ramp runs from
 red (fewest) to green (most), a pair color-blind readers can confuse, so marker size grows
 with the count as well and the legend gives each color's range.
+
+When comparing months, a marker counts changed routes, not destinations, so the ramp doesn't
+apply: every marker is `--fa-map-route-highlight`, sized by its count, and the legend is
+hidden.
 
 ### Typography
 

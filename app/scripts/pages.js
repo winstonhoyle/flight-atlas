@@ -50,6 +50,21 @@ export const airlinePage = (code, name) => {
   };
 };
 
+export const errorsPage = () => {
+  const url = `${SITE_URL}/errors`;
+  const title = `Wikipedia data problems | ${SITE_NAME}`;
+  return {
+    path: "errors",
+    title,
+    description:
+      "Wikipedia airport and airline pages the Flight Atlas scraper couldn't fully read, by airport and airline.",
+    url,
+    heading: "Wikipedia data problems",
+    summary: "Pages the scraper couldn't fully read, so some routes may be missing from the map.",
+    data: { "@context": "https://schema.org", "@type": "WebPage", name: title, url },
+  };
+};
+
 const setAttr = (html, pattern, value) => {
   if (!pattern.test(html)) throw new Error(`Template is missing ${pattern}`);
   return html.replace(pattern, `$1${escapeHtml(value)}$2`);

@@ -6,7 +6,11 @@ import { IconButton } from "@/components/common/IconButton";
 import { Panel } from "@/components/common/Panel";
 import { ArrowBackIcon, ExpandLessIcon, ExpandMoreIcon, SettingsIcon } from "@/icons";
 import { API_BASE, snapshotParams } from "@/services/api";
-import type { AirlineSummary, Airport, MonthOption, Routes } from "@/types";
+import type { AirlineSummary, Airport, Compare, MonthOption, Routes } from "@/types";
+import { shortLabel } from "@/utils/months";
+import { CHANGE_LABELS } from "@/utils/routeChanges";
+import { ChangedAirports } from "./ChangedAirports";
+import { MonthControls } from "./MonthControls";
 import styles from "./OverlayPanel.module.css";
 
 type Option = { value: string; label: string };
@@ -25,6 +29,10 @@ type OverlayPanelProps = {
   monthOptions: MonthOption[];
   snapshot: MonthOption | null;
   setSnapshot: (snapshot: MonthOption) => void;
+  compare: Compare | null;
+  setCompare: (compare: Compare | null) => void;
+  /** Routes that changed between the compared months; `null` outside compare mode. */
+  changeCount: number | null;
   loading: boolean;
   error: string | null;
   children?: ReactNode;
@@ -59,6 +67,9 @@ export const OverlayPanel = ({
   monthOptions,
   snapshot,
   setSnapshot,
+  compare,
+  setCompare,
+  changeCount,
   loading,
   error,
   children,
@@ -103,18 +114,30 @@ export const OverlayPanel = ({
     { value: "", label: "All airlines" },
     ...filteredAirlines.map((a) => ({
       value: a.code,
-      label: selectedAirport ? `${a.name} (${a.destinations ?? 0})` : `${a.name} (${a.code})`,
+      label:
+        selectedAirport || compare ? `${a.name} (${a.destinations ?? 0})` : `${a.name} (${a.code})`,
     })),
   ];
 
-  const apiUrl = buildApiUrl(selectedAirport, selectedAirline, snapshot);
+  const change = compare && CHANGE_LABELS[compare.show].toLowerCase();
+  const range = compare && snapshot && `${shortLabel(compare.from)} to ${shortLabel(snapshot)}`;
+  // In compare mode, the routes drawn from it, not the marker's count, which includes inbound changes.
+  const destinationCount = compare
+    ? destinationOptions.length - 1
+    : (selectedAirport?.properties.destinations ?? 0);
 
   return (
     <Panel id="overlay-panel" className={styles.panel}>
       <div className={styles.header}>
         <div>
           <h1 className={styles.title}>Direct flight routes</h1>
-          {snapshot && <p className={styles.snapshot}>Data from {snapshot.label}</p>}
+          {snapshot && (
+            <p className={styles.snapshot}>
+              {compare
+                ? `${CHANGE_LABELS[compare.show]} routes, ${range}`
+                : `Data from ${snapshot.label}`}
+            </p>
+          )}
         </div>
         <IconButton
           label={isOpen ? "Collapse panel" : "Expand panel"}
@@ -185,16 +208,16 @@ export const OverlayPanel = ({
 
           {selectedAirport && !destinationAirport && (
             <p className={styles.summary}>
-              {selectedAirport.properties.Name} has direct flights to{" "}
-              {selectedAirport.properties.destinations}{" "}
-              {selectedAirport.properties.destinations === 1 ? "destination" : "destinations"}.
+              {selectedAirport.properties.Name}{" "}
+              {compare ? `has ${change} routes to` : "has direct flights to"} {destinationCount}{" "}
+              {destinationCount === 1 ? "destination" : "destinations"}.
             </p>
           )}
 
           {children}
 
           <div className={styles.footer}>
-            {(selectedAirport || routes) && (
+            {(selectedAirport || selectedAirline) && (
               <Button variant="unstyled" icon={<ArrowBackIcon />} onClick={handleBack}>
                 Back
               </Button>
@@ -213,32 +236,50 @@ export const OverlayPanel = ({
 
           {showAdvanced && (
             <div id="overlay-advanced" className={styles.advanced}>
-              <p className={styles.hint}>
-                Data snapshot: the month the routes were collected, not a flight schedule.
-              </p>
-              <Combobox<MonthOption>
-                label="Data snapshot month"
-                size="sm"
-                value={snapshot}
-                onChange={(option) => {
-                  if (option) setSnapshot(option);
-                }}
-                options={monthOptions}
-                isDisabled={loading}
-                placeholder="Select a month"
-                getOptionLabel={(o) => o.label}
-                getOptionValue={(o) => `${o.year}-${o.month}`}
+              <MonthControls
+                months={monthOptions}
+                snapshot={snapshot}
+                setSnapshot={setSnapshot}
+                compare={compare}
+                setCompare={setCompare}
+                disabled={loading}
               />
-              <ExternalLink
-                href={apiUrl}
-                className={styles.apiUrl}
-                title="Open this API request in a new tab"
-              >
-                {apiUrl}
-              </ExternalLink>
-              <ExternalLink href="/docs.html">API docs</ExternalLink>
+              <p className={styles.hint}>
+                {compare
+                  ? "The comparison is built from these two requests."
+                  : "Data snapshot: the month the routes were collected, not a flight schedule."}
+              </p>
+              {(compare ? [compare.from, snapshot] : [snapshot]).map((month) => {
+                const url = buildApiUrl(selectedAirport, selectedAirline, month);
+                return (
+                  <ExternalLink
+                    key={url}
+                    href={url}
+                    className={styles.apiUrl}
+                    title="Open this API request in a new tab"
+                  >
+                    {url}
+                  </ExternalLink>
+                );
+              })}
+              <ExternalLink href="/docs">API docs</ExternalLink>
               <ExternalLink href="/errors">Wikipedia data problems</ExternalLink>
             </div>
+          )}
+
+          {changeCount === 0 && (
+            <p className={styles.summary}>
+              No {change} routes, {range}.
+            </p>
+          )}
+
+          {compare && !!changeCount && !selectedAirport && !selectedAirline && (
+            <ChangedAirports
+              airports={airports}
+              show={compare.show}
+              routeCount={changeCount}
+              onSelect={setSelectedAirport}
+            />
           )}
 
           <div role="status" className={styles.status}>

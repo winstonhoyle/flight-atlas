@@ -203,7 +203,7 @@ export const ErrorsPage = () => {
       )}
 
       <footer className={styles.footer}>
-        Also available from the API: <ExternalLink href="/docs.html">GET /problems</ExternalLink>
+        Also available from the API: <ExternalLink href="/docs">GET /problems</ExternalLink>
       </footer>
     </main>
   );

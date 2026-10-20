@@ -6,7 +6,8 @@
   display: flex;
   flex-direction: column;
   width: 20rem;
-  max-height: calc(100dvh - 2 * var(--fa-space-105));
+  /* Stops above the floating info button in the bottom-right corner. */
+  max-height: calc(100dvh - 2 * var(--fa-space-105) - var(--fa-map-bottom) - var(--fa-target-min));
   padding: var(--fa-space-105) var(--fa-space-2);
 }
 
@@ -30,6 +31,9 @@
   gap: var(--fa-space-105);
   min-height: 0;
   margin-top: var(--fa-space-105);
+  /* Scroll into the panel's right padding, so a scrollbar sits there instead of over content. */
+  margin-right: calc(-1 * var(--fa-space-2));
+  padding-right: var(--fa-space-2);
   overflow-y: auto;
 }
 
