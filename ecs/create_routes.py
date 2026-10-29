@@ -339,6 +339,7 @@ def scrape_listed_airports(failed: list[str], known_points: dict[str, Point]) ->
             {
                 "FAA": airport.faa,
                 "IATA": airport.iata,
+                "City": airport.city,
                 "ICAO": airport.icao,
                 "Country": country,
                 "url": page.url,
@@ -463,6 +464,7 @@ def airports_body(airports_df: pd.DataFrame) -> dict:
                 "FAA": row.FAA if isinstance(row.FAA, str) and row.FAA else None,
                 "IATA": row.IATA,
                 "Name": row.title,
+                "City": row.City if isinstance(row.City, str) and row.City else None,
                 "url": row.url,
                 "destinations": int(row.destinations),
             },
@@ -703,7 +705,7 @@ def write_outputs(
         raise ValueError(f"Routes reference airlines with no name: {', '.join(sorted(unnamed))}")
 
     airports_df = pd.concat([listed_airports_df, additional_airports_df], ignore_index=True)[
-        ["FAA", "IATA", "url", "geometry", "title"]
+        ["FAA", "IATA", "City", "url", "geometry", "title"]
     ]
     airports_df = airports_df[airports_df["IATA"].str.len() == 3]
     unplaced = (set(routes_df["src_airport"]) | set(routes_df["dst_airport"])) - set(airports_df["IATA"])

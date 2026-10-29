@@ -39,3 +39,34 @@ body {
 .ol-viewport {
   font-family: var(--fa-font-sans);
 }
+
+.about {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: var(--fa-space-3) var(--fa-space-2);
+}
+
+.about h2 {
+  margin: 0 0 var(--fa-space-1);
+  font-size: var(--fa-font-size-lg);
+  line-height: var(--fa-leading-tight);
+}
+
+.about h3 {
+  margin: var(--fa-space-2) 0 var(--fa-space-1);
+  font-size: var(--fa-font-size-sm);
+}
+
+.about ul {
+  columns: 18rem;
+  margin: 0;
+  padding-left: var(--fa-space-2);
+}
+
+.about li {
+  break-inside: avoid;
+}
+
+.about a {
+  color: var(--fa-color-link);
+}

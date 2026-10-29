@@ -4,6 +4,7 @@ export type AirportProperties = {
   FAA: string | null;
   IATA: string;
   Name: string;
+  City?: string | null;
   url: string;
   destinations: number;
 };

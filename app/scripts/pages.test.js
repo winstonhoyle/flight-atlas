@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { airlinePage, airportPage, errorsPage, renderPage, sitemapXml } from "./pages.js";
+import {
+  airlinePage,
+  airportPage,
+  airportsPage,
+  errorsPage,
+  homeSection,
+  renderHome,
+  renderPage,
+  sitemapXml,
+} from "./pages.js";
 
 const TEMPLATE = `<html><head>
 <title>Flight Atlas</title>
@@ -57,6 +66,62 @@ describe("renderPage", () => {
 
   it("fails loudly when the template is missing a tag it fills in", () => {
     expect(() => renderPage("<html></html>", airportPage(ATL))).toThrow("Template is missing");
+  });
+});
+
+describe("page sections", () => {
+  const ROUTES = [
+    ["DL", "ATL", "BOS"],
+    ["DL", "ATL", "BOS"],
+    ["B6", "ATL", "BOS"],
+    ["DL", "ATL", "CDG"],
+  ];
+  const NAMES = { ATL: ATL.properties.Name, BOS: "Logan International Airport" };
+  const AIRLINES = { DL: "Delta Air Lines", B6: "JetBlue" };
+
+  it("lists an airport's airlines and destinations as links after #root", () => {
+    const html = renderPage(TEMPLATE, airportPage(ATL, ROUTES, NAMES, AIRLINES));
+    const about = html.slice(html.indexOf('<div id="root">'));
+
+    expect(about).toMatch(/<\/div><section id="about"/);
+    expect(about).toContain('<a href="/airline/DL">Delta Air Lines</a>: 2 destinations');
+    expect(about).toContain('<a href="/airline/B6">JetBlue</a>: 1 destination');
+    expect(about).toContain(
+      '<a href="/BOS">Logan International Airport (BOS)</a>: Delta Air Lines, JetBlue',
+    );
+    expect(about).toContain("CDG: Delta Air Lines");
+    expect(about).not.toContain('href="/CDG"');
+    expect(html).not.toContain("noindex");
+  });
+
+  it("keeps airports with few destinations out of search", () => {
+    const small = { ...ATL, properties: { ...ATL.properties, destinations: 2 } };
+    const html = renderPage(TEMPLATE, airportPage(small, ROUTES, NAMES, AIRLINES));
+    expect(html).toContain('<meta name="robots" content="noindex" />\n</head>');
+  });
+
+  it("lists an airline's airports", () => {
+    const page = airlinePage("DL", "Delta Air Lines", ROUTES, NAMES);
+    expect(page.section).toContain(`<a href="/ATL">${NAMES.ATL} (ATL)</a>: 2 destinations`);
+  });
+
+  it("serves the airport directory without the app, which would send it home", () => {
+    const bos = { properties: { IATA: "BOS", Name: NAMES.BOS, destinations: 156 } };
+    const html = renderPage(TEMPLATE, airportsPage([ATL, bos]));
+
+    expect(html).not.toContain('<script type="module"');
+    expect(html).toContain('<link rel="canonical" href="https://flightatlas.io/airports" />');
+    expect(html.indexOf('href="/ATL"')).toBeLessThan(html.indexOf('href="/BOS"'));
+    expect(html).toContain(
+      '<div id="root"><section id="about" class="about"><h1>All airports</h1>',
+    );
+  });
+
+  it("adds the busiest airports to the home page and keeps its head", () => {
+    const html = renderHome(TEMPLATE, homeSection([ATL]));
+    expect(html).toContain('<link rel="canonical" href="https://flightatlas.io/" />');
+    expect(html).toContain('<div id="root"></div><section id="about"');
+    expect(html).toContain('<a href="/ATL">');
   });
 });
 

@@ -13,15 +13,84 @@ const jsonLd = (data) => JSON.stringify(data).replaceAll("</", "<\\/");
 
 const destinations = (n) => `${n} ${n === 1 ? "destination" : "destinations"}`;
 
-export const airportPage = ({ properties: p, geometry }) => {
+/** Airports with fewer destinations stay out of the sitemap and search results. */
+export const MIN_INDEXED_DESTINATIONS = 3;
+
+const link = (href, text) => `<a href="${href}">${escapeHtml(text)}</a>`;
+const list = (items) => `<ul>${items.map((item) => `<li>${item}</li>`).join("")}</ul>`;
+const airportLink = (iata, names) =>
+  names[iata] ? link(`/${iata}`, `${names[iata]} (${iata})`) : escapeHtml(iata);
+const byText = (a, b) => a.text.localeCompare(b.text);
+
+const section = (heading, summary, body, tag = "h2") =>
+  `<section id="about" class="about"><${tag}>${escapeHtml(heading)}</${tag}><p>${escapeHtml(summary)}</p>${body}` +
+  `<p>${link("/airports", "All airports")} · ${link("/", "Flight route map")}</p></section>`;
+
+/** Unique values of `value(row)` for each `key(row)`. */
+const groupSets = (rows, key, value) => {
+  const groups = new Map();
+  for (const row of rows) {
+    if (!groups.has(key(row))) groups.set(key(row), new Set());
+    groups.get(key(row)).add(value(row));
+  }
+  return groups;
+};
+
+/** `routes` are this airport's [airline, src, dst] rows; `names` maps IATA to name for airports with a page. */
+export const airportPage = (
+  { properties: p, geometry },
+  routes = [],
+  names = {},
+  airlines = {},
+) => {
   const url = `${SITE_URL}/${p.IATA}`;
+  const airlineDestinations = [
+    ...groupSets(
+      routes,
+      (r) => r[0],
+      (r) => r[2],
+    ),
+  ]
+    .map(([code, dsts]) => ({ code, count: dsts.size, text: airlines[code] ?? code }))
+    .sort((a, b) => b.count - a.count || byText(a, b))
+    .map(
+      ({ code, count, text }) =>
+        `${airlines[code] ? link(`/airline/${code}`, text) : escapeHtml(text)}: ${destinations(count)}`,
+    );
+  const destinationAirlines = [
+    ...groupSets(
+      routes,
+      (r) => r[2],
+      (r) => r[0],
+    ),
+  ]
+    .map(([dst, codes]) => ({ dst, codes, text: names[dst] ?? dst }))
+    .sort(byText)
+    .map(
+      ({ dst, codes }) =>
+        `${airportLink(dst, names)}: ${escapeHtml(
+          [...codes]
+            .map((c) => airlines[c] ?? c)
+            .sort()
+            .join(", "),
+        )}`,
+    );
+  const place = p.City ? ` in ${p.City}` : "";
   return {
+    noindex: p.destinations < MIN_INDEXED_DESTINATIONS,
     path: p.IATA,
     title: `${p.IATA} direct flights | ${SITE_NAME}`,
     description: `Direct flights from ${p.Name} (${p.IATA}) to ${destinations(p.destinations)}, on a map.`,
     url,
     heading: `Direct flights from ${p.Name} (${p.IATA})`,
     summary: `${p.Name} has direct flights to ${destinations(p.destinations)}.`,
+    section: routes.length
+      ? section(
+          `Direct flights from ${p.Name} (${p.IATA})`,
+          `${p.Name}${place} has direct flights to ${destinations(p.destinations)} on ${airlineDestinations.length} ${airlineDestinations.length === 1 ? "airline" : "airlines"}.`,
+          `<h3>Airlines</h3>${list(airlineDestinations)}<h3>Destinations</h3>${list(destinationAirlines)}`,
+        )
+      : "",
     data: {
       "@context": "https://schema.org",
       "@type": "Airport",
@@ -37,8 +106,19 @@ export const airportPage = ({ properties: p, geometry }) => {
   };
 };
 
-export const airlinePage = (code, name) => {
+/** `routes` are this airline's [airline, src, dst] rows; `names` maps IATA to name for airports with a page. */
+export const airlinePage = (code, name, routes = [], names = {}) => {
   const url = `${SITE_URL}/airline/${code}`;
+  const origins = [
+    ...groupSets(
+      routes,
+      (r) => r[1],
+      (r) => r[2],
+    ),
+  ]
+    .map(([src, dsts]) => ({ src, count: dsts.size, text: names[src] ?? src }))
+    .sort((a, b) => b.count - a.count || byText(a, b))
+    .map(({ src, count }) => `${airportLink(src, names)}: ${destinations(count)}`);
   return {
     path: `airline/${code}`,
     title: `${name} routes | ${SITE_NAME}`,
@@ -46,6 +126,13 @@ export const airlinePage = (code, name) => {
     url,
     heading: `${name} (${code}) routes`,
     summary: `The direct routes ${name} flies from North American airports.`,
+    section: routes.length
+      ? section(
+          `${name} (${code}) routes`,
+          `${name} flies direct from ${origins.length} ${origins.length === 1 ? "airport" : "airports"} on this map.`,
+          `<h3>Airports</h3>${list(origins)}`,
+        )
+      : "",
     data: { "@context": "https://schema.org", "@type": "Airline", name, iataCode: code, url },
   };
 };
@@ -65,6 +152,49 @@ export const errorsPage = () => {
   };
 };
 
+/** Every airport with a page, alphabetically. A plain page: the app would send /airports home. */
+export const airportsPage = (airports) => {
+  const url = `${SITE_URL}/airports`;
+  const title = `All airports | ${SITE_NAME}`;
+  const items = airports
+    .map(({ properties: p }) => ({ p, text: p.Name }))
+    .sort(byText)
+    .map(
+      ({ p }) => `${link(`/${p.IATA}`, `${p.Name} (${p.IATA})`)}: ${destinations(p.destinations)}`,
+    );
+  return {
+    path: "airports",
+    noApp: true,
+    title,
+    description: `Direct flight routes from ${airports.length} North American airports, on a map.`,
+    url,
+    heading: "All airports",
+    summary: `Direct flights from ${airports.length} North American airports.`,
+    section: section(
+      "All airports",
+      `Direct flights from ${airports.length} North American airports. Pick one to see where it flies.`,
+      list(items),
+      "h1",
+    ),
+    data: { "@context": "https://schema.org", "@type": "CollectionPage", name: title, url },
+  };
+};
+
+/** The home page's links to the busiest airports; `airports` arrive busiest first. */
+export const homeSection = (airports, count = 30) =>
+  section(
+    "Busiest airports",
+    "Direct flight routes from the North American airports with the most destinations.",
+    list(
+      airports
+        .slice(0, count)
+        .map(
+          ({ properties: p }) =>
+            `${link(`/${p.IATA}`, `${p.Name} (${p.IATA})`)}: ${destinations(p.destinations)}`,
+        ),
+    ),
+  );
+
 const setAttr = (html, pattern, value) => {
   if (!pattern.test(html)) throw new Error(`Template is missing ${pattern}`);
   return html.replace(pattern, `$1${escapeHtml(value)}$2`);
@@ -82,11 +212,22 @@ export const renderPage = (template, page) => {
     /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
     `<script type="application/ld+json">${jsonLd(page.data)}</script>`,
   );
+  if (page.noindex) {
+    html = html.replace("</head>", '<meta name="robots" content="noindex" />\n</head>');
+  }
+  if (page.noApp) {
+    html = html.replace(/<script type="module"[^>]*><\/script>/, "");
+    return html.replace('<div id="root"></div>', `<div id="root">${page.section}</div>`);
+  }
   return html.replace(
     '<div id="root"></div>',
-    `<div id="root"><main><h1>${escapeHtml(page.heading)}</h1><p>${escapeHtml(page.summary)}</p></main></div>`,
+    `<div id="root"><main><h1>${escapeHtml(page.heading)}</h1><p>${escapeHtml(page.summary)}</p></main></div>${page.section ?? ""}`,
   );
 };
+
+/** The home page keeps its own head tags and gains the section after #root. */
+export const renderHome = (template, section) =>
+  template.replace('<div id="root"></div>', `<div id="root"></div>${section}`);
 
 export const sitemapXml = (urls, lastmod) => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

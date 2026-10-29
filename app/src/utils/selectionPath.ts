@@ -53,5 +53,5 @@ export const selectionTitle = (
     return `${airport} direct flights on ${airlineName ?? airline} | ${suffix}`;
   if (airport) return `${airport} direct flights | ${suffix}`;
   if (airline) return `${airlineName ?? airline} routes | ${suffix}`;
-  return `${suffix}: direct flight routes between North American airports`;
+  return `${suffix}: direct flight route map of North America`;
 };

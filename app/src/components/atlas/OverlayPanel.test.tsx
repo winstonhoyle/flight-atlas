@@ -4,10 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { Airport, Compare, MonthOption, Routes } from "@/types";
 import { OverlayPanel } from "./OverlayPanel";
 
-const airport = (IATA: string): Airport => ({
+const airport = (IATA: string, Name = IATA, City?: string): Airport => ({
   type: "Feature",
   geometry: { type: "Point", coordinates: [0, 0] },
-  properties: { FAA: IATA, IATA, Name: IATA, url: "", destinations: 1 },
+  properties: { FAA: IATA, IATA, Name, City, url: "", destinations: 1 },
 });
 
 const route = (airline_code: string, dst_airport: string): Routes["features"][number] => ({
@@ -32,7 +32,12 @@ const setup = (selection: {
   compare?: Compare;
 }) => {
   const props = {
-    airports: [airport("GSO"), airport("DCA"), airport("ORD")],
+    airports: [
+      airport("GSO"),
+      airport("DCA"),
+      airport("ORD"),
+      airport("BOS", "Logan International Airport", "Boston"),
+    ],
     selectedAirport: selection.airport ?? null,
     destinationAirport: selection.destination ?? null,
     selectedAirline: selection.airline ?? "",
@@ -51,8 +56,11 @@ const setup = (selection: {
     loading: false,
     error: null,
   };
-  render(<OverlayPanel {...props} />);
-  return props;
+  const view = render(<OverlayPanel {...props} />);
+  return {
+    ...props,
+    rerender: (next: Partial<typeof props>) => view.rerender(<OverlayPanel {...props} {...next} />),
+  };
 };
 
 const clear = async (label: string) => {
@@ -95,6 +103,35 @@ describe("OverlayPanel", () => {
     await userEvent.click(screen.getByRole("combobox", { name: "Destination airport" }));
     expect(screen.getByRole("option", { name: "DCA (DCA)" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "ORD (ORD)" })).not.toBeInTheDocument();
+  });
+
+  it("finds an airport by its city", async () => {
+    setup({});
+    await userEvent.type(screen.getByRole("combobox", { name: "Origin airport" }), "boston");
+    expect(
+      screen.getByRole("option", { name: "Logan International Airport (BOS)" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "GSO (GSO)" })).not.toBeInTheDocument();
+  });
+
+  it("collapses on small screens when an airport is chosen", () => {
+    const width = window.innerWidth;
+    window.innerWidth = 375;
+    try {
+      const { rerender } = setup({});
+      expect(screen.getByRole("combobox", { name: "Origin airport" })).toBeInTheDocument();
+      rerender({ selectedAirport: airport("GSO") });
+      expect(screen.queryByRole("combobox", { name: "Origin airport" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Expand panel" })).toBeInTheDocument();
+    } finally {
+      window.innerWidth = width;
+    }
+  });
+
+  it("stays open on wide screens when an airport is chosen", () => {
+    const { rerender } = setup({});
+    rerender({ selectedAirport: airport("GSO") });
+    expect(screen.getByRole("combobox", { name: "Origin airport" })).toBeInTheDocument();
   });
 
   it("can't compare with only one month", async () => {

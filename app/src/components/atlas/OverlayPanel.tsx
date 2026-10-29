@@ -13,7 +13,7 @@ import { ChangedAirports } from "./ChangedAirports";
 import { MonthControls } from "./MonthControls";
 import styles from "./OverlayPanel.module.css";
 
-type Option = { value: string; label: string };
+type Option = { value: string; label: string; search?: string };
 
 type OverlayPanelProps = {
   airports: Airport[];
@@ -75,6 +75,17 @@ export const OverlayPanel = ({
   children,
 }: OverlayPanelProps) => {
   const [isOpen, setIsOpen] = useState(true);
+  const selection = [
+    selectedAirport?.properties.IATA,
+    destinationAirport?.properties.IATA,
+    selectedAirline,
+  ].join();
+  const [prevSelection, setPrevSelection] = useState(selection);
+  if (selection !== prevSelection) {
+    setPrevSelection(selection);
+    if ((selectedAirport || selectedAirline) && window.matchMedia("(max-width: 40em)").matches)
+      setIsOpen(false);
+  }
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const findAirport = (iata: string) => airports.find((a) => a.properties.IATA === iata) ?? null;
@@ -84,6 +95,7 @@ export const OverlayPanel = ({
     ...airports.map((a) => ({
       value: a.properties.IATA,
       label: `${a.properties.Name} (${a.properties.IATA})`,
+      search: `${a.properties.Name} ${a.properties.IATA} ${a.properties.City ?? ""}`,
     })),
   ];
 
@@ -101,11 +113,12 @@ export const OverlayPanel = ({
         return {
           value: code,
           label: `${match?.properties.Name || "Unknown airport"} (${code})`,
+          search: `${match?.properties.Name ?? ""} ${code} ${match?.properties.City ?? ""}`,
           destinations: match?.properties.destinations ?? 0,
         };
       })
       .sort((a, b) => b.destinations - a.destinations)
-      .map(({ value, label }) => ({ value, label }));
+      .map(({ value, label, search }) => ({ value, label, search }));
 
     return [ALL_AIRPORTS, ...options];
   }, [routes, airports, selectedAirline]);
@@ -169,6 +182,7 @@ export const OverlayPanel = ({
               isClearable
               isDisabled={loading}
               placeholder="Search for an airport"
+              getOptionSearch={(o) => o.search ?? o.label}
             />
 
             {selectedAirport && (
@@ -186,6 +200,7 @@ export const OverlayPanel = ({
                 isClearable
                 isDisabled={loading}
                 placeholder="Search for a destination"
+                getOptionSearch={(o) => o.search ?? o.label}
               />
             )}
 

@@ -59,11 +59,13 @@ def listed_airports():
         [
             {
                 "IATA": "BET",
+                "City": "Bethel",
                 "url": WIKI + "Bethel_Airport",
                 "geometry": Point(-161.83722, 60.77861),
             },
             {
                 "IATA": "ANC",
+                "City": "Anchorage",
                 "url": WIKI + "Ted_Stevens_Anchorage_International_Airport",
                 "geometry": Point(-149.99833, 61.17417),
             },
@@ -174,6 +176,9 @@ def test_write_outputs_writes_the_months_json(local_output, listed_airports):
     ome = next(f for f in airports if f["properties"]["IATA"] == "OME")
     assert ome["geometry"]["coordinates"] == [-165.44, 64.51]
     assert ome["properties"]["FAA"] is None
+    assert ome["properties"]["City"] is None
+    bet = next(f for f in airports if f["properties"]["IATA"] == "BET")
+    assert bet["properties"]["City"] == "Bethel"
 
     assert read_json(local_output, "2026/10/airlines.json") == {"AS": "Alaska Airlines", "GV": "Grant Aviation"}
     assert read_json(local_output, "snapshots.json") == [{"month": "10", "year": "2026"}]
