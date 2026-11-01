@@ -8,7 +8,7 @@ import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from functools import cache
 from urllib.parse import urlparse
@@ -94,31 +94,11 @@ session.headers.update({"User-Agent": USER_AGENT})
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 
-# Airlines whose Wikipedia pages have no IATA code.
-airline_codes_dict = {
-    "American Eagle": "AA",
-    "Delta Connection": "DL",
-    "United Express": "UA",
-    "Sun Country Airlines": "SY",
-    "Yute Commuter Service": "7H",
-    "Alaska Air Transit": "JN",
-    "Iliamna Air Taxi": "V8",
-    "Katmai Air": "KT",
-    "Reeve Air Alaska": "RV",
-    "Alaska Seaplanes": "J5",
-    "Smokey Bay Air": "2E",
-    "Ward Air": "WD",
-    "Island Air Express": "I4",
-    "Air Excursions": "X4",
-    "Air Canada Express": "AC",
-    "Island Air Service": "WP",
-    "Kenai Aviation": "KW",
-    "Star Marianas Air": "S2",
-    "Pathfinder Aviation": "PA",
-    "Havana Air": "HV",
-    "Fly The Whale": "FW",
-    "San Juan Airlines": "SJ",
-}
+# Brands filed under their parent, spelling variants, and airlines with no code on Wikipedia.
+# An airline with no code at all gets a made-up one with a digit and 3 characters (9RV), which no real code can be.
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "airlines.json"), encoding="utf-8") as f:
+    AIRLINES: dict[str, dict] = json.load(f)
+airline_codes_dict = {name: entry["code"] for name, entry in AIRLINES.items()}
 
 
 def get(url: str, attempts: int = 6, **params) -> requests.Response:
@@ -142,6 +122,7 @@ def fetch_soup(url: str):
 class Page:
     title: str
     url: str
+    revid: int | None = None
 
 
 _pages: dict[str, Page | None] = {}
@@ -161,7 +142,7 @@ def resolve_pages(titles: list[str]) -> dict[str, Page | None]:
             format="json",
             formatversion=2,
             redirects=1,
-            prop="pageprops",
+            prop="pageprops|info",
             ppprop="disambiguation",
             titles="|".join(t.replace("_", " ") for t in batch),
         ).json()["query"]
@@ -176,7 +157,8 @@ def resolve_pages(titles: list[str]) -> dict[str, Page | None]:
                 logger.warning(f"Skipping link to {title!r}: missing or disambiguation page")
                 _pages[title] = None
             else:
-                _pages[title] = Page(page["title"], wiki_parse.wiki_url(page["title"].replace(" ", "_")))
+                url = wiki_parse.wiki_url(page["title"].replace(" ", "_"))
+                _pages[title] = Page(page["title"], url, page.get("lastrevid"))
     return {t: _pages[t] for t in titles}
 
 
@@ -200,26 +182,61 @@ def get_airline_code(url: str, name: str) -> str | None:
     return code
 
 
-def get_coordinate(url: str) -> Point | None:
-    coordinates = wiki_parse.parse_coordinates(fetch_soup(url))
-    if coordinates is None:
-        return None
-    return Point(*coordinates)
+# Bump after any wiki_parse change, so saved pages are parsed again.
+PARSER_VERSION = 1
+PAGE_CACHE = "cache/pages.json"
+
+# Airport page URL to what was parsed from it, at which revision. Saved with each snapshot.
+page_cache: dict[str, dict] = {}
+
+
+def load_page_cache(full: bool) -> dict[str, dict]:
+    """The saved pages, or none with --full (a template edit can change a table without a new revision)."""
+    if full:
+        return {}
+    try:
+        saved = _read_json(PAGE_CACHE)
+    except Exception as e:
+        logger.warning(f"Unreadable {PAGE_CACHE}, so every page is downloaded: {e}")
+        return {}
+    return saved if isinstance(saved, dict) else {}
+
+
+def read_airport_page(url: str, revid: int | None) -> dict:
+    """
+    Coordinates and destination rows (or why there are none) from one download, or from
+    page_cache when the page and parser haven't changed since.
+    """
+    saved = page_cache.get(url)
+    if revid is not None and saved and saved.get("revid") == revid and saved.get("parser") == PARSER_VERSION:
+        return saved
+    soup = fetch_soup(url)
+    time.sleep(1)
+    parsed = {"revid": revid, "parser": PARSER_VERSION, "coordinates": wiki_parse.parse_coordinates(soup)}
+    try:
+        rows = map(wiki_parse.parse_destination_row, wiki_parse.find_destination_rows(soup))
+        parsed |= {"rows": [asdict(row) for row in rows if row], "error": None}
+    except LookupError as e:
+        parsed |= {"rows": None, "error": str(e)}
+    page_cache[url] = parsed
+    return parsed
 
 
 def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destinations: dict) -> list[list[str]]:
-    matches = airports_df.loc[airports_df["IATA"] == src_iata, "url"]
+    matches = airports_df[airports_df["IATA"] == src_iata]
     if matches.empty:
         return []
-    url = matches.iloc[0]
+    url = matches["url"].iloc[0]
+    revid = matches["revid"].iloc[0] if "revid" in matches else None
 
-    try:
-        rows = wiki_parse.find_destination_rows(fetch_soup(url))
-    except LookupError as e:
-        note_problem("destinations_table", f"{e}, so none of its routes were read", airport=src_iata, url=url)
+    page = read_airport_page(url, None if pd.isna(revid) else int(revid))
+    if page["rows"] is None:
+        note_problem(
+            "destinations_table", f"{page['error']}, so none of its routes were read", airport=src_iata, url=url
+        )
         return []
 
-    parsed = [row for row in map(wiki_parse.parse_destination_row, rows) if row]
+    parsed = [wiki_parse.DestinationRow(**row) for row in page["rows"]]
     pages = resolve_pages([title for row in parsed for title in row.destination_titles])
 
     destinations = []
@@ -232,7 +249,7 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destin
             if not airline_code:
                 note_problem(
                     "airline_code",
-                    "The airline's page has no IATA code, so its routes here were skipped",
+                    "The airline's page has no IATA or ICAO code, so its routes here were skipped",
                     airport=src_iata,
                     airline=row.airline_name,
                     url=airline_url,
@@ -302,7 +319,10 @@ def list_airports() -> list[tuple[str, wiki_parse.ListedAirport]]:
     for country, titles in airport_lists.items():
         for title in titles:
             for airport in wiki_parse.parse_airport_list(fetch_soup(wiki_parse.wiki_url(title))):
-                listed.setdefault(airport.iata, (country, airport))
+                kept = listed.get(airport.iata)
+                # Lists can share a code between an airport and a base or water aerodrome (YWG, YBL).
+                if kept is None or ("Airport" in airport.airport_title and "Airport" not in kept[1].airport_title):
+                    listed[airport.iata] = (country, airport)
     # Busiest first, so the largest airlines' codes are looked up early.
     return sorted(listed.values(), key=lambda item: (item[1].enplanements is None, -(item[1].enplanements or 0)))
 
@@ -329,7 +349,8 @@ def scrape_listed_airports(failed: list[str], known_points: dict[str, Point]) ->
                 url=wiki_parse.wiki_url(airport.airport_title),
             )
         elif point is None:
-            point = get_coordinate(page.url)
+            coordinates = read_airport_page(page.url, page.revid)["coordinates"]
+            point = Point(*coordinates) if coordinates else None
             if point is None:
                 note_problem("coordinates", "The page has no readable coordinates", airport=airport.iata, url=page.url)
         if page is None or point is None:
@@ -347,13 +368,19 @@ def scrape_listed_airports(failed: list[str], known_points: dict[str, Point]) ->
                 "Enplanements": airport.enplanements,
                 "geometry": point,
                 "title": page.title,
+                "revid": page.revid,
             }
         )
     return pd.DataFrame(rows)
 
 
-# The scraper reads regional brands as their own airline; the map shows the parent.
-AIRLINE_NAME_OVERRIDES = {"Delta Connection": "Delta Air Lines"}
+def airline_names() -> dict[str, str]:
+    """Code to name: the registry's display name, else the first name seen with that code."""
+    names = {entry["code"]: name for name, entry in AIRLINES.items() if entry.get("display")}
+    for name, code in airline_codes_dict.items():
+        names.setdefault(code, name)
+    return names
+
 
 SNAPSHOT_FILES = ("airports.json", "airlines.json", "routes.json", "problems.json")
 SNAPSHOT_KEY = re.compile(r"(\d{4})/(\d{2})/routes\.json")
@@ -420,16 +447,22 @@ def read_snapshot(snapshot: tuple[int, int]) -> tuple[pd.DataFrame, pd.DataFrame
     airports_df = pd.DataFrame(
         [
             {
+                "FAA": f["properties"].get("FAA"),
                 "IATA": f["properties"]["IATA"],
+                "City": f["properties"].get("City"),
                 "url": f["properties"]["url"],
                 "title": f["properties"]["Name"],
                 "geometry": Point(f["geometry"]["coordinates"]),
             }
             for f in airports
         ],
-        columns=["IATA", "url", "title", "geometry"],
+        columns=["FAA", "IATA", "City", "url", "title", "geometry"],
     )
     return flights_df, airports_df
+
+
+def latest_snapshot() -> tuple[int, int] | None:
+    return max(((int(m[1]), int(m[2])) for key in _keys() if (m := SNAPSHOT_KEY.fullmatch(key))), default=None)
 
 
 def clear_snapshot(snapshot: tuple[int, int]) -> None:
@@ -585,6 +618,8 @@ def main() -> None:
         os.makedirs(OUTPUT_BASE, exist_ok=True)
     snapshot = (datetime.now().year, datetime.now().month)
     partial = bool(AIRPORTS or COUNTRIES)
+    page_cache.update(load_page_cache("--full" in sys.argv))
+    logger.info(f"{len(page_cache)} saved airport pages")
 
     known_points: dict[str, Point] = {}
     if partial:
@@ -616,7 +651,6 @@ def main() -> None:
         except Exception as e:
             failed.append(targets.iloc[i]["url"])
             logger.error(f"Failure getting destinations, url: {targets.iloc[i]['url']}, Exception: {e}")
-        time.sleep(1)
 
     for item in failed:
         logger.error(f"Failed: {item}")
@@ -637,7 +671,7 @@ def main() -> None:
 
     one_sided = one_sided_routes(routes, scraped_iatas)
     logger.info(f"{len(one_sided)} routes are listed by only one of their airports; see {REPORT_PATH}")
-    names = {code: AIRLINE_NAME_OVERRIDES.get(name, name) for name, code in airline_codes_dict.items()}
+    names = airline_names()
     month_problems = found_problems + [
         {
             "kind": "one_sided_route",
@@ -660,7 +694,7 @@ def main() -> None:
         retry=retry,
         one_sided_routes=one_sided,
     )
-    write_outputs(listed_airports_df, routes, additional_destinations, snapshot, month_problems)
+    write_outputs(listed_airports_df, routes, additional_destinations, snapshot, month_problems, page_cache)
 
 
 def kept_problems(snapshot: tuple[int, int], targets: set[str]) -> list[dict]:
@@ -672,19 +706,16 @@ def kept_problems(snapshot: tuple[int, int], targets: set[str]) -> list[dict]:
     ]
 
 
-def write_outputs(
-    listed_airports_df: pd.DataFrame,
-    routes: list,
-    additional_destinations: dict,
-    snapshot: tuple[int, int],
-    problems: list[dict] | None = None,
-) -> None:
-    additional_airports_df = pd.DataFrame(
-        [info for info in additional_destinations.values()], columns=["IATA", "url", "geometry", "title"]
-    )
-
-    routes_df = pd.DataFrame(routes, columns=["airline_code", "src_airport", "dst_airport"])
-    routes_df = routes_df[(routes_df["src_airport"].str.len() == 3) & (routes_df["dst_airport"].str.len() == 3)]
+def normalize(
+    routes_df: pd.DataFrame, airports_df: pd.DataFrame, names: dict[str, str] | None = None
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
+    """
+    Routes under the registry's codes without duplicates, the airports that have routes out with
+    their destination counts, and each airline's route count, busiest first. `names` is a past
+    month's airlines.json, whose brands had codes of their own (Air Canada Rouge as RV).
+    """
+    remap = {code: airline_codes_dict.get(name, code) for code, name in (names or {}).items()}
+    routes_df = routes_df.assign(airline_code=routes_df["airline_code"].replace(remap)).drop_duplicates()
 
     # An unordered pair, so A to B and B to A count as one route.
     pairs = pd.DataFrame(
@@ -694,15 +725,65 @@ def write_outputs(
             "airport2": routes_df[["src_airport", "dst_airport"]].max(axis=1),
         }
     ).drop_duplicates()
-    route_counts = pairs.groupby("airline_code").size()
+    route_counts = pairs.groupby("airline_code").size().sort_values(ascending=False, kind="stable")
 
-    airlines_df = pd.DataFrame(airline_codes_dict.items(), columns=["name", "airline_code"])
-    airlines_df = airlines_df[airlines_df["airline_code"].isin(route_counts.index)]
-    airlines_df = airlines_df.assign(route_count=airlines_df["airline_code"].map(route_counts))
-    airlines_df = airlines_df.sort_values("route_count", ascending=False, kind="stable")
-    unnamed = set(route_counts.index) - set(airlines_df["airline_code"])
-    if unnamed:
-        raise ValueError(f"Routes reference airlines with no name: {', '.join(sorted(unnamed))}")
+    destinations = routes_df.groupby("src_airport")["dst_airport"].nunique()
+    airports_df = airports_df[airports_df["IATA"].isin(destinations.index)]
+    airports_df = airports_df.assign(destinations=airports_df["IATA"].map(destinations).astype(int))
+    airports_df = airports_df.sort_values("destinations", ascending=False, kind="stable")
+    return routes_df, airports_df, route_counts
+
+
+def one_per_code(airports_df: pd.DataFrame) -> pd.DataFrame:
+    """Same rule as list_airports: of two features sharing a code, the airport wins (YWG, not CFB Winnipeg)."""
+    airports_df = airports_df.sort_values("title", key=lambda t: ~t.str.contains("Airport"), kind="stable")
+    return airports_df.drop_duplicates("IATA").set_index("IATA")
+
+
+def normalize_month(snapshot: tuple[int, int]) -> None:
+    """Rewrites a past month under the registry's codes, with airport names from the latest month."""
+    prefix = snapshot_prefix(snapshot)
+    names = _read_json(prefix + "airlines.json") or {}
+    load_airline_codes(snapshot)
+    routes_df, airports_df = read_snapshot(snapshot)
+    if routes_df.empty:
+        raise SystemExit(f"No {snapshot[0]}-{snapshot[1]:02d} snapshot in {OUTPUT_BASE}")
+    routes_df = normalize(routes_df, airports_df, names)[0]
+
+    airports_df = one_per_code(airports_df)
+    latest = one_per_code(read_snapshot(latest_snapshot())[1])
+    # Airports that failed to scrape that month (YYT) take the latest month's place, so their routes stay.
+    missing = (set(routes_df["src_airport"]) | set(routes_df["dst_airport"])) - set(airports_df.index)
+    airports_df = pd.concat([airports_df, latest[latest.index.isin(missing)]])
+    airports_df.update(latest[["title", "City"]])
+    unplaced = ~(routes_df["src_airport"].isin(airports_df.index) & routes_df["dst_airport"].isin(airports_df.index))
+    if unplaced.any():
+        logger.warning(
+            f"Dropping {unplaced.sum()} routes to airports no month places: {routes_df[unplaced].values.tolist()}"
+        )
+        routes_df = routes_df[~unplaced]
+
+    problems = [
+        {k: v for k, v in p.items() if k not in ("airport_name", "coordinates")}
+        for p in _read_json(prefix + "problems.json") or []
+    ]
+    write_outputs(airports_df.reset_index(), routes_df.values.tolist(), {}, snapshot, problems)
+
+
+def write_outputs(
+    listed_airports_df: pd.DataFrame,
+    routes: list,
+    additional_destinations: dict,
+    snapshot: tuple[int, int],
+    problems: list[dict] | None = None,
+    pages: dict | None = None,
+) -> None:
+    additional_airports_df = pd.DataFrame(
+        [info for info in additional_destinations.values()], columns=["IATA", "url", "geometry", "title"]
+    )
+
+    routes_df = pd.DataFrame(routes, columns=["airline_code", "src_airport", "dst_airport"])
+    routes_df = routes_df[(routes_df["src_airport"].str.len() == 3) & (routes_df["dst_airport"].str.len() == 3)]
 
     airports_df = pd.concat([listed_airports_df, additional_airports_df], ignore_index=True)[
         ["FAA", "IATA", "City", "url", "geometry", "title"]
@@ -724,16 +805,15 @@ def write_outputs(
         key=lambda p: (p["airport"] or "", p["kind"], p["airline"] or "", p["url"] or ""),
     )
 
-    destinations = routes_df.groupby("src_airport")["dst_airport"].nunique()
-    airports_df = airports_df[airports_df["IATA"].isin(destinations.index)]
-    airports_df = airports_df.assign(destinations=airports_df["IATA"].map(destinations).astype(int))
-    airports_df = airports_df.sort_values("destinations", ascending=False, kind="stable")
+    routes_df, airports_df, route_counts = normalize(routes_df, airports_df)
+    names = airline_names()
+    unnamed = set(route_counts.index) - names.keys()
+    if unnamed:
+        raise ValueError(f"Routes reference airlines with no name: {', '.join(sorted(unnamed))}")
 
     bodies = {
         "airports.json": airports_body(airports_df),
-        "airlines.json": {
-            row.airline_code: AIRLINE_NAME_OVERRIDES.get(row.name, row.name) for row in airlines_df.itertuples()
-        },
+        "airlines.json": {code: names[code] for code in route_counts.index},
         "routes.json": routes_df.values.tolist(),
         "problems.json": problems_body,
     }
@@ -746,6 +826,8 @@ def write_outputs(
         path = os.path.join(stage, snapshot_prefix(snapshot), name)
         logger.info(f"Writing {path}")
         _dump(path, bodies[name])
+    if pages is not None:
+        _dump(os.path.join(stage, PAGE_CACHE), pages)
 
     if not IS_LOCAL_OUTPUT:
         clear_snapshot(snapshot)
@@ -756,9 +838,13 @@ def write_outputs(
 
 
 if __name__ == "__main__":
+    if "--check" in sys.argv:
+        sys.exit(1 if check_airports() else 0)
+    if "--normalize" in sys.argv:
+        year, month = sys.argv[sys.argv.index("--normalize") + 1 :][:2]
+        normalize_month((int(year), int(month)))
+        sys.exit()
     try:
-        if "--check" in sys.argv:
-            sys.exit(1 if check_airports() else 0)
         main()
         report["status"] = "ok"
     except BaseException as e:
@@ -766,9 +852,8 @@ if __name__ == "__main__":
         report["status"] = f"failed: {type(e).__name__}: {e}"
         raise
     finally:
-        if "--check" not in sys.argv:
-            _dump(
-                REPORT_PATH,
-                report | {"finished": datetime.now().isoformat(timespec="seconds"), "problems": problems.records},
-            )
-            logger.info(f"Report: {REPORT_PATH}")
+        _dump(
+            REPORT_PATH,
+            report | {"finished": datetime.now().isoformat(timespec="seconds"), "problems": problems.records},
+        )
+        logger.info(f"Report: {REPORT_PATH}")

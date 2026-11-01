@@ -233,6 +233,10 @@ def test_row_without_two_cells():
     assert parse_destination_row(html("<table><tr><td colspan='2'>Cargo</td></tr></table>").find("tr")) is None
 
 
+def test_blank_row():
+    assert parse_destination_row(html("<table><tr><td>\n</td><td>\n</td></tr></table>").find("tr")) is None
+
+
 @pytest.mark.parametrize(
     "lat, lon, expected",
     [
@@ -263,13 +267,24 @@ def test_iata_missing():
     assert parse_iata(html("<p>No codes</p>")) is None
 
 
-@pytest.mark.parametrize("cell, code", [("DL[1]", "DL"), ("—", None), ("3M", "3M")])
-def test_airline_code(cell, code):
+@pytest.mark.parametrize(
+    "iata, icao, code",
+    [("DL[1]", "DAL", "DL"), ("3M", "SIL", "3M"), ("None", "MHO", "MHO"), ("—", "DAL", "DAL"), ("None", "None", None)],
+)
+def test_airline_code(iata, icao, code):
     soup = html(
-        '<table class="infobox-airline-codes"><tr><th>IATA</th><th>ICAO</th></tr>'
-        f"<tr><td>{cell}</td><td>DAL</td></tr></table>"
+        '<table class="infobox-airline-codes"><tr><th>IATA</th><th>ICAO</th><th>Call sign</th></tr>'
+        f"<tr><td>{iata}</td><td>{icao}</td><td>MAHALO</td></tr></table>"
     )
     assert parse_airline_code(soup) == code
+
+
+def test_airline_code_by_column_header():
+    soup = html(
+        '<table class="infobox-airline-codes"><tr><th>ICAO</th><th>IATA</th></tr>'
+        "<tr><td>WSG[1]</td><td>WP</td></tr></table>"
+    )
+    assert parse_airline_code(soup) == "WP"
 
 
 def test_airline_without_codes_box():

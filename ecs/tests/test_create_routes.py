@@ -43,10 +43,13 @@ def wikipedia(monkeypatch):
     def resolve_pages(titles):
         # Chefornak stands in for a link that lands on a disambiguation page.
         return {
-            t: None if t == "Chefornak_Airport" else create_routes.Page(t.replace("_", " "), WIKI + t) for t in titles
+            t: None if t == "Chefornak_Airport" else create_routes.Page(t.replace("_", " "), WIKI + t, 1)
+            for t in titles
         }
 
     monkeypatch.setattr(create_routes, "fetch_soup", fetch_soup)
+    monkeypatch.setattr(create_routes, "page_cache", {})
+    monkeypatch.setattr(create_routes.time, "sleep", lambda _: None)
     monkeypatch.setattr(create_routes, "resolve_pages", resolve_pages)
     monkeypatch.setattr(create_routes, "airline_codes_dict", dict(create_routes.airline_codes_dict))
     monkeypatch.setattr(create_routes, "found_problems", [])
@@ -71,6 +74,58 @@ def listed_airports():
             },
         ]
     )
+
+
+def test_a_shared_code_lists_the_airport_not_the_base(monkeypatch):
+    def listed(title):
+        return wiki_parse.ListedAirport("Winnipeg", "", "YWG", "", title, "", None)
+
+    pages = {
+        "CA_1": [listed("CFB_Winnipeg")],
+        "CA_2": [listed("Winnipeg_International_Airport"), listed("CFB_Winnipeg")],
+    }
+    monkeypatch.setattr(create_routes, "fetch_soup", lambda url: url.rsplit("/", 1)[-1])
+    monkeypatch.setattr(wiki_parse, "parse_list_links", lambda soup, prefix: ["CA_1", "CA_2"])
+    monkeypatch.setattr(wiki_parse, "parse_airport_list", lambda title: pages.get(title, []))
+
+    assert [a.airport_title for _, a in create_routes.list_airports()] == ["Winnipeg_International_Airport"]
+
+
+def test_every_registry_code_has_one_display_name():
+    displays: dict[str, list[str]] = {}
+    for name, entry in create_routes.AIRLINES.items():
+        displays.setdefault(entry["code"], [])
+        if entry.get("display"):
+            displays[entry["code"]].append(name)
+    assert {code: names for code, names in displays.items() if len(names) != 1} == {}
+
+
+def test_a_shared_code_takes_the_registrys_display_name(monkeypatch):
+    codes = dict(create_routes.airline_codes_dict) | {"Grant Aviation": "GV"}
+    monkeypatch.setattr(create_routes, "airline_codes_dict", codes)
+    names = create_routes.airline_names()
+    assert {code: names[code] for code in ("AA", "AV", "AS", "LA", "9K", "GV")} == {
+        "AA": "American Airlines",
+        "AV": "Avianca",
+        "AS": "Alaska Airlines",
+        "LA": "LATAM Airlines",
+        "9K": "Cape Air",
+        "GV": "Grant Aviation",
+    }
+
+
+def test_normalize_files_brands_under_the_parent_and_drops_the_duplicates():
+    routes = pd.DataFrame(
+        [["RV", "YYZ", "MCO"], ["AC", "YYZ", "MCO"], ["AC", "MCO", "YYZ"], ["AS", "YYZ", "MCO"]],
+        columns=["airline_code", "src_airport", "dst_airport"],
+    )
+    airports = pd.DataFrame({"IATA": ["YYZ", "MCO", "ANC"]})
+
+    routes, airports, counts = create_routes.normalize(routes, airports, {"RV": "Air Canada Rouge", "AC": "Air Canada"})
+
+    assert routes.values.tolist() == [["AC", "YYZ", "MCO"], ["AC", "MCO", "YYZ"], ["AS", "YYZ", "MCO"]]
+    assert counts.to_dict() == {"AC": 1, "AS": 1}
+    assert dict(zip(airports["IATA"], airports["destinations"], strict=True)) == {"YYZ": 1, "MCO": 1}
 
 
 def test_routes_from_a_real_page(wikipedia, listed_airports):
@@ -99,7 +154,7 @@ def test_airlines_without_a_code_are_skipped(wikipedia, listed_airports):
         "airport": "BET",
         "airline": "Ryan Air",
         "url": WIKI + "Ryan_Air_Services",
-        "message": "The airline's page has no IATA code, so its routes here were skipped",
+        "message": "The airline's page has no IATA or ICAO code, so its routes here were skipped",
     } in create_routes.found_problems
 
 
@@ -131,7 +186,11 @@ SNAPSHOT = (2026, 10)
 def local_output(tmp_path, monkeypatch):
     monkeypatch.setattr(create_routes, "OUTPUT_BASE", str(tmp_path))
     monkeypatch.setattr(create_routes, "IS_LOCAL_OUTPUT", True)
-    monkeypatch.setattr(create_routes, "airline_codes_dict", {"Alaska Airlines": "AS", "Grant Aviation": "GV"})
+    monkeypatch.setattr(
+        create_routes,
+        "airline_codes_dict",
+        {"Alaska Airlines": "AS", "Grant Aviation": "GV", "Hawaiian Airlines": "AS"},
+    )
     return tmp_path
 
 
@@ -482,3 +541,153 @@ def test_a_partial_run_keeps_problems_it_didnt_recheck(local_output, listed_airp
     )
 
     assert create_routes.kept_problems(SNAPSHOT, {"BET"}) == [old[0]]
+
+
+def feature(iata: str, name: str, lon: float = 0.0, lat: float = 0.0, city: str | None = None) -> dict:
+    return {
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [lon, lat]},
+        "properties": {"FAA": None, "IATA": iata, "Name": name, "City": city, "url": WIKI + name, "destinations": 1},
+    }
+
+
+def write_month(root, month: str, features: list, routes: list, airlines: dict, problems=()) -> None:
+    folder = root / "2026" / month
+    folder.mkdir(parents=True)
+    bodies = {
+        "airports.json": {"type": "FeatureCollection", "features": features},
+        "routes.json": routes,
+        "airlines.json": airlines,
+        "problems.json": list(problems),
+    }
+    for name, body in bodies.items():
+        (folder / name).write_text(json.dumps(body), encoding="utf-8")
+
+
+def test_normalizing_a_past_month(local_output, monkeypatch):
+    monkeypatch.setattr(
+        create_routes, "airline_codes_dict", {name: e["code"] for name, e in create_routes.AIRLINES.items()}
+    )
+    lost = {"kind": "coordinates", "airport": "YYT", "airline": None, "url": None, "message": "No coordinates"}
+    write_month(
+        local_output,
+        "10",
+        [
+            feature("YYZ", "Toronto Pearson"),
+            feature("CUN", "Cancún Airport"),
+            feature("YWG", "CFB Winnipeg", 1, 1),
+            feature("YWG", "Winnipeg Airport", 2, 2),
+        ],
+        [
+            ["RV", "YYZ", "CUN"],
+            ["AC", "YYZ", "CUN"],
+            ["AC", "YYZ", "CUN"],
+            ["RV", "CUN", "YYZ"],
+            ["WS", "YWG", "CUN"],
+            ["WS", "CUN", "YWG"],
+            ["AC", "YYZ", "YYT"],
+        ],
+        {"RV": "Air Canada Rouge", "AC": "Air Canada", "WS": "WestJet"},
+        [{**lost, "airport_name": None, "coordinates": None}],
+    )
+    write_month(
+        local_output,
+        "11",
+        [
+            feature("YYZ", "Toronto Pearson International Airport", city="Toronto"),
+            feature("YYT", "St. John's International Airport", 5, 5, city="St. John's"),
+            feature("YWG", "CFB Winnipeg", 1, 1),
+            feature("YWG", "Winnipeg Airport", 2, 2),
+        ],
+        [["AC", "YYZ", "YYT"]],
+        {"AC": "Air Canada"},
+    )
+
+    create_routes.normalize_month(SNAPSHOT)
+
+    assert read_json(local_output, "2026/10/routes.json") == [
+        ["AC", "YYZ", "CUN"],
+        ["AC", "CUN", "YYZ"],
+        ["WS", "YWG", "CUN"],
+        ["WS", "CUN", "YWG"],
+        ["AC", "YYZ", "YYT"],
+    ]
+    assert read_json(local_output, "2026/10/airlines.json") == {"AC": "Air Canada", "WS": "WestJet"}
+    airports = {f["properties"]["IATA"]: f for f in read_json(local_output, "2026/10/airports.json")["features"]}
+    assert airports["YYZ"]["properties"]["Name"] == "Toronto Pearson International Airport"
+    assert airports["YYZ"]["properties"]["City"] == "Toronto"
+    assert airports["YWG"]["properties"]["Name"] == "Winnipeg Airport"
+    assert airports["YWG"]["geometry"]["coordinates"] == [2, 2]
+    assert airports["CUN"]["properties"]["destinations"] == 2
+    # St. John's has no routes out that month, so it isn't drawn, but its problem gets the latest month's place.
+    assert "YYT" not in airports
+    assert read_json(local_output, "2026/10/problems.json") == [
+        {**lost, "airport_name": "St. John's International Airport", "coordinates": [5, 5]}
+    ]
+
+
+BETHEL = WIKI + "Bethel_Airport"
+
+
+def saved_bethel(revid: int = 1, parser: int = create_routes.PARSER_VERSION) -> dict:
+    return {
+        "revid": revid,
+        "parser": parser,
+        "coordinates": [-161.83722, 60.77861],
+        "rows": [
+            {
+                "airline_name": "Hawaiian Airlines",
+                "airline_title": "Hawaiian_Airlines",
+                "destination_titles": ["Ted_Stevens_Anchorage_International_Airport"],
+            }
+        ],
+        "error": None,
+    }
+
+
+def test_a_scrape_downloads_each_airport_page_once(wikipedia, monkeypatch):
+    bethel = wiki_parse.ListedAirport("Bethel", "BET", "BET", "PABE", "Bethel_Airport", "", None)
+    monkeypatch.setattr(create_routes, "list_airports", lambda: [("US", bethel)])
+
+    airports = create_routes.scrape_listed_airports([], {})
+    routes = create_routes.get_destinations("BET", airports, {})
+
+    assert ["GV", "BET", "AUK"] in routes
+    assert wikipedia.count(BETHEL) == 1
+
+
+def test_an_unchanged_page_uses_the_saved_rows_with_todays_registry(wikipedia, listed_airports):
+    create_routes.page_cache[BETHEL] = saved_bethel()
+
+    routes = create_routes.get_destinations("BET", listed_airports.assign(revid=1), {})
+
+    assert BETHEL not in wikipedia
+    # The saved row names Hawaiian; the registry files it under Alaska.
+    assert routes == [["AS", "BET", "ANC"]]
+
+
+@pytest.mark.parametrize(
+    "saved", [saved_bethel(revid=1), saved_bethel(revid=2, parser=create_routes.PARSER_VERSION - 1)]
+)
+def test_a_new_revision_or_parser_downloads_the_page(wikipedia, listed_airports, saved):
+    create_routes.page_cache[BETHEL] = saved
+
+    routes = create_routes.get_destinations("BET", listed_airports.assign(revid=2), {})
+
+    assert wikipedia[0] == BETHEL
+    assert ["GV", "BET", "AUK"] in routes
+    assert create_routes.page_cache[BETHEL]["revid"] == 2
+
+
+def test_the_page_cache_is_saved_with_the_snapshot(local_output, listed_airports):
+    listed_airports = listed_airports.assign(FAA=["BET", "ANC"], title=["Bethel Airport", "Anchorage"])
+    create_routes.write_outputs(listed_airports, [["AS", "BET", "ANC"]], {}, SNAPSHOT, [], {BETHEL: saved_bethel()})
+
+    assert create_routes.load_page_cache(full=False) == {BETHEL: saved_bethel()}
+    assert create_routes.load_page_cache(full=True) == {}
+
+
+def test_an_unreadable_page_cache_downloads_everything(local_output):
+    (local_output / "cache").mkdir()
+    (local_output / "cache" / "pages.json").write_text("{not json", encoding="utf-8")
+    assert create_routes.load_page_cache(full=False) == {}

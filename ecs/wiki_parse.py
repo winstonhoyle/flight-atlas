@@ -63,11 +63,17 @@ def parse_iata(soup: BeautifulSoup) -> str | None:
 
 
 def parse_airline_code(soup: BeautifulSoup) -> str | None:
+    """The IATA code, or the ICAO code for an airline without one (Mokulele: IATA None, ICAO MHO)."""
     table = soup.find("table", {"class": "infobox-airline-codes"})
     rows = table.find_all("tr") if table else []
-    cell = rows[1].find("td") if len(rows) > 1 else None
-    code = clean_text(cell.text)[:2] if cell else ""
-    return code if re.fullmatch(r"[A-Z0-9]{2}", code) else None
+    if len(rows) < 2:
+        return None
+    headers = [clean_text(th.get_text()) for th in rows[0].find_all("th")]
+    codes = dict(zip(headers, (clean_text(td.get_text()) for td in rows[1].find_all("td")), strict=False))
+    iata, icao = codes.get("IATA", "")[:2], codes.get("ICAO", "")
+    if re.fullmatch(r"[A-Z0-9]{2}", iata):
+        return iata
+    return icao if re.fullmatch(r"[A-Z]{3}", icao) else None
 
 
 def _is_destinations_heading(tag: Tag) -> bool:
@@ -117,6 +123,8 @@ def parse_destination_row(tr: Tag) -> DestinationRow | None:
         return None
 
     airline_cell, destinations_cell = cells[0], cells[1]
+    if not clean_text(airline_cell.get_text()):
+        return None
     airline_link = airline_cell.find("a", href=True)
     titles: list[str] = []
     for link in destinations_cell.find_all("a", href=True):
