@@ -1,28 +1,28 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import Feature, { type FeatureLike } from "ol/Feature";
+import Feature from "ol/Feature";
 import OlMap from "ol/Map";
 import Overlay from "ol/Overlay";
 import View from "ol/View";
 import { defaults as defaultControls } from "ol/control/defaults";
 import type { Coordinate } from "ol/coordinate";
-import { createEmpty, extend, isEmpty, type Extent } from "ol/extent";
+import { isEmpty, type Extent } from "ol/extent";
 import LineString from "ol/geom/LineString";
 import Point from "ol/geom/Point";
 import DragPan from "ol/interaction/DragPan";
 import { defaults as defaultInteractions } from "ol/interaction/defaults";
+import type Layer from "ol/layer/Layer";
 import TileLayer from "ol/layer/Tile";
-import VectorLayer from "ol/layer/Vector";
 import type { Pixel } from "ol/pixel";
 import { fromLonLat } from "ol/proj";
 import VectorSource from "ol/source/Vector";
 import XYZ from "ol/source/XYZ";
-import { Circle, Fill, Stroke, Style } from "ol/style";
 import "ol/ol.css";
 import type { Position } from "geojson";
 
 import { ATTRIBUTION, DEFAULT_CENTER, DEFAULT_ZOOM, MAX_ZOOM, TILE_URL } from "./basemap";
 import { Legend } from "./Legend";
+import { createLayers, layerList, routesExtent, type MapLayers } from "./mapLayers";
 import { OverlayPanel } from "./OverlayPanel";
 import { ProblemNotice } from "./ProblemNotice";
 import { RouteInfo } from "./RouteInfo";
@@ -34,10 +34,10 @@ import { IconButton } from "@/components/common/IconButton";
 
 import { useAtlasData, useCompareData } from "@/hooks/useAtlasData";
 import { useMonths } from "@/hooks/useMonths";
+import { useRenderer } from "@/hooks/useRenderer";
 import { airlinesOn, routesFor, useRoutes } from "@/hooks/useRoutes";
 import { useSelectionUrl } from "@/hooks/useSelectionUrl";
 import { InfoIcon } from "@/icons";
-import { tokenValue } from "@/styles/tokens";
 import type {
   AirlineSummary,
   Airport,
@@ -46,7 +46,6 @@ import type {
   RouteProperties,
   RouteRow,
 } from "@/types";
-import { destinationBin, destinationColorToken } from "@/utils/destinations";
 import { distanceMiles, greatCircle } from "@/utils/geo";
 import { airlineAnchor, errorsUrl } from "@/utils/problems";
 import { changedAirports, changeProblems, routeChanges } from "@/utils/routeChanges";
@@ -54,7 +53,6 @@ import { EMPTY_SELECTION, type Selection } from "@/utils/selectionPath";
 
 const GEODESIC_MIN_MILES = 1000;
 const ARC_SEGMENTS = 32;
-const HIGHLIGHT_WEIGHT = 4;
 const HIT_TOLERANCE = 8;
 // Roughly half a tooltip's width and its height, in pixels.
 const TOOLTIP_ROOM = [150, 60];
@@ -96,15 +94,8 @@ const fitTo = (map: OlMap | null, extent: Extent, padding = 40) => {
 const resetView = (map: OlMap | null) =>
   map?.getView().animate({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, duration: animationMs() });
 
-const routesExtent = (source: VectorSource, airline = "") => {
-  const extent = createEmpty();
-  source.forEachFeature((f) => {
-    if (!airline || f.get("airline_code") === airline) extend(extent, f.getGeometry()!.getExtent());
-  });
-  return extent;
-};
-
-const airportAt = (map: OlMap, layer: VectorLayer, pixel: Pixel, coordinate: Coordinate) => {
+const airportAt = (map: OlMap, layer: Layer | null, pixel: Pixel, coordinate: Coordinate) => {
+  if (!layer) return null;
   let nearest: Airport | null = null;
   let best = Infinity;
   for (const f of map.getFeaturesAtPixel(pixel, {
@@ -116,79 +107,6 @@ const airportAt = (map: OlMap, layer: VectorLayer, pixel: Pixel, coordinate: Coo
     if (d < best) [best, nearest] = [d, f.get("airport") as Airport];
   }
   return nearest;
-};
-
-const styleCache = new Map<string, Style>();
-const cachedStyle = (key: string, make: () => Style) => {
-  let style = styleCache.get(key);
-  if (!style) styleCache.set(key, (style = make()));
-  return style;
-};
-
-const SERVICE_DASH = [6, 6];
-
-const routeStyle = (highlighted: boolean, weight: number, dashed: boolean) =>
-  cachedStyle(
-    `route-${highlighted}-${weight}-${dashed}`,
-    () =>
-      new Style({
-        stroke: new Stroke({
-          color: tokenValue(highlighted ? "--fa-map-route-highlight" : "--fa-map-route"),
-          width: highlighted ? HIGHLIGHT_WEIGHT : weight,
-          lineDash: dashed ? SERVICE_DASH : undefined,
-        }),
-        zIndex: highlighted ? 1 : 0,
-      }),
-  );
-
-const unreadableStyle = () =>
-  cachedStyle(
-    "airport-unreadable",
-    () =>
-      new Style({
-        image: new Circle({
-          radius: 3,
-          fill: new Fill({ color: tokenValue("--fa-map-unreadable") }),
-          stroke: new Stroke({ color: tokenValue("--fa-map-marker-stroke"), width: 0.5 }),
-        }),
-        zIndex: -1,
-      }),
-  );
-
-// Compare mode counts changes, not destinations, so the destinations ramp doesn't apply.
-const changedStyle = (changes: number) =>
-  cachedStyle(
-    `airport-changed-${changes}`,
-    () =>
-      new Style({
-        image: new Circle({
-          radius: 4 + Math.min(changes, 4),
-          fill: new Fill({ color: tokenValue("--fa-map-route-highlight") }),
-          stroke: new Stroke({ color: tokenValue("--fa-map-marker-stroke"), width: 0.5 }),
-        }),
-        zIndex: changes,
-      }),
-  );
-
-const airportStyle = (feature: FeatureLike) => {
-  if (feature.get("unreadable")) return unreadableStyle();
-  const destinations = (feature.get("airport") as Airport).properties.destinations || 0;
-  if (feature.get("changed")) return changedStyle(destinations);
-  return cachedStyle(
-    `airport-${destinations}`,
-    () =>
-      new Style({
-        image: new Circle({
-          radius: 3 + Math.min(destinations / 20, 4),
-          fill: new Fill({
-            color: tokenValue(destinationColorToken(destinationBin(destinations))),
-          }),
-          stroke: new Stroke({ color: tokenValue("--fa-map-marker-stroke"), width: 0.5 }),
-        }),
-        // Busier airports draw on top.
-        zIndex: destinations,
-      }),
-  );
 };
 
 // airports.json leaves out airports with no routes, so only the gray ones have 0.
@@ -224,17 +142,6 @@ export const MapComponent = () => {
   });
 
   const [map] = useState(() => {
-    const routesLayer = new VectorLayer({
-      source: new VectorSource(),
-      zIndex: 1,
-      updateWhileAnimating: true,
-    });
-    const airportsLayer = new VectorLayer({
-      source: new VectorSource(),
-      style: airportStyle,
-      zIndex: 2,
-      updateWhileAnimating: true,
-    });
     const tooltipElement = document.createElement("div");
     const tooltip = new Overlay({
       element: tooltipElement,
@@ -242,20 +149,23 @@ export const MapComponent = () => {
       offset: [0, -10],
       stopEvent: false,
     });
-    return { routesLayer, airportsLayer, tooltip, tooltipElement };
+    return {
+      routesSource: new VectorSource(),
+      airportsSource: new VectorSource(),
+      highlightSource: new VectorSource(),
+      tooltip,
+      tooltipElement,
+    };
   });
-  const routesSource = map.routesLayer.getSource()!;
-  const airportsSource = map.airportsLayer.getSource()!;
+  const { routesSource, airportsSource, highlightSource } = map;
+  const [renderer, setRenderer] = useRenderer();
+  const airportsLayerRef = useRef<Layer | null>(null);
 
   useEffect(() => {
-    const { routesLayer, airportsLayer, tooltip } = map;
+    const { tooltip } = map;
     const olMap = new OlMap({
       target: targetRef.current!,
-      layers: [
-        new TileLayer({ source: new XYZ({ url: TILE_URL, attributions: ATTRIBUTION }) }),
-        routesLayer,
-        airportsLayer,
-      ],
+      layers: [new TileLayer({ source: new XYZ({ url: TILE_URL, attributions: ATTRIBUTION }) })],
       overlays: [tooltip],
       view: new View({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, maxZoom: MAX_ZOOM }),
       controls: defaultControls({
@@ -283,9 +193,15 @@ export const MapComponent = () => {
     };
     olMap.on("pointermove", (e) => {
       if (e.dragging || (e.originalEvent as PointerEvent).pointerType !== "mouse") return;
-      hover(airportAt(olMap, airportsLayer, e.pixel, e.coordinate), e.coordinate, e.pixel);
+      hover(
+        airportAt(olMap, airportsLayerRef.current, e.pixel, e.coordinate),
+        e.coordinate,
+        e.pixel,
+      );
     });
-    olMap.on("click", (e) => onClick(airportAt(olMap, airportsLayer, e.pixel, e.coordinate)));
+    olMap.on("click", (e) =>
+      onClick(airportAt(olMap, airportsLayerRef.current, e.pixel, e.coordinate)),
+    );
     const leave = () => hover(null, [0, 0], [0, 0]);
     olMap.getViewport().addEventListener("mouseleave", leave);
     mapRef.current = olMap;
@@ -295,6 +211,29 @@ export const MapComponent = () => {
       mapRef.current = null;
     };
   }, [map]);
+
+  // A browser that can't start the GPU layers gets canvas ones.
+  const layers = useMemo(() => {
+    try {
+      return createLayers(renderer, map);
+    } catch {
+      return createLayers("canvas", map);
+    }
+  }, [renderer, map]);
+
+  const previousLayers = useRef<MapLayers | null>(null);
+  useEffect(() => {
+    const olMap = mapRef.current!;
+    const stale = previousLayers.current;
+    if (stale && stale !== layers) layerList(stale).forEach((layer) => layer.dispose());
+    previousLayers.current = layers;
+    layerList(layers).forEach((layer) => olMap.addLayer(layer));
+    airportsLayerRef.current = layers.airports;
+    return () => {
+      layerList(layers).forEach((layer) => olMap.removeLayer(layer));
+      airportsLayerRef.current = null;
+    };
+  }, [layers]);
 
   const { months, loading: monthsLoading, error: monthsError } = useMonths();
   const {
@@ -383,21 +322,34 @@ export const MapComponent = () => {
     },
   });
 
+  const routeFeatures = useMemo(
+    () =>
+      (routes?.features ?? []).map(
+        (f) =>
+          new Feature({
+            geometry: routeGeometry(f.geometry.coordinates),
+            dashed: f.properties.service ? 1 : 0,
+            ...f.properties,
+          }),
+      ),
+    [routes],
+  );
+
   useEffect(() => {
     routesSource.clear();
     routesSource.addFeatures(
-      (routes?.features ?? []).map(
-        (f) => new Feature({ geometry: routeGeometry(f.geometry.coordinates), ...f.properties }),
-      ),
+      selectedAirline
+        ? routeFeatures.filter((f) => f.get("airline_code") === selectedAirline)
+        : routeFeatures,
     );
-  }, [routes, routesSource]);
+  }, [routeFeatures, selectedAirline, routesSource]);
 
   useEffect(() => {
     if (selectedAirport && destinationAirport) {
       const ends = [selectedAirport, destinationAirport].map((a) => a.geometry.coordinates);
       fitTo(mapRef.current, routeGeometry(ends).getExtent(), 60);
     } else if (routes) {
-      fitTo(mapRef.current, routesExtent(routesSource, selectedAirline));
+      fitTo(mapRef.current, routesExtent(routesSource));
     } else {
       resetView(mapRef.current);
     }
@@ -419,13 +371,26 @@ export const MapComponent = () => {
   }, [hovered, selectedAirport, destinationAirport]);
 
   useEffect(() => {
-    const weight = (routes?.features.length ?? 0) > 200 ? 1 : 2;
-    map.routesLayer.setStyle((feature) => {
-      const route = feature.getProperties() as RouteProperties;
-      if (selectedAirline && route.airline_code !== selectedAirline) return undefined;
-      return routeStyle(highlight?.(route) ?? false, weight, !!route.service);
-    });
-  }, [selectedAirline, highlight, routes, map]);
+    layers.routes.setWeight((routes?.features.length ?? 0) > 200 ? 1 : 2);
+  }, [layers, routes]);
+
+  // The highlighted routes draw on a layer of their own, so hovering doesn't restyle every route.
+  useEffect(() => {
+    highlightSource.clear();
+    if (!highlight) return;
+    highlightSource.addFeatures(
+      routesSource
+        .getFeatures()
+        .filter((f) =>
+          highlight({
+            airline_code: f.get("airline_code"),
+            src_airport: f.get("src_airport"),
+            dst_airport: f.get("dst_airport"),
+          }),
+        )
+        .map((f) => f.clone()),
+    );
+  }, [highlight, routeFeatures, selectedAirline, routesSource, highlightSource]);
 
   // Empty means show every airport.
   const filteredAirports = useMemo(() => {
@@ -447,8 +412,9 @@ export const MapComponent = () => {
       new Feature({
         geometry: new Point(fromLonLat(airport.geometry.coordinates)),
         airport,
-        unreadable,
-        changed: !!changed,
+        destinations: airport.properties.destinations || 0,
+        unreadable: unreadable ? 1 : 0,
+        changed: changed ? 1 : 0,
       });
     airportsSource.clear();
     airportsSource.addFeatures([
@@ -580,6 +546,8 @@ export const MapComponent = () => {
         changeCount={changedRows?.length ?? null}
         loading={locked}
         error={monthsError || dataError || earlier.error}
+        renderer={renderer}
+        onRendererChange={setRenderer}
       >
         {!destinationAirport && notice}
         {selectedAirport && destinationAirport && routes && (

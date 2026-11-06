@@ -1,3 +1,4 @@
+import { Checkbox } from "@/components/common/Checkbox";
 import { Combobox } from "@/components/common/Combobox";
 import { SegmentedControl } from "@/components/common/SegmentedControl";
 import type { Compare, MonthOption, RouteChange } from "@/types";
@@ -35,17 +36,12 @@ export const MonthControls = ({
 
   return (
     <>
-      <label className={styles.check}>
-        <input
-          type="checkbox"
-          checked={!!compare}
-          disabled={disabled || !earlier.length}
-          onChange={(e) =>
-            setCompare(e.target.checked ? { from: earlier[0], show: "added" } : null)
-          }
-        />
-        Compare months
-      </label>
+      <Checkbox
+        label="Compare months"
+        checked={!!compare}
+        disabled={disabled || !earlier.length}
+        onChange={(on) => setCompare(on ? { from: earlier[0], show: "added" } : null)}
+      />
       {!earlier.length && !compare && (
         <p className={styles.hint}>Needs an earlier month of data to compare with.</p>
       )}

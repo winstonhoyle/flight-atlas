@@ -16,10 +16,10 @@ where `var()` doesn't work, reads them with `tokenValue()` from `app/src/styles/
 Check before review:
 
 ```sh
-grep -rnE '#[0-9a-fA-F]{3,8}\b|rgba?\(' app/src --include=*.ts --include=*.tsx --include=*.css | grep -v styles/tokens.css
+grep -rnE '#[0-9a-fA-F]{3,8}\b|rgba?\(' app/src --include=*.ts --include=*.tsx --include=*.css | grep -v -e styles/tokens.css -e '\.test\.'
 ```
 
-The command should print nothing.
+The command should print nothing. Tests are left out, since they stand in for tokens the stylesheet defines.
 
 ## Files
 
@@ -74,6 +74,10 @@ with the count as well and the legend gives each color's range.
 Seasonal, charter, and seasonal charter routes are drawn dashed in the same color, so the signal
 isn't color. The legend names the dash, and the route panel spells out each airline's service
 ("Seasonal · DL").
+
+Markers and routes draw on canvas by default. "Draw the map with your GPU" under Advanced moves them
+to the GPU (WebGL) on browsers that have it. Both read the same tokens and look the same, and the
+choice is saved in the browser.
 
 When comparing months, a marker counts changed routes, not destinations, so the ramp doesn't
 apply: every marker is `--fa-map-route-highlight`, sized by its count, and the legend is

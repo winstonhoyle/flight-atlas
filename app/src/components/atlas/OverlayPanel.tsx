@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/common/Button";
+import { Checkbox } from "@/components/common/Checkbox";
 import { Combobox } from "@/components/common/Combobox";
 import { ExternalLink } from "@/components/common/ExternalLink";
 import { IconButton } from "@/components/common/IconButton";
@@ -8,6 +9,7 @@ import { ArrowBackIcon, ExpandLessIcon, ExpandMoreIcon, SettingsIcon } from "@/i
 import { API_BASE, snapshotParams } from "@/services/api";
 import type { AirlineSummary, Airport, Compare, MonthOption, Routes } from "@/types";
 import { shortLabel } from "@/utils/months";
+import { canWebGL, type Renderer } from "@/utils/renderer";
 import { CHANGE_LABELS } from "@/utils/routeChanges";
 import { ChangedAirports } from "./ChangedAirports";
 import { MonthControls } from "./MonthControls";
@@ -35,6 +37,9 @@ type OverlayPanelProps = {
   changeCount: number | null;
   loading: boolean;
   error: string | null;
+  renderer?: Renderer;
+  /** Without this, the panel has no drawing choice. */
+  onRendererChange?: (renderer: Renderer) => void;
   children?: ReactNode;
 };
 
@@ -72,6 +77,8 @@ export const OverlayPanel = ({
   changeCount,
   loading,
   error,
+  renderer = "canvas",
+  onRendererChange,
   children,
 }: OverlayPanelProps) => {
   const [isOpen, setIsOpen] = useState(true);
@@ -264,6 +271,13 @@ export const OverlayPanel = ({
                   ? "The comparison is built from these two requests."
                   : "Data snapshot: the month the routes were collected, not a flight schedule."}
               </p>
+              {onRendererChange && canWebGL() && (
+                <Checkbox
+                  label="Draw the map with your GPU"
+                  checked={renderer === "webgl"}
+                  onChange={(on) => onRendererChange(on ? "webgl" : "canvas")}
+                />
+              )}
               {(compare ? [compare.from, snapshot] : [snapshot]).map((month) => {
                 const url = buildApiUrl(selectedAirport, selectedAirline, month);
                 return (

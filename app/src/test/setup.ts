@@ -27,3 +27,6 @@ HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
 afterEach(() => {
   cleanup();
 });
+
+// jsdom has no canvas; answer "no WebGL" quietly instead of logging a warning each time.
+HTMLCanvasElement.prototype.getContext = () => null;

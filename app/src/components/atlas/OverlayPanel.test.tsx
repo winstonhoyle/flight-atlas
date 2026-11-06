@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as renderer from "@/utils/renderer";
 import type { Airport, Compare, MonthOption, Routes } from "@/types";
 import { OverlayPanel } from "./OverlayPanel";
 
@@ -55,6 +56,7 @@ const setup = (selection: {
     changeCount: selection.compare ? 2 : null,
     loading: false,
     error: null,
+    onRendererChange: vi.fn(),
   };
   const view = render(<OverlayPanel {...props} />);
   return {
@@ -62,6 +64,10 @@ const setup = (selection: {
     rerender: (next: Partial<typeof props>) => view.rerender(<OverlayPanel {...props} {...next} />),
   };
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const clear = async (label: string) => {
   await userEvent.click(screen.getByRole("combobox", { name: label }));
@@ -156,5 +162,22 @@ describe("OverlayPanel", () => {
     expect(screen.queryByRole("option", { name: "Oct 2026" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: "Lost routes" }));
     expect(props.setCompare).toHaveBeenCalledWith({ ...compare, show: "lost" });
+  });
+
+  it("offers GPU drawing under Advanced", async () => {
+    vi.spyOn(renderer, "canWebGL").mockReturnValue(true);
+    const { onRendererChange } = setup({});
+    await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    const box = screen.getByRole("checkbox", { name: "Draw the map with your GPU" });
+    expect(box).not.toBeChecked();
+    await userEvent.click(box);
+    expect(onRendererChange).toHaveBeenCalledWith("webgl");
+  });
+
+  it("has no GPU choice without WebGL", async () => {
+    vi.spyOn(renderer, "canWebGL").mockReturnValue(false);
+    setup({});
+    await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    expect(screen.queryByRole("checkbox", { name: "Draw the map with your GPU" })).toBeNull();
   });
 });
