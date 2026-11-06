@@ -39,6 +39,10 @@ export const Legend = () => {
               </li>
             ))}
           <li className={styles.item}>
+            <span className={styles.dash} aria-hidden />
+            Seasonal or charter
+          </li>
+          <li className={styles.item}>
             <span
               className={styles.swatch}
               style={{ background: "var(--fa-map-unreadable)" }}

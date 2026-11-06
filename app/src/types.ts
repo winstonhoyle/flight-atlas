@@ -11,15 +11,28 @@ export type AirportProperties = {
 
 export type Airport = Feature<Point, AirportProperties>;
 
+/** Seasonal, charter, or seasonal charter service. Year-round scheduled service has none. */
+export type Service = "s" | "c" | "sc";
+
 export type RouteProperties = {
   airline_code: string;
   src_airport: string;
   dst_airport: string;
+  service?: Service;
 };
 
 export type Routes = FeatureCollection<LineString, RouteProperties>;
 
-export type RouteRow = [airline_code: string, src_airport: string, dst_airport: string];
+/** One airline's route in one direction: the app's working form of a `RoutePair`. */
+export type RouteRow = [
+  airline_code: string,
+  src_airport: string,
+  dst_airport: string,
+  service?: Service,
+];
+
+/** A routes.json row: the airlines one airport lists to another. A code ends in `:s`, `:c` or `:sc` for seasonal or charter service. */
+export type RoutePair = [src_airport: string, dst_airport: string, airline_codes: string[]];
 
 export type Airlines = Record<string, string>;
 

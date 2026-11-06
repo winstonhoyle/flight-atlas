@@ -42,6 +42,13 @@
   border-radius: var(--fa-radius-pill);
 }
 
+.dash {
+  flex: none;
+  width: 0.875rem;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--fa-map-route) 0 3px, transparent 3px 5px);
+}
+
 .link {
   color: var(--fa-color-link);
   text-underline-offset: 0.15em;

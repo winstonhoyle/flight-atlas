@@ -8,6 +8,7 @@ import {
   airportsPage,
   errorsPage,
   homeSection,
+  legsOf,
   renderHome,
   renderPage,
   sitemapXml,
@@ -52,8 +53,9 @@ const main = async () => {
     const linked = Object.fromEntries(
       Object.entries(airlines).filter(([code]) => /^[A-Z0-9]{2,3}$/.test(code)),
     );
-    const bySrc = groupBy(routes, 1);
-    const byAirline = groupBy(routes, 0);
+    const legs = legsOf(routes);
+    const bySrc = groupBy(legs, 1);
+    const byAirline = groupBy(legs, 0);
 
     for (const feature of listed) {
       pages.push(airportPage(feature, bySrc.get(feature.properties.IATA), names, linked));

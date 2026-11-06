@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { Airport, Routes } from "@/types";
+import type { Airport, Routes, Service } from "@/types";
 import { RouteInfo } from "./RouteInfo";
 
 const airport = (IATA: string, Name: string): Airport => ({
@@ -16,10 +16,15 @@ const airport = (IATA: string, Name: string): Airport => ({
   },
 });
 
-const route = (airline_code: string, src_airport: string, dst_airport: string) => ({
+const route = (
+  airline_code: string,
+  src_airport: string,
+  dst_airport: string,
+  service?: Service,
+) => ({
   type: "Feature" as const,
   geometry: { type: "LineString" as const, coordinates: [] },
-  properties: { airline_code, src_airport, dst_airport },
+  properties: { airline_code, src_airport, dst_airport, ...(service && { service }) },
 });
 
 const ROUTES: Routes = {
@@ -55,6 +60,33 @@ describe("RouteInfo", () => {
       "https://www.google.com/travel/flights?q=ATL+to+BOS+DL",
     );
     expect(flights[1]).toHaveAccessibleName("JetBlue (opens in a new tab)");
+  });
+
+  it("says when an airline's service is seasonal or charter", () => {
+    const routes: Routes = {
+      type: "FeatureCollection",
+      features: [
+        route("DL", "ATL", "BOS", "s"),
+        route("B6", "ATL", "BOS"),
+        route("UA", "ATL", "BOS", "sc"),
+      ],
+    };
+    render(
+      <RouteInfo
+        selectedAirport={airport("ATL", "Atlanta")}
+        destinationAirport={airport("BOS", "Boston")}
+        routes={routes}
+        airlines={{ DL: "Delta Air Lines", B6: "JetBlue", UA: "United" }}
+        onClose={() => {}}
+        onExplore={() => {}}
+      />,
+    );
+
+    const items = screen.getAllByRole("listitem").map((i) => i.textContent);
+    expect(items[0]).toContain("Seasonal · DL");
+    expect(items[1]).toMatch(/B6$/);
+    expect(items[1]).not.toContain("Seasonal");
+    expect(items[2]).toContain("Seasonal charter · UA");
   });
 
   it("closes through onClose", async () => {

@@ -15,6 +15,7 @@ describe("Legend", () => {
       "21–50",
       "11–20",
       "1–10",
+      "Seasonal or charter",
       "Routes unreadable",
     ]);
     expect(screen.getByRole("link", { name: "Routes unreadable" })).toHaveAttribute(

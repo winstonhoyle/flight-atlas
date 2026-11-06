@@ -8,6 +8,10 @@ const escapeHtml = (text) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
+/** A routes.json row as an [airline, src, dst] row per airline; a code's `:s`/`:c`/`:sc` marker is dropped. */
+export const legsOf = (pairs) =>
+  pairs.flatMap(([src, dst, codes]) => codes.map((code) => [code.split(":")[0], src, dst]));
+
 // Inside a <script> tag, "</" would end the tag early.
 const jsonLd = (data) => JSON.stringify(data).replaceAll("</", "<\\/");
 

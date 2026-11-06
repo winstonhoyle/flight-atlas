@@ -53,6 +53,7 @@ import { changedAirports, changeProblems, routeChanges } from "@/utils/routeChan
 import { EMPTY_SELECTION, type Selection } from "@/utils/selectionPath";
 
 const GEODESIC_MIN_MILES = 1000;
+const ARC_SEGMENTS = 32;
 const HIGHLIGHT_WEIGHT = 4;
 const HIT_TOLERANCE = 8;
 // Roughly half a tooltip's width and its height, in pixels.
@@ -65,7 +66,9 @@ type RouteMatch = (route: RouteProperties) => boolean;
 
 const routeGeometry = ([a, b]: Position[]) =>
   new LineString(
-    greatCircle(a, b, distanceMiles(a, b) > GEODESIC_MIN_MILES ? 64 : 1).map((p) => fromLonLat(p)),
+    greatCircle(a, b, distanceMiles(a, b) > GEODESIC_MIN_MILES ? ARC_SEGMENTS : 1).map((p) =>
+      fromLonLat(p),
+    ),
   );
 
 /** The copy of x (one per world wrap) closest to `near`. */
@@ -122,14 +125,17 @@ const cachedStyle = (key: string, make: () => Style) => {
   return style;
 };
 
-const routeStyle = (highlighted: boolean, weight: number) =>
+const SERVICE_DASH = [6, 6];
+
+const routeStyle = (highlighted: boolean, weight: number, dashed: boolean) =>
   cachedStyle(
-    `route-${highlighted}-${weight}`,
+    `route-${highlighted}-${weight}-${dashed}`,
     () =>
       new Style({
         stroke: new Stroke({
           color: tokenValue(highlighted ? "--fa-map-route-highlight" : "--fa-map-route"),
           width: highlighted ? HIGHLIGHT_WEIGHT : weight,
+          lineDash: dashed ? SERVICE_DASH : undefined,
         }),
         zIndex: highlighted ? 1 : 0,
       }),
@@ -417,7 +423,7 @@ export const MapComponent = () => {
     map.routesLayer.setStyle((feature) => {
       const route = feature.getProperties() as RouteProperties;
       if (selectedAirline && route.airline_code !== selectedAirline) return undefined;
-      return routeStyle(highlight?.(route) ?? false, weight);
+      return routeStyle(highlight?.(route) ?? false, weight, !!route.service);
     });
   }, [selectedAirline, highlight, routes, map]);
 

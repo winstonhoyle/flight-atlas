@@ -29,13 +29,15 @@
 
 .airline {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--fa-space-1);
+  gap: 0 var(--fa-space-1);
   padding: var(--fa-space-05) 0;
 }
 
 .code {
+  margin-left: auto;
   color: var(--fa-color-text-muted);
   font-size: var(--fa-font-size-3xs);
 }

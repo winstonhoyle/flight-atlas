@@ -311,3 +311,20 @@ def test_tries_each_destinations_heading_until_one_has_a_table():
     )
     row = parse_destination_row(find_destination_rows(soup)[0])
     assert row.destination_titles == ["Dallas/Fort_Worth_International_Airport"]
+
+
+def test_seasonal_and_charter_labels_mark_the_destinations_after_them():
+    cell = (
+        '<a href="/wiki/A_Airport">A</a><sup><a href="#cite_note-1">[1]</a></sup>'
+        '<br><b>Seasonal:</b> <a href="/wiki/B_Airport">B</a>, <a href="/wiki/C_Airport">C</a>'
+        '<br><b>Charter:</b> <a href="/wiki/D_Airport">D</a>'
+        '<br><b>Seasonal charter:</b> <a href="/wiki/E_Airport">E</a>'
+        '<br><b>Begins June:</b> <a href="/wiki/F_Airport">F</a>'
+        "<sup><i>[citation needed]</i></sup>"
+    )
+    row = parse_destination_row(
+        html(f'<table><tr><td><a href="/wiki/Air">Air</a></td><td>{cell}</td></tr></table>').find("tr")
+    )
+    assert row.destination_titles == [f"{c}_Airport" for c in "ABCDEF"]
+    assert row.markers == {"B_Airport": "s", "C_Airport": "s", "D_Airport": "c", "E_Airport": "sc"}
+    assert row.unknown_labels == ["Begins June:"]

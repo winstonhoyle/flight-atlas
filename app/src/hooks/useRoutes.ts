@@ -16,7 +16,7 @@ export const routesFor = (
   if (!rows || (!iata && !selectedAirline && !all)) return null;
   const coordinates = new Map(airports.map((a) => [a.properties.IATA, a.geometry.coordinates]));
   const features: Routes["features"] = [];
-  for (const [airline_code, src_airport, dst_airport] of rows) {
+  for (const [airline_code, src_airport, dst_airport, service] of rows) {
     if (iata ? src_airport !== iata : selectedAirline && airline_code !== selectedAirline) continue;
     const src = coordinates.get(src_airport);
     const dst = coordinates.get(dst_airport);
@@ -24,7 +24,7 @@ export const routesFor = (
     features.push({
       type: "Feature",
       geometry: { type: "LineString", coordinates: [src, dst] },
-      properties: { airline_code, src_airport, dst_airport },
+      properties: { airline_code, src_airport, dst_airport, ...(service && { service }) },
     });
   }
   return { type: "FeatureCollection", features };

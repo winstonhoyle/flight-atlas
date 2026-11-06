@@ -89,5 +89,18 @@
   "Slate Falls Airways": {"code": "9SF", "display": true},
   "Sunshine Coast Air": {"code": "9SC", "display": true},
   "Van City Seaplanes": {"code": "9VC", "display": true},
-  "Whistler Wings Aviation": {"code": "9WW", "display": true}
+  "Whistler Wings Aviation": {"code": "9WW", "display": true},
+  "Aerotucán": {"code": "9AE", "display": true},
+  "BladeOne": {"code": "9BL", "display": true},
+  "Cabo Flight Center": {"code": "9CB", "display": true},
+  "Corilair": {"code": "9CO", "display": true},
+  "DHL Aviation": {"code": "9DH", "display": true},
+  "Glencore": {"code": "9GL", "display": true},
+  "Iskwew Air": {"code": "9IK", "display": true},
+  "Salt Spring Air": {"code": "9SA", "display": true},
+  "Seair Seaplanes": {"code": "9SE", "display": true},
+  "Superior Airways": {"code": "9SU", "display": true},
+  "Tofino Air": {"code": "9TO", "display": true},
+  "Air Greenland": {"code": "GL", "display": true},
+  "Air Greenland (settlement flights)": {"code": "GL"}
 }

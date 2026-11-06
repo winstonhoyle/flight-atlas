@@ -7,10 +7,13 @@ import shutil
 import sys
 import tempfile
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from functools import cache
+from itertools import chain, combinations, product
+from string import ascii_uppercase
 from urllib.parse import urlparse
 
 import boto3
@@ -114,6 +117,28 @@ def get(url: str, attempts: int = 6, **params) -> requests.Response:
     return response
 
 
+def marked(code: str, marker: str | None) -> str:
+    """An airline code with its seasonal or charter marker: AA, AA:s, AA:c or AA:sc."""
+    return f"{code}:{marker}" if marker else code
+
+
+def base_code(code: str) -> str:
+    return code.partition(":")[0]
+
+
+def suggest_registry_entries(found: list[dict]) -> dict[str, str]:
+    """A free 9xx code for each airline a scrape skipped for having no code, to add to airlines.json."""
+    taken = {entry["code"] for entry in AIRLINES.values()}
+    names = sorted({p["airline"] for p in found if p["kind"] in ("airline_code", "airline_link")} - AIRLINES.keys())
+    suggestions = {}
+    for name in names:
+        letters = re.sub(r"[^A-Z0-9]", "", name.upper())
+        pool = chain(combinations(letters, 2), product(ascii_uppercase, repeat=2))
+        suggestions[name] = next(code for pair in pool if (code := "9" + "".join(pair)) not in taken)
+        taken.add(suggestions[name])
+    return suggestions
+
+
 def fetch_soup(url: str):
     return wiki_parse.soup_of(get(url).text)
 
@@ -183,7 +208,7 @@ def get_airline_code(url: str, name: str) -> str | None:
 
 
 # Bump after any wiki_parse change, so saved pages are parsed again.
-PARSER_VERSION = 1
+PARSER_VERSION = 2
 PAGE_CACHE = "cache/pages.json"
 
 # Airport page URL to what was parsed from it, at which revision. Saved with each snapshot.
@@ -231,12 +256,17 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destin
 
     page = read_airport_page(url, None if pd.isna(revid) else int(revid))
     if page["rows"] is None:
-        note_problem(
-            "destinations_table", f"{page['error']}, so none of its routes were read", airport=src_iata, url=url
-        )
+        # No section at all means the airport has no scheduled service to read, which isn't a Wikipedia error.
+        if page["error"] != wiki_parse.NO_DESTINATIONS_SECTION:
+            note_problem(
+                "destinations_table", f"{page['error']}, so none of its routes were read", airport=src_iata, url=url
+            )
         return []
 
     parsed = [wiki_parse.DestinationRow(**row) for row in page["rows"]]
+    for row in parsed:
+        for label in row.unknown_labels:
+            logger.warning(f"{src_iata}: unknown label '{label}' for {row.airline_name}, read as year-round")
     pages = resolve_pages([title for row in parsed for title in row.destination_titles])
 
     destinations = []
@@ -271,10 +301,11 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destin
                 continue
             dst_url = page.url
             known = airports_df.loc[airports_df["url"] == dst_url, "IATA"]
+            code = marked(airline_code, row.markers.get(title))
 
             if not known.empty:
                 # Both ends are listed airports; the reverse route comes from the other page.
-                destinations.append([airline_code, src_iata, known.iloc[0]])
+                destinations.append([code, src_iata, known.iloc[0]])
                 continue
 
             if dst_url not in additional_destinations:
@@ -297,10 +328,47 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destin
 
             # Unlisted airports (overseas, remote villages) aren't scraped themselves, so add both ways.
             dst_iata = additional_destinations[dst_url]["IATA"]
-            destinations.append([airline_code, src_iata, dst_iata])
-            destinations.append([airline_code, dst_iata, src_iata])
+            destinations.append([code, src_iata, dst_iata])
+            destinations.append([code, dst_iata, src_iata])
 
     return destinations
+
+
+# Country code to the end of its "List of airports in …" page titles.
+NORTH_AMERICA_LISTS = {
+    "BZ": ["Belize"],
+    "CR": ["Costa_Rica"],
+    "SV": ["El_Salvador"],
+    "GT": ["Guatemala"],
+    "HN": ["Honduras"],
+    "NI": ["Nicaragua"],
+    "PA": ["Panama"],
+    "CU": ["Cuba"],
+    "HT": ["Haiti"],
+    "JM": ["Jamaica"],
+    "DO": ["the_Dominican_Republic"],
+    "PR": ["Puerto_Rico"],
+    "KY": ["the_Cayman_Islands"],
+    "BS": ["the_Bahamas"],
+    "TC": ["the_Turks_and_Caicos_Islands"],
+    "AI": ["Anguilla"],
+    "AG": ["Antigua_and_Barbuda"],
+    "AW": ["Aruba"],
+    "BB": ["Barbados"],
+    "DM": ["Dominica"],
+    "GD": ["Grenada"],
+    "GP": ["Guadeloupe"],
+    "MQ": ["Martinique"],
+    "BL": ["Saint_Barthélemy"],
+    "KN": ["Saint_Kitts_and_Nevis"],
+    "LC": ["Saint_Lucia"],
+    "VC": ["Saint_Vincent_and_the_Grenadines"],
+    "VG": ["the_British_Virgin_Islands"],
+    "VI": ["the_United_States_Virgin_Islands"],
+    "BM": ["Bermuda"],
+    "GL": ["Greenland"],
+    "PM": ["Saint_Pierre_and_Miquelon"],
+}
 
 
 def list_airports() -> list[tuple[str, wiki_parse.ListedAirport]]:
@@ -310,7 +378,7 @@ def list_airports() -> list[tuple[str, wiki_parse.ListedAirport]]:
         "US": ["List_of_airports_in_the_United_States"],
         "MX": ["List_of_airports_in_Mexico"],
         "CA": wiki_parse.parse_list_links(canada_index, "List_of_airports_in_Canada_("),
-    }
+    } | {code: [f"List_of_airports_in_{name}" for name in names] for code, names in NORTH_AMERICA_LISTS.items()}
     unknown = COUNTRIES - airport_lists.keys()
     if unknown:
         raise SystemExit(f"Unknown COUNTRIES: {', '.join(sorted(unknown))}. Use {', '.join(airport_lists)}")
@@ -318,7 +386,12 @@ def list_airports() -> list[tuple[str, wiki_parse.ListedAirport]]:
     listed: dict[str, tuple[str, wiki_parse.ListedAirport]] = {}
     for country, titles in airport_lists.items():
         for title in titles:
-            for airport in wiki_parse.parse_airport_list(fetch_soup(wiki_parse.wiki_url(title))):
+            try:
+                airports = wiki_parse.parse_airport_list(fetch_soup(wiki_parse.wiki_url(title)))
+            except (LookupError, requests.HTTPError) as e:
+                logger.warning(f"Skipping the airport list {title}: {e}")
+                continue
+            for airport in airports:
                 kept = listed.get(airport.iata)
                 # Lists can share a code between an airport and a base or water aerodrome (YWG, YBL).
                 if kept is None or ("Airport" in airport.airport_title and "Airport" not in kept[1].airport_title):
@@ -439,9 +512,36 @@ def _keys() -> list[str]:
     return [obj["Key"][len(prefix) :] for page in pages for obj in page.get("Contents", [])]
 
 
+def legs_of(row: list) -> list[list[str]]:
+    """A routes.json row as [code, src, dst] legs.
+
+    shortcut: also reads the old triples so --normalize can convert past months; delete once all are converted.
+    """
+    if isinstance(row[2], str):
+        return [row]
+    src, dst, codes = row
+    return [[code, src, dst] for code in codes]
+
+
+def route_rows(routes_df: pd.DataFrame) -> list[list]:
+    """One row per direction of an airport pair, [src, dst, [codes]]. A code the page marks two ways is year-round."""
+    markers: dict[tuple[str, str], dict[str, set[str]]] = {}
+    for code, src, dst in routes_df[["airline_code", "src_airport", "dst_airport"]].itertuples(index=False):
+        base, _, marker = code.partition(":")
+        markers.setdefault((src, dst), {}).setdefault(base, set()).add(marker)
+    return [
+        [
+            src,
+            dst,
+            sorted(marked(base, next(iter(found)) if len(found) == 1 else "") for base, found in by_base.items()),
+        ]
+        for (src, dst), by_base in sorted(markers.items())
+    ]
+
+
 def read_snapshot(snapshot: tuple[int, int]) -> tuple[pd.DataFrame, pd.DataFrame]:
     prefix = snapshot_prefix(snapshot)
-    routes = _read_json(prefix + "routes.json") or []
+    routes = [leg for row in _read_json(prefix + "routes.json") or [] for leg in legs_of(row)]
     airports = (_read_json(prefix + "airports.json") or {}).get("features", [])
     flights_df = pd.DataFrame(routes, columns=["airline_code", "src_airport", "dst_airport"])
     airports_df = pd.DataFrame(
@@ -528,7 +628,7 @@ def load_airline_codes(snapshot: tuple[int, int]) -> None:
 
 def one_sided_routes(routes: list[list[str]], scraped_iatas: set[str]) -> list[dict]:
     """Legs between two scraped airports whose reverse leg the other airport's page doesn't list."""
-    legs = {tuple(r) for r in routes}
+    legs = {(base_code(airline), src, dst) for airline, src, dst in routes}
     # Airports with no outgoing legs had no readable table; check_airport reports those already.
     has_table = {src for _, src, _ in legs}
     return [
@@ -567,16 +667,19 @@ def merge_into_snapshot(
     return kept.values.tolist() + new_routes
 
 
-def check_airport(url: str) -> list[str]:
-    """Problems with one airport's page, using the same parsers as a scrape."""
+def check_airport(url: str, labels: Counter | None = None) -> list[str]:
+    """Problems with one airport's page, using the same parsers as a scrape. Adds its cell labels to `labels`."""
     soup = fetch_soup(url)
     problems = []
     if wiki_parse.parse_coordinates(soup) is None:
         problems.append("no coordinates")
     try:
-        rows = [row for row in map(wiki_parse.parse_destination_row, wiki_parse.find_destination_rows(soup)) if row]
+        trs = wiki_parse.find_destination_rows(soup)
     except LookupError as e:
-        return problems + [str(e)]
+        return problems if str(e) == wiki_parse.NO_DESTINATIONS_SECTION else problems + [str(e)]
+    rows = [row for row in map(wiki_parse.parse_destination_row, trs) if row]
+    if labels is not None:
+        labels.update(label.lower().rstrip(":") for tr in trs for label in wiki_parse.cell_labels(tr))
     if not rows:
         problems.append("destinations table has no rows")
     for row in rows:
@@ -592,13 +695,14 @@ def check_airports() -> int:
     listed = [a for country, a in list_airports() if not (AIRPORTS or COUNTRIES) or is_target(country, a.iata)]
     pages = resolve_pages([a.airport_title for a in listed])
     report: dict[str, list[str]] = {}
+    labels: Counter = Counter()
     for airport in tqdm(listed, desc="Checking airports"):
         page = pages.get(airport.airport_title)
         if page is None:
             report[airport.iata] = ["no Wikipedia page"]
             continue
         try:
-            problems = check_airport(page.url)
+            problems = check_airport(page.url, labels)
         except Exception as e:
             problems = [f"{type(e).__name__}: {e}"]
         if problems:
@@ -607,6 +711,9 @@ def check_airports() -> int:
     for iata, problems in sorted(report.items()):
         for problem in problems:
             print(f"{iata}  {problem}")
+    print("\nDestination cell labels:")
+    for label, count in labels.most_common():
+        print(f"{count:6}  {label}")
     print(f"{len(listed) - len(report)} of {len(listed)} airports parse cleanly.")
     if report:
         print(f"Recheck after a fix with: make scrape-check AIRPORTS={','.join(sorted(report))}")
@@ -698,7 +805,10 @@ def main() -> None:
 
 
 def kept_problems(snapshot: tuple[int, int], targets: set[str]) -> list[dict]:
-    """The snapshot's problems a partial run didn't recheck. One-sided routes are always recomputed."""
+    """
+    The snapshot's problems a partial run didn't recheck. One-sided routes are always recomputed.
+
+    """
     return [
         {k: v for k, v in p.items() if k not in ("airport_name", "coordinates")}
         for p in _read_json(snapshot_prefix(snapshot) + "problems.json") or []
@@ -720,7 +830,7 @@ def normalize(
     # An unordered pair, so A to B and B to A count as one route.
     pairs = pd.DataFrame(
         {
-            "airline_code": routes_df["airline_code"],
+            "airline_code": routes_df["airline_code"].map(base_code),
             "airport1": routes_df[["src_airport", "dst_airport"]].min(axis=1),
             "airport2": routes_df[["src_airport", "dst_airport"]].max(axis=1),
         }
@@ -814,7 +924,7 @@ def write_outputs(
     bodies = {
         "airports.json": airports_body(airports_df),
         "airlines.json": {code: names[code] for code in route_counts.index},
-        "routes.json": routes_df.values.tolist(),
+        "routes.json": route_rows(routes_df),
         "problems.json": problems_body,
     }
 
@@ -854,6 +964,11 @@ if __name__ == "__main__":
     finally:
         _dump(
             REPORT_PATH,
-            report | {"finished": datetime.now().isoformat(timespec="seconds"), "problems": problems.records},
+            report
+            | {
+                "finished": datetime.now().isoformat(timespec="seconds"),
+                "unregistered_airlines": suggest_registry_entries(found_problems),
+                "problems": problems.records,
+            },
         )
         logger.info(f"Report: {REPORT_PATH}")

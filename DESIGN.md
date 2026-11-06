@@ -71,6 +71,10 @@ The map keeps its original colors, which aren't USWDS colors. The destinations r
 red (fewest) to green (most), a pair color-blind readers can confuse, so marker size grows
 with the count as well and the legend gives each color's range.
 
+Seasonal, charter, and seasonal charter routes are drawn dashed in the same color, so the signal
+isn't color. The legend names the dash, and the route panel spells out each airline's service
+("Seasonal · DL").
+
 When comparing months, a marker counts changed routes, not destinations, so the ramp doesn't
 apply: every marker is `--fa-map-route-highlight`, sized by its count, and the legend is
 hidden.

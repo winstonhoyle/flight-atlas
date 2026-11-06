@@ -2,7 +2,8 @@ import { Button } from "@/components/common/Button";
 import { ExternalLink } from "@/components/common/ExternalLink";
 import { IconButton } from "@/components/common/IconButton";
 import { CloseIcon } from "@/icons";
-import type { Airlines, Airport, Routes } from "@/types";
+import type { Airlines, Airport, Routes, Service } from "@/types";
+import { SERVICE_LABELS } from "@/utils/service";
 import styles from "./RouteInfo.module.css";
 
 type RouteInfoProps = {
@@ -27,11 +28,12 @@ export const RouteInfo = ({
   const src = selectedAirport.properties.IATA;
   const dst = destinationAirport.properties.IATA;
 
-  const airlineCodes = new Set(
-    routes.features
-      .filter((f) => f.properties.src_airport === src && f.properties.dst_airport === dst)
-      .map((f) => f.properties.airline_code),
-  );
+  const services = new Map<string, Service | undefined>();
+  for (const { properties: p } of routes.features) {
+    if (p.src_airport === src && p.dst_airport === dst && !services.has(p.airline_code)) {
+      services.set(p.airline_code, p.service);
+    }
+  }
 
   return (
     <section className={styles.route} aria-labelledby="route-info-title">
@@ -45,7 +47,7 @@ export const RouteInfo = ({
       </div>
 
       <ul className={styles.airlines} aria-label="Airlines flying this route">
-        {[...airlineCodes].map((code) => (
+        {[...services].map(([code, service]) => (
           <li key={code} className={styles.airline}>
             <ExternalLink
               href={`https://www.google.com/travel/flights?q=${src}+to+${dst}+${code}`}
@@ -53,7 +55,9 @@ export const RouteInfo = ({
             >
               {airlines[code] || "Unknown airline"}
             </ExternalLink>
-            <span className={styles.code}>{code}</span>
+            <span className={styles.code}>
+              {service ? `${SERVICE_LABELS[service]} · ${code}` : code}
+            </span>
           </li>
         ))}
       </ul>

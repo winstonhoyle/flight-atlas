@@ -44,7 +44,7 @@ paths:
   /routes:
     get:
       summary: Routes in a snapshot
-      description: Every route as `[airline_code, src_airport, dst_airport]`, filtered by `airport` and `airline_code` when given. Airport coordinates are in `/airports`.
+      description: Every route as `[src_airport, dst_airport, [airline_codes]]`, the airlines the origin's page lists to the destination, filtered by `airport` and `airline_code` when given. A route listed by only one airport has no row the other way. A code ends in `:s` for seasonal service, `:c` for charter and `:sc` for seasonal charter. Airport coordinates are in `/airports`.
       parameters:
         - $ref: "#/components/parameters/year"
         - $ref: "#/components/parameters/month"
@@ -67,8 +67,11 @@ paths:
                   type: array
                   minItems: 3
                   maxItems: 3
-                  items: { type: string }
-                example: [["G4", "GSO", "PIE"], ["AA", "GSO", "CLT"]]
+                  items:
+                    oneOf:
+                      - { type: string }
+                      - { type: array, items: { type: string } }
+                example: [["GSO", "PIE", ["G4"]], ["GSO", "CLT", ["AA", "DL:s"]]]
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }

@@ -1,6 +1,6 @@
 # Flight Atlas
 
-Flight Atlas maps the direct flight routes between airports in the U.S., Canada and Mexico, built from Wikipedia's
+Flight Atlas maps the direct flight routes between airports across North America, built from Wikipedia's
 airline and destination tables. Live at [flightatlas.io](https://flightatlas.io).
 
 ![Flight Atlas logo](app/public/logo.svg)
@@ -113,13 +113,18 @@ Responses for the newest snapshot are cached for an hour; a past snapshot named 
 - `airline_code`: IATA code of the airline (optional)
 - `year`, `month`: the snapshot (optional, see above)
 
-The snapshot's routes as `[airline_code, src_airport, dst_airport]`, filtered by `airport`
-and `airline_code` when given. Airport coordinates are in `/airports`.
+The snapshot's routes as `[src_airport, dst_airport, [airline_codes]]`: the airlines the origin's
+page lists to the destination. Each airport's page gives its own rows, so a route listed by only
+one end has no row the other way. An airline code ends in `:s` for seasonal service, `:c` for
+charter and `:sc` for seasonal charter, like `DL:s`. Filtered by `airport` and `airline_code`
+when given. Airport coordinates are in `/airports`.
 
 **Response:**
 ```json
 [
-  ["G4", "GSO", "PIE"],
+  ["GSO", "PIE", ["G4"]],
+  ["PIE", "GSO", ["G4"]],
+  ["ATL", "ASE", ["DL:s", "UA"]],
   ...
 ]
 ```

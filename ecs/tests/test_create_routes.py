@@ -1,5 +1,7 @@
 import io
 import json
+from collections import Counter
+from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
@@ -91,6 +93,61 @@ def test_a_shared_code_lists_the_airport_not_the_base(monkeypatch):
     assert [a.airport_title for _, a in create_routes.list_airports()] == ["Winnipeg_International_Airport"]
 
 
+def test_routes_are_written_one_row_per_direction_with_markers():
+    legs = [
+        ["AA", "DEN", "ANC"],
+        ["AA", "ANC", "DEN"],
+        ["AS", "ANC", "DEN"],
+        ["AS:s", "ANC", "BOI"],
+        ["DL", "ANC", "BOI"],
+        ["DL:s", "ANC", "BOI"],
+        ["GV:c", "ANC", "OME"],
+    ]
+    df = pd.DataFrame(legs, columns=["airline_code", "src_airport", "dst_airport"])
+
+    assert create_routes.route_rows(df) == [
+        ["ANC", "BOI", ["AS:s", "DL"]],
+        ["ANC", "DEN", ["AA", "AS"]],
+        ["ANC", "OME", ["GV:c"]],
+        ["DEN", "ANC", ["AA"]],
+    ]
+
+
+def test_a_route_row_reads_back_as_legs_in_its_own_direction():
+    assert create_routes.legs_of(["ANC", "DEN", ["AA", "AS:s"]]) == [["AA", "ANC", "DEN"], ["AS:s", "ANC", "DEN"]]
+    assert create_routes.legs_of(["AA", "ANC", "DEN"]) == [["AA", "ANC", "DEN"]]
+
+
+def test_unknown_destination_labels_are_logged_and_read_as_year_round(wikipedia, listed_airports, monkeypatch, caplog):
+    row = wiki_parse.DestinationRow(
+        "Grant Aviation",
+        "Grant_Aviation",
+        ["Alakanuk_Airport", "Atmautluak_Airport"],
+        markers={"Alakanuk_Airport": "s"},
+        unknown_labels=["Begins June:"],
+    )
+    monkeypatch.setattr(create_routes, "read_airport_page", lambda url, revid: {"rows": [asdict(row)]})
+
+    with caplog.at_level("WARNING"):
+        routes = create_routes.get_destinations("BET", listed_airports, {})
+
+    assert "BET: unknown label 'Begins June:' for Grant Aviation" in caplog.text
+    assert ["GV:s", "BET", "AUK"] in routes
+    assert ["GV", "BET", "4A2"] in routes
+
+
+def test_no_code_airlines_get_free_registry_suggestions(monkeypatch):
+    monkeypatch.setattr(create_routes, "AIRLINES", {"Cameron Air": {"code": "9CA"}, "Known": {"code": "9KN"}})
+    found = [
+        {"kind": "airline_code", "airline": "Cabo Flight Center"},
+        {"kind": "airline_code", "airline": "Cabo Flight Center"},
+        {"kind": "airline_link", "airline": "Cabana Air"},
+        {"kind": "airline_code", "airline": "Known"},
+        {"kind": "coordinates", "airline": None},
+    ]
+    assert create_routes.suggest_registry_entries(found) == {"Cabana Air": "9CB", "Cabo Flight Center": "9CO"}
+
+
 def test_every_registry_code_has_one_display_name():
     displays: dict[str, list[str]] = {}
     for name, entry in create_routes.AIRLINES.items():
@@ -168,7 +225,7 @@ def test_an_airport_missing_from_the_list_has_no_routes(wikipedia, listed_airpor
     assert create_routes.get_destinations("ZZZ", listed_airports, {}) == []
 
 
-def test_a_page_without_a_destinations_table_has_no_routes(wikipedia, listed_airports):
+def test_a_page_without_the_destinations_section_has_no_routes_and_no_problem(wikipedia, listed_airports):
     airports = pd.concat(
         [
             listed_airports,
@@ -176,7 +233,14 @@ def test_a_page_without_a_destinations_table_has_no_routes(wikipedia, listed_air
         ]
     )
     assert create_routes.get_destinations("XXX", airports, {}) == []
-    assert [(p["kind"], p["airport"]) for p in create_routes.found_problems] == [("destinations_table", "XXX")]
+    assert create_routes.found_problems == []
+
+
+def test_a_section_without_a_table_is_a_problem(wikipedia, listed_airports, monkeypatch):
+    error = "No airlines table in the 'Airlines and destinations' section"
+    monkeypatch.setattr(create_routes, "read_airport_page", lambda url, revid: {"rows": None, "error": error})
+    assert create_routes.get_destinations("BET", listed_airports, {}) == []
+    assert [(p["kind"], p["airport"]) for p in create_routes.found_problems] == [("destinations_table", "BET")]
 
 
 SNAPSHOT = (2026, 10)
@@ -223,7 +287,14 @@ def read_json(root, key):
 def test_write_outputs_writes_the_months_json(local_output, listed_airports):
     write_full_snapshot(listed_airports)
 
-    assert sorted(map(tuple, read_json(local_output, "2026/10/routes.json"))) == sorted(map(tuple, FULL_ROUTES))
+    assert read_json(local_output, "2026/10/routes.json") == [
+        ["ANC", "BET", ["AS"]],
+        ["ANC", "OME", ["AS"]],
+        ["AUK", "BET", ["GV"]],
+        ["BET", "ANC", ["AS"]],
+        ["BET", "AUK", ["GV"]],
+        ["OME", "ANC", ["AS"]],
+    ]
 
     airports = read_json(local_output, "2026/10/airports.json")["features"]
     assert {f["properties"]["IATA"]: f["properties"]["destinations"] for f in airports} == {
@@ -430,12 +501,37 @@ def test_get_waits_out_a_rate_limit(monkeypatch):
     assert waits == [3]
 
 
+def test_an_unreadable_airport_list_is_skipped(monkeypatch):
+    def parse(title):
+        if title == "BAD":
+            raise LookupError("No airports table")
+        return [wiki_parse.ListedAirport("Winnipeg", "", "YWG", "", "Winnipeg_International_Airport", "", None)]
+
+    monkeypatch.setattr(create_routes, "fetch_soup", lambda url: url.rsplit("/", 1)[-1])
+    monkeypatch.setattr(wiki_parse, "parse_list_links", lambda soup, prefix: ["BAD", "CA_2"])
+    monkeypatch.setattr(wiki_parse, "parse_airport_list", parse)
+
+    assert [a.iata for _, a in create_routes.list_airports()] == ["YWG"]
+
+
+def test_check_airport_tallies_destination_cell_labels(monkeypatch):
+    row = (
+        "<tr><td>Delta</td><td><b>Seasonal:</b> <a href='/wiki/Aspen'>Aspen</a>"
+        "<br><b>Charter:</b> <a href='/wiki/Nassau'>Nassau</a></td></tr>"
+    )
+    page = wiki_parse.soup_of(
+        '<div class="mw-heading mw-heading2"><h2 id="Airlines_and_destinations">Airlines and destinations</h2></div>'
+        '<table class="wikitable"><tbody><tr><th>Airlines</th><th>Destinations</th></tr>' + row + "</tbody></table>"
+    )
+    monkeypatch.setattr(create_routes, "fetch_soup", lambda url: page)
+    labels: Counter = Counter()
+    create_routes.check_airport(WIKI + "X_Airport", labels)
+    assert labels == {"seasonal": 1, "charter": 1}
+
+
 def test_check_airport_reports_page_problems(wikipedia):
     assert create_routes.check_airport(WIKI + "Bethel_Airport") == []
-    assert create_routes.check_airport(WIKI + "Stub_Airport") == [
-        "no coordinates",
-        "No 'Airlines and destinations' section",
-    ]
+    assert create_routes.check_airport(WIKI + "Stub_Airport") == ["no coordinates"]
 
 
 class FakeS3:
@@ -606,11 +702,11 @@ def test_normalizing_a_past_month(local_output, monkeypatch):
     create_routes.normalize_month(SNAPSHOT)
 
     assert read_json(local_output, "2026/10/routes.json") == [
-        ["AC", "YYZ", "CUN"],
-        ["AC", "CUN", "YYZ"],
-        ["WS", "YWG", "CUN"],
-        ["WS", "CUN", "YWG"],
-        ["AC", "YYZ", "YYT"],
+        ["CUN", "YWG", ["WS"]],
+        ["CUN", "YYZ", ["AC"]],
+        ["YWG", "CUN", ["WS"]],
+        ["YYZ", "CUN", ["AC"]],
+        ["YYZ", "YYT", ["AC"]],
     ]
     assert read_json(local_output, "2026/10/airlines.json") == {"AC": "Air Canada", "WS": "WestJet"}
     airports = {f["properties"]["IATA"]: f for f in read_json(local_output, "2026/10/airports.json")["features"]}

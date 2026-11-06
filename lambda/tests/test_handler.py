@@ -5,7 +5,7 @@ import pytest
 from conftest import event
 from flight_atlas_api.handler import lambda_handler
 
-ROUTES = [["DL", "ATL", "BOS"]]
+ROUTES = [["ATL", "BOS", ["DL"]]]
 
 
 def call(path: str, **params: str) -> tuple[int, object, dict]:
@@ -27,9 +27,10 @@ def test_serves_the_months_problems(fake):
 
 
 def test_routes_filter_by_origin_and_airline(fake):
-    rows = [["DL", "ATL", "BOS"], ["AA", "ATL", "DFW"], ["AA", "GSO", "CLT"]]
+    rows = [["ATL", "BOS", ["DL"]], ["ATL", "DFW", ["AA:s", "DL"]], ["CLT", "GSO", ["AA"]]]
     fake.objects["2026/02/routes.json"] = json.dumps(rows).encode()
     assert call("/routes", airport="atl")[1] == rows[:2]
+    assert call("/routes", airport="BOS")[1] == []
     assert call("/routes", airline_code="AA")[1] == rows[1:]
     assert call("/routes", airport="ATL", airline_code="AA")[1] == [rows[1]]
 

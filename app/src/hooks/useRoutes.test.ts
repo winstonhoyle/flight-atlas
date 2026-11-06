@@ -44,6 +44,16 @@ describe("routesFor", () => {
     ]);
   });
 
+  it("passes a route's seasonal or charter service to the drawn line", () => {
+    const rows: RouteRow[] = [
+      ["DL", "ATL", "BOS", "s"],
+      ["B6", "ATL", "JFK"],
+    ];
+    const [seasonal, regular] = routesFor(AIRPORTS[0], "", rows, AIRPORTS)!.features;
+    expect(seasonal.properties.service).toBe("s");
+    expect(regular.properties).not.toHaveProperty("service");
+  });
+
   it("draws every route with nothing selected when asked to", () => {
     expect(pairs(routesFor(null, "", ROWS, AIRPORTS, true))).toEqual([
       "DL ATL-BOS",

@@ -5,6 +5,7 @@ import {
   airportsPage,
   errorsPage,
   homeSection,
+  legsOf,
   renderHome,
   renderPage,
   sitemapXml,
@@ -140,5 +141,14 @@ describe("airportPage", () => {
     expect(page.summary).toBe(
       "Hartsfield–Jackson Atlanta International Airport has direct flights to 1 destination.",
     );
+  });
+});
+
+describe("legsOf", () => {
+  it("makes a row per airline and drops the seasonal or charter marker", () => {
+    expect(legsOf([["ATL", "BOS", ["DL", "AA:s"]]])).toEqual([
+      ["DL", "ATL", "BOS"],
+      ["AA", "ATL", "BOS"],
+    ]);
   });
 });

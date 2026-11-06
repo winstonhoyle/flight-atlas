@@ -47,20 +47,28 @@ describe("fetchMonths", () => {
 
 describe("fetchRoutes", () => {
   it("fetches the whole month's routes", async () => {
-    const rows = [["DL", "ATL", "BOS"]];
-    const fetchMock = vi.fn(async () => respond(200, rows));
+    const pairs = [["ATL", "BOS", ["DL", "AA:s", "UA:c", "B6:sc", "WN:x"]]];
+    const fetchMock = vi.fn(async () => respond(200, pairs));
     vi.stubGlobal("fetch", fetchMock);
 
-    expect(await fetchRoutes({ label: "October 2026", month: "10", year: 2026 })).toEqual(rows);
+    expect(await fetchRoutes({ label: "October 2026", month: "10", year: 2026 })).toEqual([
+      ["DL", "ATL", "BOS"],
+      ["AA", "ATL", "BOS", "s"],
+      ["UA", "ATL", "BOS", "c"],
+      ["B6", "ATL", "BOS", "sc"],
+      ["WN", "ATL", "BOS"],
+    ]);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/routes\?year=2026&month=10$/));
   });
 
-  it("rejects rows that aren't [airline, src, dst]", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => respond(200, [["DL", "ATL"]])),
-    );
-    await expect(fetchRoutes(null)).rejects.toThrow("Unexpected response from /routes");
+  it("rejects rows that aren't [src, dst, [airlines]]", async () => {
+    for (const rows of [[["ATL", "BOS"]], [["DL", "ATL", "BOS"]]]) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => respond(200, rows)),
+      );
+      await expect(fetchRoutes(null)).rejects.toThrow("Unexpected response from /routes");
+    }
   });
 });
 

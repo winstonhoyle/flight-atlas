@@ -92,6 +92,9 @@ def _is_airlines_table(table: Tag) -> bool:
     )
 
 
+NO_DESTINATIONS_SECTION = "No 'Airlines and destinations' section"
+
+
 def find_destination_rows(soup: BeautifulSoup) -> list[Tag]:
     """
     The first airlines table under any "Airlines and destinations" heading; the passenger table
@@ -99,7 +102,7 @@ def find_destination_rows(soup: BeautifulSoup) -> list[Tag]:
     """
     headings = soup.find_all(_is_destinations_heading)
     if not headings:
-        raise LookupError("No 'Airlines and destinations' section")
+        raise LookupError(NO_DESTINATIONS_SECTION)
 
     for heading in headings:
         for element in heading.find_all_next(["table", "h2"]):
@@ -115,10 +118,32 @@ class DestinationRow:
     airline_name: str
     airline_title: str | None
     destination_titles: list[str] = field(default_factory=list)
+    markers: dict[str, str] = field(default_factory=dict)
+    unknown_labels: list[str] = field(default_factory=list)
+
+
+# Bold labels in a destinations cell that qualify the destinations after them, and the marker each adds to a code.
+ROUTE_MARKERS = {"seasonal": "s", "charter": "c", "seasonal charter": "sc"}
+
+
+def _row_cells(tr: Tag) -> list[Tag]:
+    return tr.find_all("td", recursive=False) or tr.find_all("td")
+
+
+def cell_labels(tr: Tag) -> list[str]:
+    """Bold and italic text in a row's destinations cell ("Seasonal:", "Charter:"), to tally the markers pages use."""
+    cells = _row_cells(tr)
+    if len(cells) < 2:
+        return []
+    return [
+        text
+        for tag in cells[1].find_all(["b", "strong", "i", "em"])
+        if not tag.find_parent("sup") and (text := clean_text(tag.get_text()))
+    ]
 
 
 def parse_destination_row(tr: Tag) -> DestinationRow | None:
-    cells = tr.find_all("td", recursive=False) or tr.find_all("td")
+    cells = _row_cells(tr)
     if len(cells) < 2:
         return None
 
@@ -127,15 +152,32 @@ def parse_destination_row(tr: Tag) -> DestinationRow | None:
         return None
     airline_link = airline_cell.find("a", href=True)
     titles: list[str] = []
-    for link in destinations_cell.find_all("a", href=True):
-        title = wiki_title(link["href"])
-        if title and title not in titles:
-            titles.append(title)
+    markers: dict[str, str] = {}
+    unknown: list[str] = []
+    marker = ""
+    for node in destinations_cell.descendants:
+        if not isinstance(node, Tag):
+            continue
+        if node.name in ("br", "li"):
+            marker = ""
+        elif node.name in ("b", "strong") and not node.find_parent("sup"):
+            text = clean_text(node.get_text())
+            marker = ROUTE_MARKERS.get(text.rstrip(":").strip().lower(), "")
+            if not marker and text.endswith(":"):
+                unknown.append(text)
+        elif node.name == "a" and node.get("href"):
+            title = wiki_title(node["href"])
+            if title and title not in titles:
+                titles.append(title)
+                if marker:
+                    markers[title] = marker
 
     return DestinationRow(
         airline_name=clean_text(airline_cell.get_text()),
         airline_title=wiki_title(airline_link["href"]) if airline_link else None,
         destination_titles=titles,
+        markers=markers,
+        unknown_labels=unknown,
     )
 
 
@@ -152,7 +194,7 @@ class ListedAirport:
 
 # The U.S., Mexico and Canada lists name and order their columns differently.
 _LIST_COLUMNS = {
-    "city": ("City", "City served", "Community"),
+    "city": ("City", "City served", "Community", "Location"),
     "faa": ("FAA",),
     "iata": ("IATA",),
     "icao": ("ICAO",),
@@ -168,7 +210,7 @@ def parse_airport_list(soup: BeautifulSoup) -> list[ListedAirport]:
     tables = []
     for table in soup.find_all("table", {"class": "wikitable"}):
         rows = table.find_all("tr")
-        names = [clean_text(th.get_text(" ")) for th in rows[0].find_all("th")] if rows else []
+        names = [clean_text(c.get_text(" ")) for c in rows[0].find_all(["th", "td"])] if rows else []
         if "IATA" in names:
             columns = {
                 key: next((names.index(a) for a in aliases if a in names), None)
@@ -191,7 +233,7 @@ def parse_airport_list(soup: BeautifulSoup) -> list[ListedAirport]:
             link = by_key["airport"].find("a", href=True) if "airport" in by_key else None
             title = wiki_title(link["href"]) if link else None
             # Canada links some small fields to a list page, whose coordinates aren't the airport's.
-            if not title or title.startswith("List_of_") or not re.fullmatch(r"[A-Z]{3}", text.get("iata", "")):
+            if not title or title.startswith("List_of_") or not re.fullmatch(r"(?!TBD)[A-Z]{3}", text.get("iata", "")):
                 continue
             count = text.get("enplanements", "").replace(",", "")
             airports.append(

@@ -2,16 +2,17 @@
 
 The scraper builds the monthly data snapshot from English Wikipedia. It reads the airport lists for the
 [U.S.](https://en.wikipedia.org/wiki/List_of_airports_in_the_United_States),
-[Mexico](https://en.wikipedia.org/wiki/List_of_airports_in_Mexico) and
-[Canada](https://en.wikipedia.org/wiki/List_of_airports_in_Canada) (split over sub-pages; only
-rows with an IATA code and their own article), then each airport's "Airlines and destinations" table, and writes four JSON files to
+[Mexico](https://en.wikipedia.org/wiki/List_of_airports_in_Mexico),
+[Canada](https://en.wikipedia.org/wiki/List_of_airports_in_Canada) (split over sub-pages) and the
+Central American and Caribbean countries and territories in
+[`NORTH_AMERICA_LISTS`](create_routes.py) (only rows with an IATA code and their own article), then each airport's "Airlines and destinations" table, and writes four JSON files to
 `YYYY/MM/` in S3:
 
 | File | Contents |
 | --- | --- |
 | `airports.json` | GeoJSON points: listed airports plus the overseas and remote airports they fly to, with destination counts |
 | `airlines.json` | Airline code to name |
-| `routes.json` | Every route as `[airline_code, src_airport, dst_airport]` |
+| `routes.json` | `[src_airport, dst_airport, [airline_codes]]`, one row per direction; a code ends in `:s`, `:c` or `:sc` for seasonal, charter or seasonal charter service |
 | `problems.json` | Wikipedia pages it couldn't fully read, by the airport and airline they affect; shown at [flightatlas.io/errors](https://flightatlas.io/errors) |
 
 It then rewrites `snapshots.json` at the bucket root with every month that has data. A full
@@ -82,7 +83,7 @@ From `ecs/.env` (copy [`.env.sample`](.env.sample)) or the environment:
 | `OUTPUT_BASE` | Where to write. Unset writes to `s3://$S3_ROUTES_BUCKET`; a folder path writes locally |
 | `SCRAPE_LIMIT` | Scrape only the N busiest airports. `0` scrapes all |
 | `AIRPORTS` | Comma-separated IATA codes to re-scrape or check; empty means all |
-| `COUNTRIES` | Comma-separated country codes (`US`, `CA`, `MX`) to re-scrape or check, like `AIRPORTS` |
+| `COUNTRIES` | Comma-separated country codes to re-scrape or check, like `AIRPORTS`: `US`, `CA`, `MX` and the codes in `NORTH_AMERICA_LISTS` (`create_routes.py`) |
 | `S3_ROUTES_BUCKET`, `REGION` | AWS targets |
 
 ## Layout
@@ -103,10 +104,12 @@ Each of these has a test, against a saved page or a small snippet:
 - Passenger and cargo tables in one section; only the passenger table is read.
 - Destination links that are redirects (`Toronto–Pearson`), which `resolve_pages` follows.
 - Links to a section of an airport page (`…Airport#Terminal_1`).
-- Airlines with no link, or no IATA code on their page: their rows are skipped.
+- Airlines with no link, or no IATA code on their page: their rows are skipped. `scrape-report.json` lists each with a free `9xx` code in `unregistered_airlines`; add the ones you approve to `airlines.json`.
 - A link that lands on a disambiguation or missing page: only that destination is dropped.
+- Bold labels in a destinations cell: `Seasonal:`, `Charter:` and `Seasonal charter:` mark the destinations after them (up to the next line break or list item). Any other bold label ending in a colon is logged as `unknown label` and its destinations are read as year-round.
 - Rate limiting (`429`) from Wikipedia: the request waits and retries instead of failing the airport.
 - Airports without coordinates: skipped, so they can't break the final write.
+- Pages with no "Airlines and destinations" section (small airstrips with no scheduled service): no routes and no problem. A section with no readable table is still a problem.
 
 ## When Wikipedia changes
 

@@ -16,8 +16,9 @@ def _available_months(_query: Query, config: Settings) -> dict:
 
 
 def _matches(route: list[str], query: Query) -> bool:
-    airline, src, _dst = route
-    return (query.airport in (None, src)) and (query.airline in (None, airline))
+    src, _dst, codes = route
+    airlines = {code.partition(":")[0] for code in codes}
+    return (query.airport in (None, src)) and (query.airline in (None, *airlines))
 
 
 def _snapshot_file(name: str):

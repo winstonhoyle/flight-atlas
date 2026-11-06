@@ -14,7 +14,7 @@ export const WelcomeDialog = ({ open, onClose }: WelcomeDialogProps) => (
       <img src="/logo.svg" alt="" width={180} height={119} />
       <h2 className={styles.title}>Welcome to Flight Atlas</h2>
       <p>
-        Explore direct flight routes between airports across the U.S., Canada and Mexico in a fast,
+        Explore direct flight routes between airports across North America in a fast,
         interactive map. Built with React and serverless AWS services.
       </p>
       <p>
