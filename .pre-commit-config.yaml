@@ -16,6 +16,15 @@ repos:
       - id: terraform_fmt
         files: ^infra/.*\.(tf|tfvars)$
 
+  # App formatting, the same check as CI's format:check
+  - repo: local
+    hooks:
+      - id: prettier
+        name: Check app formatting with Prettier
+        entry: bash -c 'cd app && npx --no-install prettier --check "${@#app/}"' --
+        language: system
+        files: ^app/.*\.(ts|tsx|js|jsx|css|json|html|md|yaml|yml)$
+
   # Ensure package-lock.json is in sync with package.json
   - repo: local
     hooks:
