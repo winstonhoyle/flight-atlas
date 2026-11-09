@@ -93,6 +93,8 @@ def _is_airlines_table(table: Tag) -> bool:
 
 
 NO_DESTINATIONS_SECTION = "No 'Airlines and destinations' section"
+# Small airports keep the section with a sentence like "No scheduled flights operate at this airport."
+_NO_SERVICE = re.compile(r"\bno scheduled\b", re.I)
 
 
 def find_destination_rows(soup: BeautifulSoup) -> list[Tag]:
@@ -105,11 +107,18 @@ def find_destination_rows(soup: BeautifulSoup) -> list[Tag]:
         raise LookupError(NO_DESTINATIONS_SECTION)
 
     for heading in headings:
-        for element in heading.find_all_next(["table", "h2"]):
+        no_service = False
+        for element in heading.find_all_next(["table", "h2", "p"]):
             if element.name == "h2":
                 break
-            if _is_airlines_table(element):
+            if element.name == "p":
+                no_service = no_service or bool(_NO_SERVICE.search(element.get_text()))
+            elif _is_airlines_table(element):
                 return [tr for tr in element.find_all("tr") if tr.find("td")]
+            else:
+                no_service = False
+        if no_service:
+            raise LookupError(NO_DESTINATIONS_SECTION)
     raise LookupError("No airlines table in the 'Airlines and destinations' section")
 
 
@@ -124,6 +133,9 @@ class DestinationRow:
 
 # Bold labels in a destinations cell that qualify the destinations after them, and the marker each adds to a code.
 ROUTE_MARKERS = {"seasonal": "s", "charter": "c", "seasonal charter": "sc"}
+# Labels whose destinations aren't passenger routes, and labels that add nothing to a year-round route.
+DROPPED_LABELS = {"cropdusting"}
+YEAR_ROUND_LABELS = {"scheduled"}
 
 
 def _row_cells(tr: Tag) -> list[Tag]:
@@ -155,16 +167,22 @@ def parse_destination_row(tr: Tag) -> DestinationRow | None:
     markers: dict[str, str] = {}
     unknown: list[str] = []
     marker = ""
+    dropped = False
     for node in destinations_cell.descendants:
         if not isinstance(node, Tag):
             continue
         if node.name in ("br", "li"):
             marker = ""
+            dropped = False
         elif node.name in ("b", "strong") and not node.find_parent("sup"):
             text = clean_text(node.get_text())
-            marker = ROUTE_MARKERS.get(text.rstrip(":").strip().lower(), "")
-            if not marker and text.endswith(":"):
+            label = text.rstrip(":").strip().lower()
+            marker = ROUTE_MARKERS.get(label, "")
+            dropped = label in DROPPED_LABELS
+            if not (marker or dropped or label in YEAR_ROUND_LABELS) and text.endswith(":"):
                 unknown.append(text)
+        elif dropped:
+            continue
         elif node.name == "a" and node.get("href"):
             title = wiki_title(node["href"])
             if title and title not in titles:
@@ -196,8 +214,8 @@ class ListedAirport:
 _LIST_COLUMNS = {
     "city": ("City", "City served", "Community", "Location"),
     "faa": ("FAA",),
-    "iata": ("IATA",),
-    "icao": ("ICAO",),
+    "iata": ("IATA", "IATA code"),
+    "icao": ("ICAO", "ICAO code"),
     "airport": ("Airport", "Airport name"),
     "role": ("Role",),
     "enplanements": ("Enplanements",),
@@ -211,7 +229,7 @@ def parse_airport_list(soup: BeautifulSoup) -> list[ListedAirport]:
     for table in soup.find_all("table", {"class": "wikitable"}):
         rows = table.find_all("tr")
         names = [clean_text(c.get_text(" ")) for c in rows[0].find_all(["th", "td"])] if rows else []
-        if "IATA" in names:
+        if any(a in names for a in _LIST_COLUMNS["iata"]):
             columns = {
                 key: next((names.index(a) for a in aliases if a in names), None)
                 for key, aliases in _LIST_COLUMNS.items()

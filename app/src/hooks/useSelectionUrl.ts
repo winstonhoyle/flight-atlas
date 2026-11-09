@@ -14,9 +14,17 @@ type Options = {
   resolve: (selection: Selection) => Selection;
   apply: (selection: Selection) => void;
   airlineName?: string;
+  airportCity?: string;
 };
 
-export const useSelectionUrl = ({ ready, selection, resolve, apply, airlineName }: Options) => {
+export const useSelectionUrl = ({
+  ready,
+  selection,
+  resolve,
+  apply,
+  airlineName,
+  airportCity,
+}: Options) => {
   const appliedRef = useRef(false);
 
   const applyLocation = useEffectEvent(() => {
@@ -48,9 +56,9 @@ export const useSelectionUrl = ({ ready, selection, resolve, apply, airlineName 
 
   useEffect(() => {
     const current = { airport, destination, airline };
-    document.title = selectionTitle(current, airlineName);
+    document.title = selectionTitle(current, airlineName, airportCity);
     document
       .querySelector('link[rel="canonical"]')
       ?.setAttribute("href", `${SITE_URL}${buildSelectionPath(current)}`);
-  }, [airport, destination, airline, airlineName]);
+  }, [airport, destination, airline, airlineName, airportCity]);
 };

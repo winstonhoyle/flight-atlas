@@ -30,6 +30,10 @@ export const routesFor = (
   return { type: "FeatureCollection", features };
 };
 
+/** The airports an airline flies from. */
+export const airlineSources = (rows: RouteRow[] | null, airline: string) =>
+  new Set(rows?.filter(([code]) => code === airline).map(([, src]) => src));
+
 /** The airlines on these routes, most destinations first. */
 export const airlinesOn = (routes: Routes, airlines: Airlines): AirlineSummary[] => {
   const destinations = new Map<string, Set<string>>();

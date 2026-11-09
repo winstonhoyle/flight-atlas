@@ -46,12 +46,13 @@ export const buildSelectionPath = ({ airport, destination, airline }: Selection)
 export const selectionTitle = (
   { airport, destination, airline }: Selection,
   airlineName?: string,
+  airportCity?: string,
 ): string => {
   const suffix = "Flight Atlas";
   if (airport && destination) return `${airport} to ${destination} direct flights | ${suffix}`;
   if (airport && airline)
     return `${airport} direct flights on ${airlineName ?? airline} | ${suffix}`;
-  if (airport) return `${airport} direct flights | ${suffix}`;
-  if (airline) return `${airlineName ?? airline} routes | ${suffix}`;
-  return `${suffix}: direct flight route map of North America`;
+  if (airport) return `Direct flights from ${airportCity || airport} (${airport}) | ${suffix}`;
+  if (airline) return `${airlineName ?? airline} routes in the Americas | ${suffix}`;
+  return `${suffix}: direct flight route map of the Americas`;
 };

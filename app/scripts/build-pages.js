@@ -7,8 +7,10 @@ import {
   airportPage,
   airportsPage,
   errorsPage,
+  firstPerIata,
   homeSection,
   legsOf,
+  notFoundPage,
   renderHome,
   renderPage,
   sitemapXml,
@@ -34,8 +36,10 @@ const groupBy = (rows, key) => {
 
 const main = async () => {
   const template = fs.readFileSync(path.join(DIST, "index.html"), "utf8");
+  // What _redirects serves for /ATL/DFW and /ATL/airline/DL, which have no file of their own.
+  fs.writeFileSync(path.join(DIST, "app.html"), template);
   // Without its own page, /errors falls back to index.html, whose canonical points home.
-  const pages = [errorsPage()];
+  const pages = [errorsPage(), notFoundPage()];
   let lastmod = new Date().toISOString().slice(0, 10);
   try {
     const [airports, airlines, routes, months] = await Promise.all([
@@ -46,9 +50,7 @@ const main = async () => {
     ]);
     if (months[0]) lastmod = `${months[0].year}-${months[0].month.padStart(2, "0")}-01`;
 
-    const listed = (airports.features ?? []).filter((f) =>
-      /^[A-Z]{3}$/.test(f.properties?.IATA ?? ""),
-    );
+    const listed = firstPerIata(airports.features ?? []);
     const names = Object.fromEntries(listed.map((f) => [f.properties.IATA, f.properties.Name]));
     const linked = Object.fromEntries(
       Object.entries(airlines).filter(([code]) => /^[A-Z0-9]{2,3}$/.test(code)),

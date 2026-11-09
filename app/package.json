@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Flight Atlas web client: React + Vite + OpenLayers map of direct flight routes across North America.",
+  "description": "Flight Atlas web client: React + Vite + OpenLayers map of direct flight routes across the Americas.",
   "scripts": {
     "start": "vite",
     "build": "tsc -b && vite build",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Airport, RouteRow } from "@/types";
-import { airlinesOn, routesFor } from "./useRoutes";
+import { airlineSources, airlinesOn, routesFor } from "./useRoutes";
 
 const airport = (IATA: string, lng: number, lat: number): Airport => ({
   type: "Feature",
@@ -65,6 +65,14 @@ describe("routesFor", () => {
   it("has nothing to show without a selection or data", () => {
     expect(routesFor(null, "", ROWS, AIRPORTS)).toBeNull();
     expect(routesFor(AIRPORTS[0], "", null, AIRPORTS)).toBeNull();
+  });
+});
+
+describe("airlineSources", () => {
+  it("lists the airports an airline flies from, not only to", () => {
+    expect([...airlineSources(ROWS, "DL")]).toEqual(["ATL", "BOS"]);
+    expect([...airlineSources(ROWS, "B6")]).toEqual(["ATL"]);
+    expect(airlineSources(null, "DL").size).toBe(0);
   });
 });
 

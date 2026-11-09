@@ -121,6 +121,30 @@ description, canonical link, Open Graph tags, JSON-LD (`Airport` or `Airline`), 
 summary inside `#root`, so search engines and link previews see real content before JavaScript
 runs. If the API is down, only the sitemap's home page is written.
 
+Titles are `Direct flights from Atlanta (ATL)` for airports (the airport name when a city is
+missing) and `Delta Air Lines routes in the Americas` for airlines. `selectionTitle` in
+`utils/selectionPath.ts` writes the same text when the app changes the title, so the two agree.
+
+The build also writes `dist/404.html` (a plain page with `noindex`). With that file present,
+Cloudflare Pages answers unknown paths with a 404 instead of `index.html`. The app makes URLs with
+no file of their own (`/ATL/DFW`, `/ATL/airline/DL`), so `public/_redirects` rewrites those two
+shapes to `dist/app.html`, a copy of the plain `index.html`. Rewriting to `/index.html` doesn't
+work: Pages redirects it to `/` and the selection is lost. The first rule keeps `/airline/DL` on
+its own page, because the two-segment rule would otherwise catch it.
+
+To test these files before a deploy, run `npm run build`, then `npx wrangler@4 pages dev dist`
+(the same routing as Pages). `/XYZ` and `/a/b/c` should be 404; `/ATL/DFW`, `/airline/W8`,
+`/ATL`, `/docs` and `/errors` should be 200 with no redirect, and `/ATL/DFW` should keep its URL.
+
+## Selecting airports and airlines
+
+The URL is the selection: `/ATL`, `/airline/DL`, `/ATL/airline/DL`, `/ATL/BOS`. With an airline
+chosen, the origin list and map clicks offer only the airports it flies from (`airlineSources` in
+`hooks/useRoutes.ts`), and clicking one goes to `/ATL/airline/DL`. A destination is chosen from
+that airport's routes on the airline. When a URL names an airline the airport doesn't fly, or a
+destination with no route from it, `resolve` in `MapComponent.tsx` drops that part. Choosing a new
+origin keeps the airline. A destination URL (`/ATL/BOS`) has no airline, so reloading it loses one.
+
 ## Tests
 
 Vitest with Testing Library in jsdom covers the API client, path parsing, destination bins,

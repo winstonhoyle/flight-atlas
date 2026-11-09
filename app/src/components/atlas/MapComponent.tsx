@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import Feature from "ol/Feature";
 import OlMap from "ol/Map";
 import Overlay from "ol/Overlay";
-import View from "ol/View";
 import { defaults as defaultControls } from "ol/control/defaults";
 import type { Coordinate } from "ol/coordinate";
 import { isEmpty, type Extent } from "ol/extent";
@@ -20,7 +19,14 @@ import XYZ from "ol/source/XYZ";
 import "ol/ol.css";
 import type { Position } from "geojson";
 
-import { ATTRIBUTION, DEFAULT_CENTER, DEFAULT_ZOOM, MAX_ZOOM, TILE_URL } from "./basemap";
+import {
+  ATTRIBUTION,
+  DEFAULT_CENTER,
+  DEFAULT_ZOOM,
+  MAX_ZOOM,
+  TILE_URL,
+  createView,
+} from "./basemap";
 import { Legend } from "./Legend";
 import { createLayers, layerList, routesExtent, type MapLayers } from "./mapLayers";
 import { OverlayPanel } from "./OverlayPanel";
@@ -35,7 +41,7 @@ import { IconButton } from "@/components/common/IconButton";
 import { useAtlasData, useCompareData } from "@/hooks/useAtlasData";
 import { useMonths } from "@/hooks/useMonths";
 import { useRenderer } from "@/hooks/useRenderer";
-import { airlinesOn, routesFor, useRoutes } from "@/hooks/useRoutes";
+import { airlineSources, airlinesOn, routesFor, useRoutes } from "@/hooks/useRoutes";
 import { useSelectionUrl } from "@/hooks/useSelectionUrl";
 import { InfoIcon } from "@/icons";
 import type {
@@ -127,6 +133,40 @@ export const MapComponent = () => {
     localStorage.setItem("hasVisited", "true");
   }, []);
 
+  const { months, loading: monthsLoading, error: monthsError } = useMonths();
+  const {
+    airports: monthAirports,
+    routes: monthRows,
+    problems: monthProblems,
+    airlines,
+    loading,
+    error: dataError,
+  } = useAtlasData(chosenSnapshot);
+  const earlier = useCompareData(compare?.from ?? null);
+
+  const changedRows = useMemo(() => {
+    if (!compare || !monthRows || !earlier.routes) return null;
+    return routeChanges(earlier.routes, monthRows)[compare.show];
+  }, [compare, monthRows, earlier.routes]);
+
+  const changed = useMemo(
+    () => changedRows && changedAirports(changedRows, monthAirports, earlier.airports),
+    [changedRows, monthAirports, earlier.airports],
+  );
+
+  const airports = changed ?? monthAirports;
+  const routeRows = changedRows ?? monthRows;
+  // A new route may be missing from the earlier month's data, a lost one from the later month's.
+  const problems = compare?.show === "added" ? earlier.problems : monthProblems;
+  const snapshot = chosenSnapshot ?? months[0] ?? null;
+  const problemsMonth = compare?.show === "added" ? compare.from : snapshot;
+
+  const routes = useRoutes(selectedAirport, selectedAirline, routeRows, airports, !!changed);
+  const sources = useMemo(
+    () => (selectedAirline ? airlineSources(routeRows, selectedAirline) : null),
+    [routeRows, selectedAirline],
+  );
+
   const targetRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<OlMap | null>(null);
 
@@ -138,7 +178,8 @@ export const MapComponent = () => {
         setDestinationAirport(airport);
       return;
     }
-    if (!selectedAirline) setSelectedAirport(airport);
+    if (selectedAirline && !sources?.has(airport.properties.IATA)) return;
+    setSelectedAirport(airport);
   });
 
   const [map] = useState(() => {
@@ -167,7 +208,7 @@ export const MapComponent = () => {
       target: targetRef.current!,
       layers: [new TileLayer({ source: new XYZ({ url: TILE_URL, attributions: ATTRIBUTION }) })],
       overlays: [tooltip],
-      view: new View({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, maxZoom: MAX_ZOOM }),
+      view: createView(),
       controls: defaultControls({
         zoom: false,
         rotate: false,
@@ -235,35 +276,6 @@ export const MapComponent = () => {
     };
   }, [layers]);
 
-  const { months, loading: monthsLoading, error: monthsError } = useMonths();
-  const {
-    airports: monthAirports,
-    routes: monthRows,
-    problems: monthProblems,
-    airlines,
-    loading,
-    error: dataError,
-  } = useAtlasData(chosenSnapshot);
-  const earlier = useCompareData(compare?.from ?? null);
-
-  const changedRows = useMemo(() => {
-    if (!compare || !monthRows || !earlier.routes) return null;
-    return routeChanges(earlier.routes, monthRows)[compare.show];
-  }, [compare, monthRows, earlier.routes]);
-
-  const changed = useMemo(
-    () => changedRows && changedAirports(changedRows, monthAirports, earlier.airports),
-    [changedRows, monthAirports, earlier.airports],
-  );
-
-  const airports = changed ?? monthAirports;
-  const routeRows = changedRows ?? monthRows;
-  // A new route may be missing from the earlier month's data, a lost one from the later month's.
-  const problems = compare?.show === "added" ? earlier.problems : monthProblems;
-  const snapshot = chosenSnapshot ?? months[0] ?? null;
-  const problemsMonth = compare?.show === "added" ? compare.from : snapshot;
-
-  const routes = useRoutes(selectedAirport, selectedAirline, routeRows, airports, !!changed);
   const locked = loading || monthsLoading || earlier.loading;
 
   const changeCompare = (next: Compare | null) => {
@@ -304,6 +316,7 @@ export const MapComponent = () => {
       airline: selectedAirline,
     },
     airlineName: airlines[selectedAirline],
+    airportCity: selectedAirport?.properties.City || selectedAirport?.properties.Name,
     resolve: ({ airport, destination, airline }) => {
       if (airport && !findAirport(airport)) {
         setUnmapped(airport);
@@ -311,8 +324,17 @@ export const MapComponent = () => {
       }
       return {
         airport,
-        destination: airport && findAirport(destination) ? destination : "",
-        airline: airline in airlines ? airline : "",
+        destination:
+          airport &&
+          findAirport(destination) &&
+          (!routeRows || routeRows.some(([, src, dst]) => src === airport && dst === destination))
+            ? destination
+            : "",
+        airline:
+          airline in airlines &&
+          (!airport || !routeRows || airlineSources(routeRows, airline).has(airport))
+            ? airline
+            : "",
       };
     },
     apply: (selection: Selection) => {
@@ -533,6 +555,7 @@ export const MapComponent = () => {
         setSelectedAirport={setSelectedAirport}
         setSelectedAirline={setSelectedAirline}
         selectedAirline={selectedAirline}
+        airlineSources={sources}
         filteredAirlines={filteredAirlines}
         handleBack={handleBack}
         routes={routes}

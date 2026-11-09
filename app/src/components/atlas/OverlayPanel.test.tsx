@@ -29,6 +29,7 @@ const setup = (selection: {
   destination?: Airport;
   airline?: string;
   routes?: Routes;
+  sources?: Set<string>;
   months?: MonthOption[];
   compare?: Compare;
 }) => {
@@ -42,6 +43,7 @@ const setup = (selection: {
     selectedAirport: selection.airport ?? null,
     destinationAirport: selection.destination ?? null,
     selectedAirline: selection.airline ?? "",
+    airlineSources: selection.sources ?? null,
     filteredAirlines: [{ code: "AA", name: "American Airlines", destinations: 1 }],
     setSelectedAirport: vi.fn(),
     setDestinationAirport: vi.fn(),
@@ -109,6 +111,27 @@ describe("OverlayPanel", () => {
     await userEvent.click(screen.getByRole("combobox", { name: "Destination airport" }));
     expect(screen.getByRole("option", { name: "DCA (DCA)" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "ORD (ORD)" })).not.toBeInTheDocument();
+  });
+
+  it("offers only the airports the chosen airline flies from", async () => {
+    setup({ airline: "AA", sources: new Set(["GSO", "BOS"]) });
+    await userEvent.click(screen.getByRole("combobox", { name: "Origin airport" }));
+    expect(screen.getByRole("option", { name: "GSO (GSO)" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "DCA (DCA)" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the airline when another origin is chosen", async () => {
+    const props = setup({
+      airport: airport("GSO"),
+      airline: "AA",
+      sources: new Set(["GSO", "BOS"]),
+    });
+    await userEvent.click(screen.getByRole("combobox", { name: "Origin airport" }));
+    await userEvent.click(
+      screen.getByRole("option", { name: "Logan International Airport (BOS)" }),
+    );
+    expect(props.setSelectedAirport).toHaveBeenCalled();
+    expect(props.setSelectedAirline).not.toHaveBeenCalled();
   });
 
   it("finds an airport by its city", async () => {

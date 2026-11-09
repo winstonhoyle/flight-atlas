@@ -1,0 +1,3 @@
+/airline/:code /airline/:code 200
+/:airport/airline/:code /app 200
+/:airport/:destination /app 200

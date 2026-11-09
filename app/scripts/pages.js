@@ -8,6 +8,17 @@ const escapeHtml = (text) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
+/** Features with a valid IATA code, the first of each. Two airports can share a code, and a page is named by it. */
+export const firstPerIata = (features) => {
+  const seen = new Set();
+  return features.filter((f) => {
+    const iata = f.properties?.IATA ?? "";
+    if (!/^[A-Z]{3}$/.test(iata) || seen.has(iata)) return false;
+    seen.add(iata);
+    return true;
+  });
+};
+
 /** A routes.json row as an [airline, src, dst] row per airline; a code's `:s`/`:c`/`:sc` marker is dropped. */
 export const legsOf = (pairs) =>
   pairs.flatMap(([src, dst, codes]) => codes.map((code) => [code.split(":")[0], src, dst]));
@@ -83,7 +94,7 @@ export const airportPage = (
   return {
     noindex: p.destinations < MIN_INDEXED_DESTINATIONS,
     path: p.IATA,
-    title: `${p.IATA} direct flights | ${SITE_NAME}`,
+    title: `Direct flights from ${p.City || p.Name} (${p.IATA}) | ${SITE_NAME}`,
     description: `Direct flights from ${p.Name} (${p.IATA}) to ${destinations(p.destinations)}, on a map.`,
     url,
     heading: `Direct flights from ${p.Name} (${p.IATA})`,
@@ -125,11 +136,11 @@ export const airlinePage = (code, name, routes = [], names = {}) => {
     .map(({ src, count }) => `${airportLink(src, names)}: ${destinations(count)}`);
   return {
     path: `airline/${code}`,
-    title: `${name} routes | ${SITE_NAME}`,
-    description: `Every direct route ${name} (${code}) flies from North American airports, on a map.`,
+    title: `${name} routes in the Americas | ${SITE_NAME}`,
+    description: `Every direct route ${name} (${code}) flies from airports in the Americas, on a map.`,
     url,
     heading: `${name} (${code}) routes`,
-    summary: `The direct routes ${name} flies from North American airports.`,
+    summary: `The direct routes ${name} flies from airports in the Americas.`,
     section: routes.length
       ? section(
           `${name} (${code}) routes`,
@@ -156,6 +167,29 @@ export const errorsPage = () => {
   };
 };
 
+/** Written as 404.html: with it present, the host stops answering unknown paths with index.html. */
+export const notFoundPage = () => {
+  const url = `${SITE_URL}/404`;
+  const title = `Page not found | ${SITE_NAME}`;
+  return {
+    path: "404",
+    noApp: true,
+    noindex: true,
+    title,
+    description: "This page doesn't exist. Pick an airport on the map to see where it flies.",
+    url,
+    heading: "Page not found",
+    summary: "This page doesn't exist.",
+    section: section(
+      "Page not found",
+      "There's no page at this address. Check the airport code, or pick an airport on the map.",
+      "",
+      "h1",
+    ),
+    data: { "@context": "https://schema.org", "@type": "WebPage", name: title, url },
+  };
+};
+
 /** Every airport with a page, alphabetically. A plain page: the app would send /airports home. */
 export const airportsPage = (airports) => {
   const url = `${SITE_URL}/airports`;
@@ -170,13 +204,13 @@ export const airportsPage = (airports) => {
     path: "airports",
     noApp: true,
     title,
-    description: `Direct flight routes from ${airports.length} North American airports, on a map.`,
+    description: `Direct flight routes from ${airports.length} airports in the Americas, on a map.`,
     url,
     heading: "All airports",
-    summary: `Direct flights from ${airports.length} North American airports.`,
+    summary: `Direct flights from ${airports.length} airports in the Americas.`,
     section: section(
       "All airports",
-      `Direct flights from ${airports.length} North American airports. Pick one to see where it flies.`,
+      `Direct flights from ${airports.length} airports in the Americas. Pick one to see where it flies.`,
       list(items),
       "h1",
     ),
@@ -188,7 +222,7 @@ export const airportsPage = (airports) => {
 export const homeSection = (airports, count = 30) =>
   section(
     "Busiest airports",
-    "Direct flight routes from the North American airports with the most destinations.",
+    "Direct flight routes from the airports in the Americas with the most destinations.",
     list(
       airports
         .slice(0, count)

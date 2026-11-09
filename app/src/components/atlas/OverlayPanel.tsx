@@ -23,6 +23,8 @@ type OverlayPanelProps = {
   setSelectedAirport: (airport: Airport | null) => void;
   selectedAirline: string;
   setSelectedAirline: (code: string) => void;
+  /** With an airline chosen, the airports it flies from; the origin list offers only these. */
+  airlineSources?: Set<string> | null;
   filteredAirlines: AirlineSummary[];
   handleBack: () => void;
   routes: Routes | null;
@@ -64,6 +66,7 @@ export const OverlayPanel = ({
   setSelectedAirport,
   selectedAirline,
   setSelectedAirline,
+  airlineSources,
   filteredAirlines,
   handleBack,
   routes,
@@ -99,11 +102,13 @@ export const OverlayPanel = ({
 
   const airportOptions: Option[] = [
     ALL_AIRPORTS,
-    ...airports.map((a) => ({
-      value: a.properties.IATA,
-      label: `${a.properties.Name} (${a.properties.IATA})`,
-      search: `${a.properties.Name} ${a.properties.IATA} ${a.properties.City ?? ""}`,
-    })),
+    ...airports
+      .filter((a) => !airlineSources || airlineSources.has(a.properties.IATA))
+      .map((a) => ({
+        value: a.properties.IATA,
+        label: `${a.properties.Name} (${a.properties.IATA})`,
+        search: `${a.properties.Name} ${a.properties.IATA} ${a.properties.City ?? ""}`,
+      })),
   ];
 
   const destinationOptions = useMemo<Option[]>(() => {
@@ -182,7 +187,6 @@ export const OverlayPanel = ({
               }
               onChange={(option) => {
                 setDestinationAirport(null);
-                setSelectedAirline("");
                 setSelectedAirport(option && findAirport(option.value));
               }}
               options={airportOptions}

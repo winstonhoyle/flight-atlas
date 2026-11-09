@@ -1,6 +1,6 @@
 # Flight Atlas
 
-Flight Atlas maps the direct flight routes between airports across North America, built from Wikipedia's
+Flight Atlas maps the direct flight routes between airports across the Americas, built from Wikipedia's
 airline and destination tables. Live at [flightatlas.io](https://flightatlas.io).
 
 ![Flight Atlas logo](app/public/logo.svg)

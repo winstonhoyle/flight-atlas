@@ -93,6 +93,23 @@ def test_a_shared_code_lists_the_airport_not_the_base(monkeypatch):
     assert [a.airport_title for _, a in create_routes.list_airports()] == ["Winnipeg_International_Airport"]
 
 
+def test_a_shared_caribbean_page_gives_each_airport_its_own_country(monkeypatch):
+    def listed(iata, icao):
+        return wiki_parse.ListedAirport("", "", iata, icao, f"{iata}_Airport", "", None)
+
+    airports = [listed("HAV", "MUHA"), listed("CUR", "TNCC"), listed("SXM", "TNCM"), listed("SFG", "TFFG")]
+    monkeypatch.setattr(create_routes, "fetch_soup", lambda url: url)
+    monkeypatch.setattr(wiki_parse, "parse_list_links", lambda soup, prefix: [])
+    monkeypatch.setattr(wiki_parse, "parse_airport_list", lambda title: airports if "Anguilla" in title else [])
+
+    assert {a.iata: country for country, a in create_routes.list_airports()} == {
+        "HAV": "CU",
+        "CUR": "CW",
+        "SXM": "SX",
+        "SFG": "MF",
+    }
+
+
 def test_routes_are_written_one_row_per_direction_with_markers():
     legs = [
         ["AA", "DEN", "ANC"],
@@ -146,6 +163,15 @@ def test_no_code_airlines_get_free_registry_suggestions(monkeypatch):
         {"kind": "coordinates", "airline": None},
     ]
     assert create_routes.suggest_registry_entries(found) == {"Cabana Air": "9CB", "Cabo Flight Center": "9CO"}
+
+
+def test_spellings_of_one_airline_share_a_suggested_code():
+    names = ["Zeta Peru", "Zeta Perú", "ZedWay", "Zedway Airlines", "Cabana Air"]
+    found = [{"kind": "airline_code", "airline": name} for name in names]
+    suggested = create_routes.suggest_registry_entries(found)
+    assert suggested["Zeta Peru"] == suggested["Zeta Perú"]
+    assert suggested["ZedWay"] == suggested["Zedway Airlines"]
+    assert len(set(suggested.values())) == 3
 
 
 def test_every_registry_code_has_one_display_name():

@@ -124,6 +124,16 @@ def test_canada_list_reads_both_tables_and_skips_list_links():
     ]
 
 
+def test_list_reads_headings_that_end_in_code():
+    soup = html(
+        '<table class="wikitable"><tr><th>Airport name</th><th>IATA code</th><th>ICAO code</th></tr>'
+        '<tr><td><a href="/wiki/Carrasco_International_Airport">Carrasco</a></td><td>MVD</td><td>SUMU</td></tr></table>'
+    )
+    assert [(a.iata, a.icao, a.airport_title) for a in parse_airport_list(soup)] == [
+        ("MVD", "SUMU", "Carrasco_International_Airport")
+    ]
+
+
 def test_list_links():
     soup = html(
         '<a href="https://en.wikipedia.org/wiki/List_of_airports_in_Canada_(A–B)#A">A</a>'
@@ -198,6 +208,12 @@ def test_does_not_wander_into_the_next_section():
         + wikitable("<tr><td>2024</td><td>1,000</td></tr>")
     )
     with pytest.raises(LookupError, match="No airlines table"):
+        find_destination_rows(soup)
+
+
+def test_a_section_saying_there_are_no_scheduled_flights_is_no_service():
+    soup = html(destinations_page("<p>No scheduled flights operate at this airport.</p>"))
+    with pytest.raises(LookupError, match="No 'Airlines and destinations' section"):
         find_destination_rows(soup)
 
 
@@ -328,3 +344,17 @@ def test_seasonal_and_charter_labels_mark_the_destinations_after_them():
     assert row.destination_titles == [f"{c}_Airport" for c in "ABCDEF"]
     assert row.markers == {"B_Airport": "s", "C_Airport": "s", "D_Airport": "c", "E_Airport": "sc"}
     assert row.unknown_labels == ["Begins June:"]
+
+
+def test_cropdusting_destinations_are_dropped_and_scheduled_is_year_round():
+    cell = (
+        '<a href="/wiki/A_Airport">A</a>'
+        '<br><b>Cropdusting:</b> <a href="/wiki/B_Airport">B</a>'
+        '<br><b>Scheduled:</b> <a href="/wiki/C_Airport">C</a>'
+    )
+    row = parse_destination_row(
+        html(f'<table><tr><td><a href="/wiki/Air">Air</a></td><td>{cell}</td></tr></table>').find("tr")
+    )
+    assert row.destination_titles == ["A_Airport", "C_Airport"]
+    assert row.markers == {}
+    assert row.unknown_labels == []

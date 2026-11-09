@@ -4,6 +4,8 @@ import {
   airportPage,
   airportsPage,
   errorsPage,
+  firstPerIata,
+  notFoundPage,
   homeSection,
   legsOf,
   renderHome,
@@ -24,17 +26,30 @@ const TEMPLATE = `<html><head>
 const ATL = {
   properties: {
     IATA: "ATL",
+    City: "Atlanta",
     Name: "Hartsfield–Jackson Atlanta International Airport",
     destinations: 248,
   },
   geometry: { coordinates: [-84.42806, 33.63667] },
 };
 
+describe("firstPerIata", () => {
+  it("keeps one airport per code and drops bad codes", () => {
+    const f = (IATA, Name) => ({ properties: { IATA, Name } });
+    const kept = firstPerIata([
+      f("YBW", "Springbank"),
+      f("YBW", "Bedwell Harbour"),
+      f("x1", "Bad"),
+    ]);
+    expect(kept.map((a) => a.properties.Name)).toEqual(["Springbank"]);
+  });
+});
+
 describe("renderPage", () => {
   it("gives an airport page its own head tags, structured data, and summary", () => {
     const html = renderPage(TEMPLATE, airportPage(ATL));
 
-    expect(html).toContain("<title>ATL direct flights | Flight Atlas</title>");
+    expect(html).toContain("<title>Direct flights from Atlanta (ATL) | Flight Atlas</title>");
     expect(html).toContain('<link rel="canonical" href="https://flightatlas.io/ATL" />');
     expect(html).toContain('<meta property="og:url" content="https://flightatlas.io/ATL" />');
     expect(html).toContain("to 248 destinations, on a map.");
@@ -59,7 +74,7 @@ describe("renderPage", () => {
     const html = renderPage(TEMPLATE, airlinePage("XX", 'A&B "Air" <script></script>'));
 
     expect(html).toContain(
-      "<title>A&amp;B &quot;Air&quot; &lt;script&gt;&lt;/script&gt; routes | Flight Atlas</title>",
+      "<title>A&amp;B &quot;Air&quot; &lt;script&gt;&lt;/script&gt; routes in the Americas | Flight Atlas</title>",
     );
     expect(html).not.toContain("<script></script>");
     expect(html).toContain("<\\/script>");
@@ -93,6 +108,13 @@ describe("page sections", () => {
     expect(about).toContain("CDG: Delta Air Lines");
     expect(about).not.toContain('href="/CDG"');
     expect(html).not.toContain("noindex");
+  });
+
+  it("makes the 404 page a plain page kept out of search", () => {
+    const html = renderPage(TEMPLATE, notFoundPage());
+    expect(html).toContain('<meta name="robots" content="noindex" />');
+    expect(html).toContain("<h1>Page not found</h1>");
+    expect(html).not.toContain('<script type="module"');
   });
 
   it("keeps airports with few destinations out of search", () => {

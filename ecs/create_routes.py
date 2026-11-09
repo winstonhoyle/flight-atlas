@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import time
+import unicodedata
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
@@ -126,16 +127,27 @@ def base_code(code: str) -> str:
     return code.partition(":")[0]
 
 
+def same_airline_key(name: str) -> str:
+    """Spellings of one airline ("Saeta Perú", "Saeta Peru", "SkyWay", "Skyway Airlines") share this key."""
+    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]", "", re.sub(r"\b(airlines?|airways?)\b", "", plain))
+
+
 def suggest_registry_entries(found: list[dict]) -> dict[str, str]:
     """A free 9xx code for each airline a scrape skipped for having no code, to add to airlines.json."""
     taken = {entry["code"] for entry in AIRLINES.values()}
     names = sorted({p["airline"] for p in found if p["kind"] in ("airline_code", "airline_link")} - AIRLINES.keys())
-    suggestions = {}
+    suggestions: dict[str, str] = {}
+    by_key: dict[str, str] = {}
     for name in names:
+        if (key := same_airline_key(name)) in by_key:
+            suggestions[name] = by_key[key]
+            continue
         letters = re.sub(r"[^A-Z0-9]", "", name.upper())
         pool = chain(combinations(letters, 2), product(ascii_uppercase, repeat=2))
         suggestions[name] = next(code for pair in pool if (code := "9" + "".join(pair)) not in taken)
         taken.add(suggestions[name])
+        by_key[key] = suggestions[name]
     return suggestions
 
 
@@ -335,7 +347,7 @@ def get_destinations(src_iata: str, airports_df: pd.DataFrame, additional_destin
 
 
 # Country code to the end of its "List of airports in …" page titles.
-NORTH_AMERICA_LISTS = {
+COUNTRY_LISTS = {
     "BZ": ["Belize"],
     "CR": ["Costa_Rica"],
     "SV": ["El_Salvador"],
@@ -368,7 +380,41 @@ NORTH_AMERICA_LISTS = {
     "BM": ["Bermuda"],
     "GL": ["Greenland"],
     "PM": ["Saint_Pierre_and_Miquelon"],
+    "BQ": ["Bonaire", "Saba_(island)", "Sint_Eustatius"],
+    "CW": ["Curaçao"],
+    "SX": ["Sint_Maarten"],
+    "MF": ["the_Collectivity_of_Saint_Martin"],
+    "MS": ["Montserrat"],
+    "TT": ["Trinidad_and_Tobago"],
+    "BR": ["Brazil"],
+    "CO": ["Colombia"],
+    "AR": ["Argentina"],
+    "VE": ["Venezuela"],
+    "CL": ["Chile"],
+    "PE": ["Peru"],
+    "BO": ["Bolivia"],
+    "EC": ["Ecuador"],
+    "GY": ["Guyana"],
+    "SR": ["Suriname"],
+    "PY": ["Paraguay"],
+    "UY": ["Uruguay"],
+    "GF": ["French_Guiana"],
+    "FK": ["the_Falkland_Islands"],
 }
+
+
+# Several small countries' pages redirect to a shared Caribbean list, so the page doesn't say whose airport it is.
+# The ICAO code does: its first two letters, or four where one prefix covers several territories.
+ICAO_COUNTRIES = {
+    "TQ": "AI", "TB": "BB", "TR": "MS", "TL": "LC", "TV": "VC", "TT": "TT", "TD": "DM", "TG": "GD",
+    "MK": "JM", "MU": "CU", "MY": "BS",
+    "TNCA": "AW", "TNCB": "BQ", "TNCE": "BQ", "TNCS": "BQ", "TNCC": "CW", "TNCM": "SX",
+    "TFFG": "MF", "TFFJ": "BL", "TFFR": "GP", "TFFF": "MQ",
+}  # fmt: skip
+
+
+def icao_country(icao: str, default: str) -> str:
+    return ICAO_COUNTRIES.get(icao[:4]) or ICAO_COUNTRIES.get(icao[:2]) or default
 
 
 def list_airports() -> list[tuple[str, wiki_parse.ListedAirport]]:
@@ -378,7 +424,7 @@ def list_airports() -> list[tuple[str, wiki_parse.ListedAirport]]:
         "US": ["List_of_airports_in_the_United_States"],
         "MX": ["List_of_airports_in_Mexico"],
         "CA": wiki_parse.parse_list_links(canada_index, "List_of_airports_in_Canada_("),
-    } | {code: [f"List_of_airports_in_{name}" for name in names] for code, names in NORTH_AMERICA_LISTS.items()}
+    } | {code: [f"List_of_airports_in_{name}" for name in names] for code, names in COUNTRY_LISTS.items()}
     unknown = COUNTRIES - airport_lists.keys()
     if unknown:
         raise SystemExit(f"Unknown COUNTRIES: {', '.join(sorted(unknown))}. Use {', '.join(airport_lists)}")
@@ -395,7 +441,7 @@ def list_airports() -> list[tuple[str, wiki_parse.ListedAirport]]:
                 kept = listed.get(airport.iata)
                 # Lists can share a code between an airport and a base or water aerodrome (YWG, YBL).
                 if kept is None or ("Airport" in airport.airport_title and "Airport" not in kept[1].airport_title):
-                    listed[airport.iata] = (country, airport)
+                    listed[airport.iata] = (icao_country(airport.icao, country), airport)
     # Busiest first, so the largest airlines' codes are looked up early.
     return sorted(listed.values(), key=lambda item: (item[1].enplanements is None, -(item[1].enplanements or 0)))
 

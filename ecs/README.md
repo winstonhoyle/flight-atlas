@@ -4,8 +4,8 @@ The scraper builds the monthly data snapshot from English Wikipedia. It reads th
 [U.S.](https://en.wikipedia.org/wiki/List_of_airports_in_the_United_States),
 [Mexico](https://en.wikipedia.org/wiki/List_of_airports_in_Mexico),
 [Canada](https://en.wikipedia.org/wiki/List_of_airports_in_Canada) (split over sub-pages) and the
-Central American and Caribbean countries and territories in
-[`NORTH_AMERICA_LISTS`](create_routes.py) (only rows with an IATA code and their own article), then each airport's "Airlines and destinations" table, and writes four JSON files to
+Central American, Caribbean and South American countries and territories in
+[`COUNTRY_LISTS`](create_routes.py) (only rows with an IATA code and their own article), then each airport's "Airlines and destinations" table, and writes four JSON files to
 `YYYY/MM/` in S3:
 
 | File | Contents |
@@ -62,6 +62,12 @@ For S3 output, the files are written to a local temp folder first and uploaded o
 file exists. Every run appends its log to `ecs/scrape.log` (gitignored), including the traceback
 if it crashes.
 
+## Limits to watch
+
+- **Wikimedia rate limit:** 200 requests a minute for a client with an identifying User-Agent (ours is `FlightAtlasBot/1.0 (https://github.com/winstonhoyle)`), 10 without. The scraper is serial and makes about 18 a minute, so more airports lengthen a run without raising the rate. If `429` lines become frequent, make the fallback wait in `get()` at least 5 seconds.
+- **File size:** a month is four JSON files, each growing with the number of airports and routes. In early November, with the U.S., Canada and Mexico only, `routes.json` was 390 KB (74 KB gzipped), `airports.json` 297 KB and `problems.json` 190 KB. `problems.json` grows fastest, and the map downloads all of it on every visit.
+- **Lambda response cap:** AWS limits a synchronous Lambda response to 6 MB, and the handler returns whole files. Check what it does before any file passes about 3 MB. Splitting by region is not done and needs care for routes that cross regions; revisit when a file passes about 2 MB.
+
 Every scrape also overwrites `ecs/scrape-report.json` (gitignored) with:
 
 | Key | Contents |
@@ -83,7 +89,7 @@ From `ecs/.env` (copy [`.env.sample`](.env.sample)) or the environment:
 | `OUTPUT_BASE` | Where to write. Unset writes to `s3://$S3_ROUTES_BUCKET`; a folder path writes locally |
 | `SCRAPE_LIMIT` | Scrape only the N busiest airports. `0` scrapes all |
 | `AIRPORTS` | Comma-separated IATA codes to re-scrape or check; empty means all |
-| `COUNTRIES` | Comma-separated country codes to re-scrape or check, like `AIRPORTS`: `US`, `CA`, `MX` and the codes in `NORTH_AMERICA_LISTS` (`create_routes.py`) |
+| `COUNTRIES` | Comma-separated country codes to re-scrape or check, like `AIRPORTS`: `US`, `CA`, `MX` and the codes in `COUNTRY_LISTS` (`create_routes.py`) |
 | `S3_ROUTES_BUCKET`, `REGION` | AWS targets |
 
 ## Layout
@@ -109,7 +115,19 @@ Each of these has a test, against a saved page or a small snippet:
 - Bold labels in a destinations cell: `Seasonal:`, `Charter:` and `Seasonal charter:` mark the destinations after them (up to the next line break or list item). Any other bold label ending in a colon is logged as `unknown label` and its destinations are read as year-round.
 - Rate limiting (`429`) from Wikipedia: the request waits and retries instead of failing the airport.
 - Airports without coordinates: skipped, so they can't break the final write.
-- Pages with no "Airlines and destinations" section (small airstrips with no scheduled service): no routes and no problem. A section with no readable table is still a problem.
+- Pages with no "Airlines and destinations" section, or a section that only says "No scheduled flights" (small airstrips): no routes and no problem.
+- A section that describes service in prose with no table (Hilo, Molokai, Lake Charles: "connected to Honolulu by Hawaiian"): a problem on `/errors`. The prose isn't read.
+- List pages whose headings are `IATA code` and `ICAO code` (Uruguay) as well as `IATA` and `ICAO`.
+- Small countries whose list page redirects to a shared Caribbean list (Anguilla, Barbados, Montserrat, Trinidad and Tobago, the Dutch islands): the page can't say whose airport it is, so `icao_country()` tags each airport from its ICAO prefix (`ICAO_COUNTRIES` in `create_routes.py`). Add a prefix there when a new shared page brings a country that has none.
+
+## After a scrape
+
+Read `scrape-report.json` and the log for these, in order:
+
+1. `unregistered_airlines`: airlines skipped for having no code. Spellings of one airline ("Saeta Peru", "Saeta Perú") get the same suggested `9xx` code. Add each to `airlines.json` (one `display` name per code; a test checks it), then `make scrape AIRPORTS=...` for the airports that listed them. Ignore "Charter service by private arrangement".
+2. Two airlines under one code. Wikipedia reuses retired IATA codes (TAG Airlines and LADE are both `5U`), and the scraper keeps one name per code, so their routes merge. Search the log for `Added new airline code` lines that repeat a code under different names, and give the newer airline a `9xx` code in `airlines.json`. A redirect isn't a clash: "Arrendamientos Aéreos" is the Flytrip page, so both names are `FE`.
+3. `unknown label` lines: bold labels such as `Cropdusting:` and `Scheduled:` in a destinations cell. They are read as year-round routes. Add a marker to `ROUTE_MARKERS` or register the operator.
+4. Problem lines with `Skipped …: its page has no readable IATA code or coordinates`. These are destination links that point to a list page, city, island or seaplane base, and are expected.
 
 ## When Wikipedia changes
 

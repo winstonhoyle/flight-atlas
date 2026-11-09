@@ -38,8 +38,11 @@ describe("selectionTitle", () => {
     expect(selectionTitle(sel({ airport: "ATL", destination: "BOS" }))).toBe(
       "ATL to BOS direct flights | Flight Atlas",
     );
+    expect(selectionTitle(sel({ airport: "ATL" }), undefined, "Atlanta")).toBe(
+      "Direct flights from Atlanta (ATL) | Flight Atlas",
+    );
     expect(selectionTitle(sel({ airline: "DL" }), "Delta Air Lines")).toBe(
-      "Delta Air Lines routes | Flight Atlas",
+      "Delta Air Lines routes in the Americas | Flight Atlas",
     );
   });
 });
