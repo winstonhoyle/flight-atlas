@@ -127,14 +127,50 @@ missing) and `Delta Air Lines routes in the Americas` for airlines. `selectionTi
 
 The build also writes `dist/404.html` (a plain page with `noindex`). With that file present,
 Cloudflare Pages answers unknown paths with a 404 instead of `index.html`. The app makes URLs with
-no file of their own (`/ATL/DFW`, `/ATL/airline/DL`), so `public/_redirects` rewrites those two
-shapes to `dist/app.html`, a copy of the plain `index.html`. Rewriting to `/index.html` doesn't
-work: Pages redirects it to `/` and the selection is lost. The first rule keeps `/airline/DL` on
-its own page, because the two-segment rule would otherwise catch it.
+no file of their own (`/ATL/DFW`, `/ATL/airline/DL`), so the build writes `dist/_redirects` from
+`redirectRules` in `scripts/pages.js`. It rewrites those two shapes to `dist/app.html`, a copy of
+the plain `index.html`. Rewriting to `/index.html` doesn't work: Pages redirects it to `/` and the
+selection is lost. Earlier rules let `/assets/*`, `/airline/DL` and each language's own pages
+through, because the two-segment rules would otherwise catch them.
 
 To test these files before a deploy, run `npm run build`, then `npx wrangler@4 pages dev dist`
 (the same routing as Pages). `/XYZ` and `/a/b/c` should be 404; `/ATL/DFW`, `/airline/W8`,
 `/ATL`, `/docs` and `/errors` should be 200 with no redirect, and `/ATL/DFW` should keep its URL.
+Also request a built file, such as `/assets/index-….js`: it must come back as `application/javascript`,
+not `text/html`. The `/assets/*` rule in `_redirects` is what keeps the two-segment rules from
+answering it with the app, which leaves the map blank.
+
+## Languages
+
+The site is in English, Latin American Spanish, Canadian French, and Brazilian Portuguese. English
+has no prefix; the others live under `/es/`, `/fr/`, and `/pt/`. The language is in the URL because
+search engines index URLs, and on static hosting only a path gives each language its own file.
+Each page declares its other languages with `hreflang` (`es-419`, `fr-CA`, `pt-BR`, and
+`x-default` for English), in its head and in `sitemap.xml`. The head also has a
+`content-language` tag, which Bing reads, and `og:locale` tags for link previews.
+
+| Where                     | What                                                                                                  |
+| ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `src/i18n/translate.js`   | The languages, their tags, `translator()`, and the path helpers. Shared with `scripts/`               |
+| `src/i18n/locales/*.json` | One catalog per language: the English text maps to its translation, or to `[one, other]` for a plural |
+| `scripts/i18n.js`         | Finds the messages in the source and checks the catalogs                                              |
+
+Write a message in code as `t("Back to the map")`, or `tn("{n} airport", "{n} airports", n)` for a
+count, with `const { t, tn } = useI18n()` in a component. Make each sentence one message with
+`{placeholders}`, never several pieces glued together, so a language can reorder it. A link inside
+a sentence uses `rich()` from `src/i18n/rich.tsx`. Airport, airline, and city names are not
+translated, and neither are the problem messages the scraper writes.
+
+```bash
+npm run i18n   # adds new messages to every catalog, empty
+npm run lint   # fails on a missing, empty, stale, or mismatched translation
+```
+
+To add a language, add it to `LOCALES`, `LOCALE_NAMES`, and `LOCALE_TAGS` in `translate.js`, to
+`Locale` in `translate.d.ts`, and to `CATALOGS` in `I18nProvider.tsx`. Then run `npm run i18n` and
+translate the new catalog. The build writes its pages, sitemap entries, and rewrite rules.
+
+`/docs` and the 404 page stay in English.
 
 ## Selecting airports and airlines
 

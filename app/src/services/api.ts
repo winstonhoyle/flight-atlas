@@ -1,22 +1,8 @@
+import { tagOf } from "@/i18n/translate";
 import { isService } from "@/utils/service";
 import type { Airlines, Airport, MonthOption, Problem, RoutePair, RouteRow } from "@/types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "https://api.flightatlas.io";
-
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
 
 /** No snapshot asks the API for the newest one. */
 export const snapshotParams = (snapshot: MonthOption | null): URLSearchParams =>
@@ -105,10 +91,15 @@ export const fetchProblems = (snapshot: MonthOption | null): Promise<Problem[]> 
 
 export const fetchMonths = async (): Promise<MonthOption[]> => {
   const data = await fetchJSON("/available_months", isMonthRows);
+  const monthName = new Intl.DateTimeFormat(tagOf(window.location.pathname), {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 
   return data
     .map(({ month, year }) => ({
-      label: `${MONTH_NAMES[parseInt(month, 10) - 1]} ${year}`,
+      label: monthName.format(Date.UTC(parseInt(year, 10), parseInt(month, 10) - 1)),
       month: month.padStart(2, "0"),
       year: parseInt(year, 10),
     }))

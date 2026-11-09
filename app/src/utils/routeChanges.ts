@@ -1,3 +1,4 @@
+import type { Translate } from "@/i18n/translate";
 import type { Airport, Problem, RouteChange, RouteRow } from "@/types";
 
 const key = ([airline, src, dst]: RouteRow) => `${airline}|${src}|${dst}`;
@@ -50,4 +51,7 @@ export const changeProblems = (rows: RouteRow[], problems: Problem[]) => {
   return problems.filter((p) => p.airport !== null && codes.has(p.airport));
 };
 
-export const CHANGE_LABELS: Record<RouteChange, string> = { added: "New", lost: "Lost" };
+export const changeLabels = (t: Translate): Record<RouteChange, string> => ({
+  added: t("New routes"),
+  lost: t("Lost routes"),
+});

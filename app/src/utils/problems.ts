@@ -1,16 +1,18 @@
+import type { Translate } from "@/i18n/translate";
 import type { MonthOption, Problem, ProblemKind } from "@/types";
 
-export const PROBLEM_LABELS: Record<ProblemKind, string> = {
-  destinations_table: "Page doesn't follow the usual format",
-  destination_page: "Unreadable destination page",
-  airline_code: "Airline page has no IATA code",
-  airline_link: "Airline isn't linked",
-  airport_page: "Broken link in the airport list",
-  coordinates: "No coordinates",
-  one_sided_route: "Route listed by only one airport",
-};
+export const problemLabels = (t: Translate): Record<ProblemKind, string> => ({
+  destinations_table: t("Page doesn't follow the usual format"),
+  destination_page: t("Unreadable destination page"),
+  airline_code: t("Airline page has no IATA code"),
+  airline_link: t("Airline isn't linked"),
+  airport_page: t("Broken link in the airport list"),
+  coordinates: t("No coordinates"),
+  one_sided_route: t("Route listed by only one airport"),
+});
 
-export const problemLabel = (problem: Problem) => PROBLEM_LABELS[problem.kind] ?? problem.kind;
+export const problemLabel = (t: Translate, problem: Problem) =>
+  problemLabels(t)[problem.kind] ?? problem.kind;
 
 export const airlineAnchor = (name: string) => `airline-${name.replace(/[^A-Za-z0-9]+/g, "-")}`;
 

@@ -1,3 +1,4 @@
+import { useI18n } from "@/i18n/context";
 import { Children, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { OpenInNewIcon } from "@/icons";
 import styles from "./ExternalLink.module.css";
@@ -25,6 +26,7 @@ export const ExternalLink = ({
   children,
   ...props
 }: ExternalLinkProps) => {
+  const { t } = useI18n();
   const [head, lastWord] = showIcon ? splitLastWord(children) : [children, null];
 
   return (
@@ -41,7 +43,7 @@ export const ExternalLink = ({
           <OpenInNewIcon className={styles.icon} />
         </span>
       )}{" "}
-      <span className={styles.srOnly}>(opens in a new tab)</span>
+      <span className={styles.srOnly}>{t("(opens in a new tab)")}</span>
     </a>
   );
 };

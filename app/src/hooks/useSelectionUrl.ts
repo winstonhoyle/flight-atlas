@@ -1,12 +1,12 @@
 import { useEffect, useEffectEvent, useRef } from "react";
+import { useI18n } from "@/i18n/context";
+import { SITE_URL, alternates } from "@/i18n/translate";
 import {
   buildSelectionPath,
   parseSelectionPath,
   selectionTitle,
   type Selection,
 } from "@/utils/selectionPath";
-
-const SITE_URL = "https://flightatlas.io";
 
 type Options = {
   ready: boolean;
@@ -26,11 +26,12 @@ export const useSelectionUrl = ({
   airportCity,
 }: Options) => {
   const appliedRef = useRef(false);
+  const { t, href } = useI18n();
 
   const applyLocation = useEffectEvent(() => {
     const wanted = resolve(parseSelectionPath(window.location.pathname));
     apply(wanted);
-    const path = buildSelectionPath(wanted);
+    const path = href(buildSelectionPath(wanted));
     if (path !== window.location.pathname) window.history.replaceState(null, "", path);
   });
 
@@ -50,15 +51,21 @@ export const useSelectionUrl = ({
 
   useEffect(() => {
     if (!appliedRef.current) return;
-    const path = buildSelectionPath({ airport, destination, airline });
+    const path = href(buildSelectionPath({ airport, destination, airline }));
     if (path !== window.location.pathname) window.history.pushState(null, "", path);
-  }, [airport, destination, airline]);
+  }, [airport, destination, airline, href]);
 
   useEffect(() => {
     const current = { airport, destination, airline };
-    document.title = selectionTitle(current, airlineName, airportCity);
+    const path = buildSelectionPath(current);
+    document.title = selectionTitle(t, current, airlineName, airportCity);
     document
       .querySelector('link[rel="canonical"]')
-      ?.setAttribute("href", `${SITE_URL}${buildSelectionPath(current)}`);
-  }, [airport, destination, airline, airlineName, airportCity]);
+      ?.setAttribute("href", `${SITE_URL}${href(path)}`);
+    for (const { hreflang, href: alternate } of alternates(path)) {
+      document
+        .querySelector(`link[rel="alternate"][hreflang="${hreflang}"]`)
+        ?.setAttribute("href", alternate);
+    }
+  }, [airport, destination, airline, airlineName, airportCity, t, href]);
 };

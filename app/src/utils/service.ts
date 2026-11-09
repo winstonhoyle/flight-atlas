@@ -1,10 +1,11 @@
+import type { Translate } from "@/i18n/translate";
 import type { Service } from "@/types";
 
-export const SERVICE_LABELS: Record<Service, string> = {
-  s: "Seasonal",
-  c: "Charter",
-  sc: "Seasonal charter",
-};
+export const serviceLabels = (t: Translate): Record<Service, string> => ({
+  s: t("Seasonal"),
+  c: t("Charter"),
+  sc: t("Seasonal charter"),
+});
 
 export const isService = (marker: string | undefined): marker is Service =>
-  marker !== undefined && marker in SERVICE_LABELS;
+  marker === "s" || marker === "c" || marker === "sc";

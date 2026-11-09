@@ -1,25 +1,26 @@
 import { describe, expect, it } from "vitest";
+import { translator } from "../src/i18n/translate.js";
 import {
   airlinePage,
   airportPage,
   airportsPage,
   errorsPage,
   firstPerIata,
-  notFoundPage,
-  homeSection,
+  homePage,
   legsOf,
-  renderHome,
+  notFoundPage,
   renderPage,
   sitemapXml,
 } from "./pages.js";
 
-const TEMPLATE = `<html><head>
+const TEMPLATE = `<html lang="en"><head>
 <title>Flight Atlas</title>
 <meta name="description" content="Home" />
 <link rel="canonical" href="https://flightatlas.io/" />
 <meta property="og:title" content="Home" />
 <meta property="og:description" content="Home" />
 <meta property="og:url" content="https://flightatlas.io/" />
+<meta property="og:image:alt" content="Alt" />
 <script type="application/ld+json">{"@type": "WebSite"}</script>
 </head><body><div id="root"></div><script type="module" src="/assets/index.js"></script></body></html>`;
 
@@ -141,19 +142,105 @@ describe("page sections", () => {
   });
 
   it("adds the busiest airports to the home page and keeps its head", () => {
-    const html = renderHome(TEMPLATE, homeSection([ATL]));
+    const html = renderPage(TEMPLATE, homePage([ATL]));
     expect(html).toContain('<link rel="canonical" href="https://flightatlas.io/" />');
+    expect(html).toContain("<title>Flight Atlas: direct flight route map of the Americas</title>");
     expect(html).toContain('<div id="root"></div><section id="about"');
     expect(html).toContain('<a href="/ATL">');
   });
 });
 
+describe("languages", () => {
+  const es = translator(
+    {
+      "Direct flights from {place} ({airport})": "Vuelos directos desde {place} ({airport})",
+      "Flight route map": "Mapa de rutas",
+    },
+    "es",
+  );
+  const ROUTES = [["DL", "ATL", "BOS"]];
+  const NAMES = { ATL: ATL.properties.Name, BOS: "Logan International Airport" };
+  const AIRLINES = { DL: "Delta Air Lines" };
+
+  it("writes a translated page at its own URL, with its own language attribute", () => {
+    const html = renderPage(TEMPLATE, airportPage(ATL, ROUTES, NAMES, AIRLINES, es));
+    expect(html).toContain('<html lang="es-419">');
+    expect(html).toContain("<title>Vuelos directos desde Atlanta (ATL) | Flight Atlas</title>");
+    expect(html).toContain('<link rel="canonical" href="https://flightatlas.io/es/ATL" />');
+    expect(html).toContain('"inLanguage":"es-419"');
+  });
+
+  it("links to the same language and to the other languages of the page", () => {
+    const html = renderPage(TEMPLATE, airportPage(ATL, ROUTES, NAMES, AIRLINES, es));
+    expect(html).toContain('<a href="/es/airline/DL">Delta Air Lines</a>');
+    expect(html).toContain('<a href="/es/BOS">Logan International Airport (BOS)</a>');
+    expect(html).toContain('<a href="/es/">Mapa de rutas</a>');
+    expect(html).toContain('<a href="/ATL" hreflang="en" lang="en">English</a>');
+    expect(html).toContain('<span lang="es-419">Español</span>');
+  });
+
+  it("declares every language of an indexed page, and the English one as the default", () => {
+    const html = renderPage(TEMPLATE, airportPage(ATL, ROUTES, NAMES, AIRLINES, es));
+    expect(html).toContain(
+      '<link rel="alternate" hreflang="en" href="https://flightatlas.io/ATL" />',
+    );
+    expect(html).toContain(
+      '<link rel="alternate" hreflang="fr-CA" href="https://flightatlas.io/fr/ATL" />',
+    );
+    expect(html).toContain(
+      '<link rel="alternate" hreflang="x-default" href="https://flightatlas.io/ATL" />',
+    );
+  });
+
+  it("declares the language for Bing and for link previews", () => {
+    const html = renderPage(TEMPLATE, airportPage(ATL, ROUTES, NAMES, AIRLINES, es));
+    expect(html).toContain('<meta http-equiv="content-language" content="es-419" />');
+    expect(html).toContain('<meta property="og:locale" content="es_LA" />');
+    expect(html).toContain('<meta property="og:locale:alternate" content="en_US" />');
+    expect(html).toContain('<meta property="og:locale:alternate" content="pt_BR" />');
+    // The page's own language is not listed as an alternate.
+    expect(html.match(/content="es_LA"/g)).toHaveLength(1);
+  });
+
+  it("keeps the alternate locales off a page kept out of search", () => {
+    const small = { ...ATL, properties: { ...ATL.properties, destinations: 2 } };
+    const html = renderPage(TEMPLATE, airportPage(small, ROUTES, NAMES, AIRLINES, es));
+    expect(html).toContain('<meta property="og:locale" content="es_LA" />');
+    expect(html).not.toContain("og:locale:alternate");
+  });
+
+  it("gives a language its home at a slash URL", () => {
+    const html = renderPage(TEMPLATE, homePage([ATL], es));
+    expect(html).toContain('<link rel="canonical" href="https://flightatlas.io/es/" />');
+    expect(html).toContain('hreflang="pt-BR" href="https://flightatlas.io/pt/"');
+  });
+
+  it("leaves hreflang off a page kept out of search", () => {
+    const small = { ...ATL, properties: { ...ATL.properties, destinations: 2 } };
+    expect(renderPage(TEMPLATE, airportPage(small, ROUTES, NAMES, AIRLINES, es))).not.toContain(
+      '<link rel="alternate"',
+    );
+  });
+});
+
 describe("sitemapXml", () => {
-  it("lists every URL with its date", () => {
-    const xml = sitemapXml(["https://flightatlas.io/", "https://flightatlas.io/ATL"], "2026-10-13");
-    expect(xml.match(/<url>/g)).toHaveLength(2);
+  it("lists each route in every language with its date and its alternates", () => {
+    const xml = sitemapXml([{ route: "/" }, { route: "/ATL" }], "2026-10-13");
+    expect(xml.match(/<url>/g)).toHaveLength(8);
     expect(xml).toContain("<loc>https://flightatlas.io/ATL</loc>");
+    expect(xml).toContain("<loc>https://flightatlas.io/es/ATL</loc>");
+    expect(xml).toContain("<loc>https://flightatlas.io/fr/</loc>");
     expect(xml).toContain("<lastmod>2026-10-13</lastmod>");
+    expect(xml).toContain(
+      '<xhtml:link rel="alternate" hreflang="pt-BR" href="https://flightatlas.io/pt/ATL"/>',
+    );
+    expect(xml).toContain('xmlns:xhtml="http://www.w3.org/1999/xhtml"');
+  });
+
+  it("lists an English-only route once, without alternates", () => {
+    const xml = sitemapXml([{ route: "/docs", locales: ["en"] }], "2026-10-13");
+    expect(xml.match(/<url>/g)).toHaveLength(1);
+    expect(xml).not.toContain("xhtml:link");
   });
 });
 

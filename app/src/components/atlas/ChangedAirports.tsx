@@ -1,3 +1,4 @@
+import { useI18n } from "@/i18n/context";
 import type { Airport, RouteChange } from "@/types";
 import styles from "./ChangedAirports.module.css";
 
@@ -17,13 +18,15 @@ export const ChangedAirports = ({
   onSelect,
   limit = 10,
 }: ChangedAirportsProps) => {
-  const change = show === "added" ? "new" : "lost";
+  const { tn } = useI18n();
   const sign = show === "added" ? "+" : "−";
 
   return (
     <section aria-labelledby="changed-airports-title">
       <h2 id="changed-airports-title" className={styles.title}>
-        {routeCount} {change} {routeCount === 1 ? "route" : "routes"}
+        {show === "added"
+          ? tn("{n} new route", "{n} new routes", routeCount)
+          : tn("{n} lost route", "{n} lost routes", routeCount)}
       </h2>
       <ul className={styles.list}>
         {airports.slice(0, limit).map((a) => (
@@ -41,8 +44,11 @@ export const ChangedAirports = ({
       </ul>
       {airports.length > limit && (
         <p className={styles.more}>
-          {airports.length - limit} more {airports.length - limit === 1 ? "airport" : "airports"}.
-          Search above for one.
+          {tn(
+            "{n} more airport. Search above for one.",
+            "{n} more airports. Search above for one.",
+            airports.length - limit,
+          )}
         </p>
       )}
     </section>

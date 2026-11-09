@@ -1,9 +1,10 @@
 import { Checkbox } from "@/components/common/Checkbox";
 import { Combobox } from "@/components/common/Combobox";
 import { SegmentedControl } from "@/components/common/SegmentedControl";
+import { useI18n } from "@/i18n/context";
 import type { Compare, MonthOption, RouteChange } from "@/types";
 import { monthsAfter, monthsBefore, shortLabel } from "@/utils/months";
-import { CHANGE_LABELS } from "@/utils/routeChanges";
+import { changeLabels } from "@/utils/routeChanges";
 import styles from "./MonthControls.module.css";
 
 type MonthControlsProps = {
@@ -18,11 +19,6 @@ type MonthControlsProps = {
 
 const monthValue = (m: MonthOption) => `${m.year}-${m.month}`;
 
-const SHOW_OPTIONS = (Object.keys(CHANGE_LABELS) as RouteChange[]).map((value) => ({
-  value,
-  label: `${CHANGE_LABELS[value]} routes`,
-}));
-
 /** Picks the month to show, or two months and which routes changed between them. */
 export const MonthControls = ({
   months,
@@ -32,24 +28,30 @@ export const MonthControls = ({
   setCompare,
   disabled,
 }: MonthControlsProps) => {
+  const { t } = useI18n();
   const earlier = snapshot ? monthsBefore(months, snapshot) : [];
+  const labels = changeLabels(t);
+  const showOptions = (Object.keys(labels) as RouteChange[]).map((value) => ({
+    value,
+    label: labels[value],
+  }));
 
   return (
     <>
       <Checkbox
-        label="Compare months"
+        label={t("Compare months")}
         checked={!!compare}
         disabled={disabled || !earlier.length}
         onChange={(on) => setCompare(on ? { from: earlier[0], show: "added" } : null)}
       />
       {!earlier.length && !compare && (
-        <p className={styles.hint}>Needs an earlier month of data to compare with.</p>
+        <p className={styles.hint}>{t("Needs an earlier month of data to compare with.")}</p>
       )}
       {compare ? (
         <>
           <div className={styles.range}>
             <Combobox<MonthOption>
-              label="From month"
+              label={t("From month")}
               size="sm"
               value={compare.from}
               onChange={(option) => option && setCompare({ ...compare, from: option })}
@@ -58,9 +60,9 @@ export const MonthControls = ({
               getOptionLabel={shortLabel}
               getOptionValue={monthValue}
             />
-            <span aria-hidden>to</span>
+            <span aria-hidden>{t("to")}</span>
             <Combobox<MonthOption>
-              label="To month"
+              label={t("To month")}
               size="sm"
               value={snapshot}
               onChange={(option) => option && setSnapshot(option)}
@@ -71,9 +73,9 @@ export const MonthControls = ({
             />
           </div>
           <SegmentedControl<RouteChange>
-            label="Show"
+            label={t("Show")}
             name="route-change"
-            options={SHOW_OPTIONS}
+            options={showOptions}
             value={compare.show}
             onChange={(show) => setCompare({ ...compare, show })}
             disabled={disabled}
@@ -81,13 +83,13 @@ export const MonthControls = ({
         </>
       ) : (
         <Combobox<MonthOption>
-          label="Data snapshot month"
+          label={t("Data snapshot month")}
           size="sm"
           value={snapshot}
           onChange={(option) => option && setSnapshot(option)}
           options={months}
           isDisabled={disabled}
-          placeholder="Select a month"
+          placeholder={t("Select a month")}
           getOptionLabel={(o) => o.label}
           getOptionValue={monthValue}
         />

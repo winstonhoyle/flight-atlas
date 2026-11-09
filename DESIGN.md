@@ -31,6 +31,7 @@ Each component is three flat files in its feature folder: `Name.tsx`, `Name.modu
 | `app/src/components/common/` | Domain-free building blocks: `Button`, `IconButton`, `Combobox`, `SegmentedControl`, `Panel`, `Dialog`, `ExternalLink` |
 | `app/src/components/atlas/` | The map page: `MapComponent`, `OverlayPanel`, `MonthControls`, `ChangedAirports`, `RouteInfo`, `Legend`, `WelcomeDialog` |
 | `app/src/icons/` | Inline SVG icons |
+| `app/src/i18n/` | The languages, `translator()`, and the catalogs in `locales/*.json`. See [Languages](#languages) |
 | `app/src/styles/` | `tokens.css` (every value), `tokens.ts` (reads them from JS), `index.css` (base styles) |
 
 A piece with no knowledge of airports or routes goes in `common/`. When two components start
@@ -146,6 +147,28 @@ so the logo keeps its colors. Don't reuse the brand red and green to mean two di
 The UI values above were measured on 2026-10-13: color blindness simulated with `colorspacious`
 (Machado 2009) and the `colorblind` package (LMS daltonization), counting the worse of the two.
 Measure a new color the same way before adding it.
+
+## Languages
+
+The site is in English, Latin American Spanish, Canadian French, and Brazilian Portuguese.
+English is the default and has no URL prefix; the others are under `/es/`, `/fr/`, and `/pt/`.
+Each language has its own pages so search engines can index them, and `hreflang` links the
+versions of a page together.
+
+- The language switcher is a floating globe button beside the info button, not part of the panel:
+  the panel chooses what the map shows, and language applies to the whole site. It opens a dialog
+  with one link per language, each written in its own name, and choosing one loads that page.
+- No flags. A flag stands for a country, and the UI uses no emoji.
+- Airports, airlines, and cities stay as Wikipedia gives them. So do the problem messages the
+  scraper writes.
+- Every sentence is one message with `{placeholders}`, so a language can reorder it. Counts use
+  plural forms (`tn`), because French and Portuguese treat 0 as singular.
+- Translations are written for meaning, not word for word, and follow each language's own rules
+  for capitals and punctuation. Canadian French uses "nolisé" for charter and puts a
+  non-breaking space before a colon but not before a semicolon.
+- Spanish addresses the reader as "tú", French as "vous", and Portuguese as "você".
+
+How the catalogs work and how to add a language is in [app/README.md](app/README.md#languages).
 
 ## Writing
 

@@ -1,3 +1,5 @@
+import { LanguageDialog } from "@/components/common/LanguageDialog";
+import { useI18n } from "@/i18n/context";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Feature from "ol/Feature";
@@ -19,14 +21,7 @@ import XYZ from "ol/source/XYZ";
 import "ol/ol.css";
 import type { Position } from "geojson";
 
-import {
-  ATTRIBUTION,
-  DEFAULT_CENTER,
-  DEFAULT_ZOOM,
-  MAX_ZOOM,
-  TILE_URL,
-  createView,
-} from "./basemap";
+import { ATTRIBUTION, AMERICAS_EXTENT, MAX_ZOOM, TILE_URL, createView } from "./basemap";
 import { Legend } from "./Legend";
 import { createLayers, layerList, routesExtent, type MapLayers } from "./mapLayers";
 import { OverlayPanel } from "./OverlayPanel";
@@ -43,7 +38,7 @@ import { useMonths } from "@/hooks/useMonths";
 import { useRenderer } from "@/hooks/useRenderer";
 import { airlineSources, airlinesOn, routesFor, useRoutes } from "@/hooks/useRoutes";
 import { useSelectionUrl } from "@/hooks/useSelectionUrl";
-import { InfoIcon } from "@/icons";
+import { InfoIcon, LanguageIcon } from "@/icons";
 import type {
   AirlineSummary,
   Airport,
@@ -55,7 +50,7 @@ import type {
 import { distanceMiles, greatCircle } from "@/utils/geo";
 import { airlineAnchor, errorsUrl } from "@/utils/problems";
 import { changedAirports, changeProblems, routeChanges } from "@/utils/routeChanges";
-import { EMPTY_SELECTION, type Selection } from "@/utils/selectionPath";
+import { EMPTY_SELECTION, buildSelectionPath, type Selection } from "@/utils/selectionPath";
 
 const GEODESIC_MIN_MILES = 1000;
 const ARC_SEGMENTS = 32;
@@ -97,8 +92,7 @@ const fitTo = (map: OlMap | null, extent: Extent, padding = 40) => {
   });
 };
 
-const resetView = (map: OlMap | null) =>
-  map?.getView().animate({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, duration: animationMs() });
+const resetView = (map: OlMap | null) => fitTo(map, AMERICAS_EXTENT);
 
 const airportAt = (map: OlMap, layer: Layer | null, pixel: Pixel, coordinate: Coordinate) => {
   if (!layer) return null;
@@ -119,8 +113,10 @@ const airportAt = (map: OlMap, layer: Layer | null, pixel: Pixel, coordinate: Co
 const isUnreadable = (airport: Airport) => airport.properties.destinations === 0;
 
 export const MapComponent = () => {
+  const { t, tn, href } = useI18n();
   const [selectedAirport, setSelectedAirport] = useState<Airport | null>(null);
   const [selectedAirline, setSelectedAirline] = useState("");
+  const [showLanguages, setShowLanguages] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem("hasVisited"));
   const [destinationAirport, setDestinationAirport] = useState<Airport | null>(null);
   const [chosenSnapshot, setChosenSnapshot] = useState<MonthOption | null>(null);
@@ -454,7 +450,8 @@ export const MapComponent = () => {
   if (unmapped && (selectedAirport || selectedAirline)) setUnmapped("");
 
   const notice = useMemo(() => {
-    const plural = (n: number) => `${n} Wikipedia data ${n === 1 ? "problem" : "problems"}`;
+    const plural = (n: number) =>
+      tn("{n} Wikipedia data problem", "{n} Wikipedia data problems", n);
     if (changed) {
       // The whole comparison's count is too broad to act on; show it once narrowed down.
       if (!selectedAirport && !selectedAirline) return null;
@@ -465,8 +462,13 @@ export const MapComponent = () => {
       return (
         found.length > 0 && (
           <ProblemNotice
-            text={`${plural(found.length)} in ${problemsMonth?.label} may explain some of these changes.`}
-            href={errorsUrl(selectedAirport?.properties.IATA ?? found[0].airport!, problemsMonth)}
+            text={t("{problems} in {month} may explain some of these changes.", {
+              problems: plural(found.length),
+              month: problemsMonth?.label ?? "",
+            })}
+            href={href(
+              errorsUrl(selectedAirport?.properties.IATA ?? found[0].airport!, problemsMonth),
+            )}
           />
         )
       );
@@ -475,7 +477,9 @@ export const MapComponent = () => {
       const iata = selectedAirport.properties.IATA;
       const count = problems.filter((p) => p.airport === iata).length;
       return (
-        count > 0 && <ProblemNotice text={plural(count)} href={errorsUrl(iata, chosenSnapshot)} />
+        count > 0 && (
+          <ProblemNotice text={plural(count)} href={href(errorsUrl(iata, chosenSnapshot))} />
+        )
       );
     }
     if (selectedAirline) {
@@ -485,7 +489,7 @@ export const MapComponent = () => {
         count > 0 && (
           <ProblemNotice
             text={plural(count)}
-            href={errorsUrl(airlineAnchor(name), chosenSnapshot)}
+            href={href(errorsUrl(airlineAnchor(name), chosenSnapshot))}
           />
         )
       );
@@ -495,8 +499,10 @@ export const MapComponent = () => {
       unmapped &&
       found && (
         <ProblemNotice
-          text={`${found.airport_name ?? unmapped} (${unmapped}) isn't on the map: its Wikipedia routes couldn't be read.`}
-          href={errorsUrl(unmapped, chosenSnapshot)}
+          text={t("{airport} isn’t on the map: its Wikipedia routes couldn’t be read.", {
+            airport: `${found.airport_name ?? unmapped} (${unmapped})`,
+          })}
+          href={href(errorsUrl(unmapped, chosenSnapshot))}
         />
       )
     );
@@ -510,6 +516,9 @@ export const MapComponent = () => {
     problems,
     airlines,
     chosenSnapshot,
+    t,
+    tn,
+    href,
   ]);
 
   const handleBack = () => {
@@ -539,8 +548,8 @@ export const MapComponent = () => {
             <span>
               {hovered.properties.IATA} ·{" "}
               {isUnreadable(hovered)
-                ? "routes unreadable"
-                : `${hovered.properties.destinations} destinations`}
+                ? t("routes unreadable")
+                : tn("{n} destination", "{n} destinations", hovered.properties.destinations)}
             </span>
           </div>
         ),
@@ -586,13 +595,32 @@ export const MapComponent = () => {
       </OverlayPanel>
 
       <IconButton
-        label="About Flight Atlas"
+        label={t("Language")}
+        variant="floating"
+        className={styles.languageButton}
+        onClick={() => setShowLanguages(true)}
+      >
+        <LanguageIcon />
+      </IconButton>
+
+      <IconButton
+        label={t("About Flight Atlas")}
         variant="floating"
         className={styles.infoButton}
         onClick={() => setShowWelcome(true)}
       >
         <InfoIcon />
       </IconButton>
+
+      <LanguageDialog
+        open={showLanguages}
+        onClose={() => setShowLanguages(false)}
+        path={buildSelectionPath({
+          airport: selectedAirport?.properties.IATA ?? "",
+          destination: destinationAirport?.properties.IATA ?? "",
+          airline: selectedAirline,
+        })}
+      />
 
       <WelcomeDialog open={showWelcome} onClose={() => setShowWelcome(false)} />
     </div>

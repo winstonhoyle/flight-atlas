@@ -5,12 +5,12 @@ import { Combobox } from "@/components/common/Combobox";
 import { ExternalLink } from "@/components/common/ExternalLink";
 import { IconButton } from "@/components/common/IconButton";
 import { Panel } from "@/components/common/Panel";
+import { useI18n } from "@/i18n/context";
 import { ArrowBackIcon, ExpandLessIcon, ExpandMoreIcon, SettingsIcon } from "@/icons";
 import { API_BASE, snapshotParams } from "@/services/api";
 import type { AirlineSummary, Airport, Compare, MonthOption, Routes } from "@/types";
 import { shortLabel } from "@/utils/months";
 import { canWebGL, type Renderer } from "@/utils/renderer";
-import { CHANGE_LABELS } from "@/utils/routeChanges";
 import { ChangedAirports } from "./ChangedAirports";
 import { MonthControls } from "./MonthControls";
 import styles from "./OverlayPanel.module.css";
@@ -44,8 +44,6 @@ type OverlayPanelProps = {
   onRendererChange?: (renderer: Renderer) => void;
   children?: ReactNode;
 };
-
-const ALL_AIRPORTS: Option = { value: "", label: "All airports" };
 
 const buildApiUrl = (
   selectedAirport: Airport | null,
@@ -84,6 +82,7 @@ export const OverlayPanel = ({
   onRendererChange,
   children,
 }: OverlayPanelProps) => {
+  const { t, tn, href } = useI18n();
   const [isOpen, setIsOpen] = useState(true);
   const selection = [
     selectedAirport?.properties.IATA,
@@ -101,7 +100,7 @@ export const OverlayPanel = ({
   const findAirport = (iata: string) => airports.find((a) => a.properties.IATA === iata) ?? null;
 
   const airportOptions: Option[] = [
-    ALL_AIRPORTS,
+    { value: "", label: t("All airports") },
     ...airports
       .filter((a) => !airlineSources || airlineSources.has(a.properties.IATA))
       .map((a) => ({
@@ -112,7 +111,8 @@ export const OverlayPanel = ({
   ];
 
   const destinationOptions = useMemo<Option[]>(() => {
-    if (!routes?.features.length || !airports.length) return [ALL_AIRPORTS];
+    if (!routes?.features.length || !airports.length)
+      return [{ value: "", label: t("All airports") }];
 
     const dstCodes = new Set(
       routes.features
@@ -124,7 +124,7 @@ export const OverlayPanel = ({
         const match = airports.find((a) => a.properties.IATA === code);
         return {
           value: code,
-          label: `${match?.properties.Name || "Unknown airport"} (${code})`,
+          label: `${match?.properties.Name || t("Unknown airport")} (${code})`,
           search: `${match?.properties.Name ?? ""} ${code} ${match?.properties.City ?? ""}`,
           destinations: match?.properties.destinations ?? 0,
         };
@@ -132,11 +132,11 @@ export const OverlayPanel = ({
       .sort((a, b) => b.destinations - a.destinations)
       .map(({ value, label, search }) => ({ value, label, search }));
 
-    return [ALL_AIRPORTS, ...options];
-  }, [routes, airports, selectedAirline]);
+    return [{ value: "", label: t("All airports") }, ...options];
+  }, [routes, airports, selectedAirline, t]);
 
   const airlineOptions: Option[] = [
-    { value: "", label: "All airlines" },
+    { value: "", label: t("All airlines") },
     ...filteredAirlines.map((a) => ({
       value: a.code,
       label:
@@ -144,8 +144,10 @@ export const OverlayPanel = ({
     })),
   ];
 
-  const change = compare && CHANGE_LABELS[compare.show].toLowerCase();
-  const range = compare && snapshot && `${shortLabel(compare.from)} to ${shortLabel(snapshot)}`;
+  const range =
+    compare && snapshot
+      ? t("{from} to {to}", { from: shortLabel(compare.from), to: shortLabel(snapshot) })
+      : "";
   // In compare mode, the routes drawn from it, not the marker's count, which includes inbound changes.
   const destinationCount = compare
     ? destinationOptions.length - 1
@@ -155,17 +157,19 @@ export const OverlayPanel = ({
     <Panel id="overlay-panel" className={styles.panel}>
       <div className={styles.header}>
         <div>
-          <h1 className={styles.title}>Direct flight routes</h1>
+          <h1 className={styles.title}>{t("Direct flight routes")}</h1>
           {snapshot && (
             <p className={styles.snapshot}>
               {compare
-                ? `${CHANGE_LABELS[compare.show]} routes, ${range}`
-                : `Data from ${snapshot.label}`}
+                ? compare.show === "added"
+                  ? t("New routes, {range}", { range })
+                  : t("Lost routes, {range}", { range })
+                : t("Data from {month}", { month: snapshot.label })}
             </p>
           )}
         </div>
         <IconButton
-          label={isOpen ? "Collapse panel" : "Expand panel"}
+          label={isOpen ? t("Collapse panel") : t("Expand panel")}
           aria-expanded={isOpen}
           aria-controls="overlay-body"
           onClick={() => setIsOpen(!isOpen)}
@@ -178,7 +182,7 @@ export const OverlayPanel = ({
         <div id="overlay-body" className={styles.body}>
           <div className={styles.fields}>
             <Combobox<Option>
-              label="Origin airport"
+              label={t("Origin airport")}
               value={
                 selectedAirport
                   ? (airportOptions.find((o) => o.value === selectedAirport.properties.IATA) ??
@@ -192,13 +196,13 @@ export const OverlayPanel = ({
               options={airportOptions}
               isClearable
               isDisabled={loading}
-              placeholder="Search for an airport"
+              placeholder={t("Search for an airport")}
               getOptionSearch={(o) => o.search ?? o.label}
             />
 
             {selectedAirport && (
               <Combobox<Option>
-                label="Destination airport"
+                label={t("Destination airport")}
                 value={
                   destinationAirport
                     ? (destinationOptions.find(
@@ -210,14 +214,14 @@ export const OverlayPanel = ({
                 options={destinationOptions}
                 isClearable
                 isDisabled={loading}
-                placeholder="Search for a destination"
+                placeholder={t("Search for a destination")}
                 getOptionSearch={(o) => o.search ?? o.label}
               />
             )}
 
             {!destinationAirport && (
               <Combobox<Option>
-                label="Airline"
+                label={t("Airline")}
                 value={
                   selectedAirline
                     ? (airlineOptions.find((o) => o.value === selectedAirline) ?? null)
@@ -227,16 +231,33 @@ export const OverlayPanel = ({
                 options={airlineOptions}
                 isClearable={!!selectedAirline}
                 isDisabled={loading}
-                placeholder="Search for an airline"
+                placeholder={t("Search for an airline")}
               />
             )}
           </div>
 
           {selectedAirport && !destinationAirport && (
             <p className={styles.summary}>
-              {selectedAirport.properties.Name}{" "}
-              {compare ? `has ${change} routes to` : "has direct flights to"} {destinationCount}{" "}
-              {destinationCount === 1 ? "destination" : "destinations"}.
+              {compare
+                ? compare.show === "added"
+                  ? tn(
+                      "{airport} has new routes to {n} destination.",
+                      "{airport} has new routes to {n} destinations.",
+                      destinationCount,
+                      { airport: selectedAirport.properties.Name },
+                    )
+                  : tn(
+                      "{airport} has lost routes to {n} destination.",
+                      "{airport} has lost routes to {n} destinations.",
+                      destinationCount,
+                      { airport: selectedAirport.properties.Name },
+                    )
+                : tn(
+                    "{airport} has direct flights to {n} destination.",
+                    "{airport} has direct flights to {n} destinations.",
+                    destinationCount,
+                    { airport: selectedAirport.properties.Name },
+                  )}
             </p>
           )}
 
@@ -245,7 +266,7 @@ export const OverlayPanel = ({
           <div className={styles.footer}>
             {(selectedAirport || selectedAirline) && (
               <Button variant="unstyled" icon={<ArrowBackIcon />} onClick={handleBack}>
-                Back
+                {t("Back")}
               </Button>
             )}
             <Button
@@ -256,7 +277,7 @@ export const OverlayPanel = ({
               aria-controls="overlay-advanced"
               onClick={() => setShowAdvanced(!showAdvanced)}
             >
-              Advanced
+              {t("Advanced")}
             </Button>
           </div>
 
@@ -272,12 +293,12 @@ export const OverlayPanel = ({
               />
               <p className={styles.hint}>
                 {compare
-                  ? "The comparison is built from these two requests."
-                  : "Data snapshot: the month the routes were collected, not a flight schedule."}
+                  ? t("The comparison is built from these two requests.")
+                  : t("Data snapshot: the month the routes were collected, not a flight schedule.")}
               </p>
               {onRendererChange && canWebGL() && (
                 <Checkbox
-                  label="Draw the map with your GPU"
+                  label={t("Draw the map with your GPU")}
                   checked={renderer === "webgl"}
                   onChange={(on) => onRendererChange(on ? "webgl" : "canvas")}
                 />
@@ -289,20 +310,22 @@ export const OverlayPanel = ({
                     key={url}
                     href={url}
                     className={styles.apiUrl}
-                    title="Open this API request in a new tab"
+                    title={t("Open this API request in a new tab")}
                   >
                     {url}
                   </ExternalLink>
                 );
               })}
-              <ExternalLink href="/docs">API docs</ExternalLink>
-              <ExternalLink href="/errors">Wikipedia data problems</ExternalLink>
+              <ExternalLink href="/docs">{t("API docs")}</ExternalLink>
+              <ExternalLink href={href("/errors")}>{t("Wikipedia data problems")}</ExternalLink>
             </div>
           )}
 
           {changeCount === 0 && (
             <p className={styles.summary}>
-              No {change} routes, {range}.
+              {compare?.show === "added"
+                ? t("No new routes, {range}.", { range })
+                : t("No lost routes, {range}.", { range })}
             </p>
           )}
 
@@ -316,7 +339,7 @@ export const OverlayPanel = ({
           )}
 
           <div role="status" className={styles.status}>
-            {loading && "Loading airports and routes…"}
+            {loading && t("Loading airports and routes…")}
           </div>
           {error && (
             <p role="alert" className={styles.error}>

@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/common/Button";
 import { Combobox } from "@/components/common/Combobox";
+import { LanguageDialog } from "@/components/common/LanguageDialog";
 import { ExternalLink } from "@/components/common/ExternalLink";
 import { Panel } from "@/components/common/Panel";
 import { useMonths } from "@/hooks/useMonths";
-import { ArrowBackIcon } from "@/icons";
+import { useI18n } from "@/i18n/context";
+import { ArrowBackIcon, LanguageIcon } from "@/icons";
 import { fetchProblems } from "@/services/api";
 import type { MonthOption, Problem } from "@/types";
 import { airlineAnchor, groupBy } from "@/utils/problems";
@@ -22,18 +25,18 @@ const monthFromUrl = (months: MonthOption[]) => {
   return months.find((m) => m.year === year && Number(m.month) === month) ?? months[0] ?? null;
 };
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
 export const ErrorsPage = () => {
+  const { t, tn, href } = useI18n();
   const { months, error: monthsError } = useMonths();
+  const [showLanguages, setShowLanguages] = useState(false);
   const [chosen, setChosen] = useState<MonthOption | null>(null);
   const month = chosen ?? monthFromUrl(months);
   const [loaded, setLoaded] = useState<{ key: string; problems: Problem[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    document.title = "Wikipedia data problems | Flight Atlas";
-  }, []);
+    document.title = `${t("Wikipedia data problems")} | Flight Atlas`;
+  }, [t]);
 
   useEffect(() => {
     if (!month) return;
@@ -79,11 +82,11 @@ export const ErrorsPage = () => {
     () => [
       ...[...byAirport].map(([iata, list]) => ({
         value: iata,
-        label: `${list[0].airport_name ?? "Unknown airport"} (${iata})`,
+        label: `${list[0].airport_name ?? t("Unknown airport")} (${iata})`,
       })),
       ...[...byAirline.keys()].map((name) => ({ value: airlineAnchor(name), label: name })),
     ],
-    [byAirport, byAirline],
+    [byAirport, byAirline, t],
   );
 
   // The sections arrive after the page loads, so the browser can't scroll to the hash itself.
@@ -98,7 +101,7 @@ export const ErrorsPage = () => {
     window.history.replaceState(
       null,
       "",
-      `/errors?year=${option.year}&month=${Number(option.month)}`,
+      href(`/errors?year=${option.year}&month=${Number(option.month)}`),
     );
   };
 
@@ -108,34 +111,43 @@ export const ErrorsPage = () => {
 
   return (
     <main className={styles.page}>
-      <a href="/" className={styles.back}>
-        <ArrowBackIcon /> Back to the map
-      </a>
-      <h1 className={styles.title}>Wikipedia data problems</h1>
+      <div className={styles.top}>
+        <a href={href("/")} className={styles.back}>
+          <ArrowBackIcon /> {t("Back to the map")}
+        </a>
+        <Button variant="unstyled" icon={<LanguageIcon />} onClick={() => setShowLanguages(true)}>
+          {t("Language")}
+        </Button>
+      </div>
+      <LanguageDialog
+        open={showLanguages}
+        onClose={() => setShowLanguages(false)}
+        path={`/errors${window.location.search}`}
+      />
+      <h1 className={styles.title}>{t("Wikipedia data problems")}</h1>
       <p className={styles.intro}>
-        Flight Atlas reads its routes from each airport&apos;s &ldquo;Airlines and
-        destinations&rdquo; table on Wikipedia. These are the pages it couldn&apos;t fully read in a
-        month&apos;s scrape, so some routes are missing. Fixing the page on Wikipedia fixes the map
-        at the next scrape.
+        {t(
+          "Flight Atlas reads its routes from each airport’s “Airlines and destinations” table on Wikipedia. These are the pages it couldn’t fully read in a month’s scrape, so some routes are missing. Fixing the page on Wikipedia fixes the map at the next scrape.",
+        )}
       </p>
 
       <div className={styles.controls}>
         <Combobox<MonthOption>
-          label="Scrape month"
+          label={t("Scrape month")}
           value={month}
           onChange={chooseMonth}
           options={months}
-          placeholder="Select a month"
+          placeholder={t("Select a month")}
           getOptionLabel={(o) => o.label}
           getOptionValue={monthKey}
         />
         <Combobox<Option>
-          label="Find an airport or airline"
+          label={t("Find an airport or airline")}
           value={null}
           onChange={(option) => option && jumpTo(option.value)}
           options={jumpOptions}
           isDisabled={!problems?.length}
-          placeholder="Find an airport or airline"
+          placeholder={t("Find an airport or airline")}
         />
       </div>
 
@@ -146,26 +158,30 @@ export const ErrorsPage = () => {
       )}
       <p role="status" className={styles.summary}>
         {!problems
-          ? "Loading problems…"
+          ? t("Loading problems…")
           : problems.length === 0
-            ? "No problems were recorded for this month."
-            : `${plural(problems.length, "problem")} across ${plural(byAirport.size, "airport")} and ${plural(byAirline.size, "airline")}.`}
+            ? t("No problems were recorded for this month.")
+            : t("{problems} across {airports} and {airlines}.", {
+                problems: tn("{n} problem", "{n} problems", problems.length),
+                airports: tn("{n} airport", "{n} airports", byAirport.size),
+                airlines: tn("{n} airline", "{n} airlines", byAirline.size),
+              })}
       </p>
 
       {problems && problems.length > 0 && (
         <>
           <ProblemsMap places={places} onSelect={jumpTo} />
 
-          <h2 className={styles.heading}>Airports</h2>
+          <h2 className={styles.heading}>{t("Airports")}</h2>
           <div className={styles.grid}>
             {[...byAirport].map(([iata, list]) => (
               <Panel key={iata} id={iata} className={styles.card}>
                 <h3 className={styles.cardTitle}>
-                  {list[0].airport_name ?? "Unknown airport"} ({iata})
+                  {list[0].airport_name ?? t("Unknown airport")} ({iata})
                 </h3>
                 {list[0].coordinates && (
-                  <a href={`/${iata}`} className={styles.mapLink}>
-                    View on the map
+                  <a href={href(`/${iata}`)} className={styles.mapLink}>
+                    {t("View on the map")}
                   </a>
                 )}
                 <ProblemList problems={list} groupedBy="airport" />
@@ -175,7 +191,7 @@ export const ErrorsPage = () => {
 
           {byAirline.size > 0 && (
             <>
-              <h2 className={styles.heading}>Airlines</h2>
+              <h2 className={styles.heading}>{t("Airlines")}</h2>
               <div className={styles.grid}>
                 {[...byAirline].map(([name, list]) => (
                   <Panel key={name} id={airlineAnchor(name)} className={styles.card}>
@@ -193,7 +209,7 @@ export const ErrorsPage = () => {
 
           {unplaced.length > 0 && (
             <>
-              <h2 className={styles.heading}>Other pages</h2>
+              <h2 className={styles.heading}>{t("Other pages")}</h2>
               <Panel className={styles.card}>
                 <ProblemList problems={unplaced} groupedBy="none" />
               </Panel>

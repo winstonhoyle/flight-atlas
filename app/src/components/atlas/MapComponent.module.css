@@ -34,3 +34,10 @@
   bottom: var(--fa-map-bottom);
   z-index: var(--fa-z-floating);
 }
+
+.languageButton {
+  position: absolute;
+  right: calc(var(--fa-space-105) + var(--fa-target-min) + var(--fa-space-1));
+  bottom: var(--fa-map-bottom);
+  z-index: var(--fa-z-floating);
+}

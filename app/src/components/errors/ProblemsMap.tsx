@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useI18n } from "@/i18n/context";
 import Feature, { type FeatureLike } from "ol/Feature";
 import OlMap from "ol/Map";
 import View from "ol/View";
@@ -12,7 +13,13 @@ import XYZ from "ol/source/XYZ";
 import { Circle, Fill, Stroke, Style } from "ol/style";
 import "ol/ol.css";
 
-import { ATTRIBUTION, DEFAULT_CENTER, MAX_ZOOM, TILE_URL } from "@/components/atlas/basemap";
+import {
+  AMERICAS_EXTENT,
+  ATTRIBUTION,
+  DEFAULT_CENTER,
+  MAX_ZOOM,
+  TILE_URL,
+} from "@/components/atlas/basemap";
 import { tokenValue } from "@/styles/tokens";
 import styles from "./ProblemsMap.module.css";
 
@@ -52,7 +59,14 @@ export const ProblemsMap = ({ places, onSelect }: ProblemsMapProps) => {
   const [layer] = useState(
     () => new VectorLayer({ source: new VectorSource(), style: placeStyle }),
   );
+  const { tn } = useI18n();
   const select = useEffectEvent(onSelect);
+  const describe = useEffectEvent((place: ProblemPlace) =>
+    tn("{name} ({iata}): {n} problem", "{name} ({iata}): {n} problems", place.count, {
+      name: place.name,
+      iata: place.iata,
+    }),
+  );
 
   useEffect(() => {
     const map = new OlMap({
@@ -61,9 +75,11 @@ export const ProblemsMap = ({ places, onSelect }: ProblemsMapProps) => {
         new TileLayer({ source: new XYZ({ url: TILE_URL, attributions: ATTRIBUTION }) }),
         layer,
       ],
-      view: new View({ center: DEFAULT_CENTER, zoom: 3, maxZoom: MAX_ZOOM }),
+      view: new View({ center: DEFAULT_CENTER, zoom: 2.5, maxZoom: MAX_ZOOM }),
       controls: defaultControls({ rotate: false, attributionOptions: { collapsible: false } }),
     });
+    const size = map.getSize();
+    if (size) map.getView().fit(AMERICAS_EXTENT, { size });
     const viewport = map.getViewport();
     const placeAt = (pixel: number[]) =>
       map.forEachFeatureAtPixel(pixel, (f) => f.get("place") as ProblemPlace, {
@@ -73,9 +89,7 @@ export const ProblemsMap = ({ places, onSelect }: ProblemsMapProps) => {
     map.on("pointermove", (e) => {
       const place = placeAt(e.pixel);
       viewport.style.cursor = place ? "pointer" : "";
-      viewport.title = place
-        ? `${place.name} (${place.iata}): ${place.count} ${place.count === 1 ? "problem" : "problems"}`
-        : "";
+      viewport.title = place ? describe(place) : "";
     });
     map.on("click", (e) => {
       const place = placeAt(e.pixel);

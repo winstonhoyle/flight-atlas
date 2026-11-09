@@ -1,8 +1,11 @@
+import { getCenter } from "ol/extent";
 import View from "ol/View";
 import { fromLonLat } from "ol/proj";
 
-export const DEFAULT_CENTER = fromLonLat([-98.5795, 39.8283]); // center of continental US
-export const DEFAULT_ZOOM = 4;
+/** Alaska to Tierra del Fuego: where every airport in the data is. The map opens and resets to this. */
+export const AMERICAS_EXTENT = [...fromLonLat([-170, -56]), ...fromLonLat([-30, 72])];
+export const DEFAULT_CENTER = getCenter(AMERICAS_EXTENT);
+export const DEFAULT_ZOOM = 2.5; // until the first fit to AMERICAS_EXTENT
 export const MAX_ZOOM = 10;
 
 /** More than one world can be in view: an airline such as LATAM draws arcs over 360° wide, which a one-world view can't fit. */

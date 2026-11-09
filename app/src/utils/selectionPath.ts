@@ -1,3 +1,5 @@
+import { stripLocale, type Translate } from "@/i18n/translate";
+
 export type Selection = {
   airport: string;
   destination: string;
@@ -10,7 +12,7 @@ const AIRPORT = /^[A-Z]{3}$/;
 const AIRLINE = /^[A-Z0-9]{2,3}$/;
 
 export const parseSelectionPath = (pathname: string): Selection => {
-  const parts = pathname
+  const parts = stripLocale(pathname)
     .split("/")
     .filter(Boolean)
     .map((p) => p.toUpperCase());
@@ -44,15 +46,19 @@ export const buildSelectionPath = ({ airport, destination, airline }: Selection)
 };
 
 export const selectionTitle = (
+  t: Translate,
   { airport, destination, airline }: Selection,
   airlineName?: string,
   airportCity?: string,
 ): string => {
   const suffix = "Flight Atlas";
-  if (airport && destination) return `${airport} to ${destination} direct flights | ${suffix}`;
+  if (airport && destination)
+    return `${t("{from} to {to} direct flights", { from: airport, to: destination })} | ${suffix}`;
   if (airport && airline)
-    return `${airport} direct flights on ${airlineName ?? airline} | ${suffix}`;
-  if (airport) return `Direct flights from ${airportCity || airport} (${airport}) | ${suffix}`;
-  if (airline) return `${airlineName ?? airline} routes in the Americas | ${suffix}`;
-  return `${suffix}: direct flight route map of the Americas`;
+    return `${t("{airport} direct flights on {airline}", { airport, airline: airlineName ?? airline })} | ${suffix}`;
+  if (airport)
+    return `${t("Direct flights from {place} ({airport})", { place: airportCity || airport, airport })} | ${suffix}`;
+  if (airline)
+    return `${t("{airline} routes in the Americas", { airline: airlineName ?? airline })} | ${suffix}`;
+  return t("Flight Atlas: direct flight route map of the Americas");
 };

@@ -7,6 +7,7 @@ import Select, {
   type GroupBase,
   type SelectInstance,
 } from "react-select";
+import { useI18n } from "@/i18n/context";
 import { CloseIcon, ExpandMoreIcon } from "@/icons";
 import styles from "./Combobox.module.css";
 
@@ -53,6 +54,7 @@ export function Combobox<T>({
   getOptionValue,
   getOptionSearch,
 }: ComboboxProps<T>) {
+  const { t } = useI18n();
   const selectRef = useRef<SelectInstance<T, false>>(null);
 
   // On touch, the first tap opens the list without the keyboard; tapping the text again opens it.
@@ -86,6 +88,7 @@ export function Combobox<T>({
       value={value}
       onChange={onChange}
       placeholder={placeholder}
+      noOptionsMessage={() => t("No options")}
       isClearable={isClearable}
       isDisabled={isDisabled}
       // The panel scrolls, which would clip a menu rendered inside it.

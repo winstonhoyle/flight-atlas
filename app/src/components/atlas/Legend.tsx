@@ -1,21 +1,23 @@
 import { useState } from "react";
 import { IconButton } from "@/components/common/IconButton";
+import { useI18n } from "@/i18n/context";
 import { Panel } from "@/components/common/Panel";
 import { AddIcon, RemoveIcon } from "@/icons";
 import { DESTINATION_BINS, destinationColorToken } from "@/utils/destinations";
 import styles from "./Legend.module.css";
 
 export const Legend = () => {
+  const { t, href } = useI18n();
   const [open, setOpen] = useState(() => !window.matchMedia("(max-width: 40em)").matches);
 
   return (
     <Panel id="legend" className={styles.legend}>
       <div className={styles.header}>
         <h2 className={styles.title} id="legend-title">
-          Destinations
+          {t("Destinations")}
         </h2>
         <IconButton
-          label={open ? "Collapse legend" : "Expand legend"}
+          label={open ? t("Collapse legend") : t("Expand legend")}
           aria-expanded={open}
           aria-controls="legend-items"
           onClick={() => setOpen(!open)}
@@ -35,12 +37,12 @@ export const Legend = () => {
                   style={{ background: `var(${destinationColorToken(bin.n)})` }}
                   aria-hidden
                 />
-                {bin.label}
+                {bin.max === Infinity ? t("Over 100") : bin.label}
               </li>
             ))}
           <li className={styles.item}>
             <span className={styles.dash} aria-hidden />
-            Seasonal or charter
+            {t("Seasonal or charter")}
           </li>
           <li className={styles.item}>
             <span
@@ -48,8 +50,8 @@ export const Legend = () => {
               style={{ background: "var(--fa-map-unreadable)" }}
               aria-hidden
             />
-            <a href="/errors" className={styles.link}>
-              Routes unreadable
+            <a href={href("/errors")} className={styles.link}>
+              {t("Routes unreadable")}
             </a>
           </li>
         </ul>

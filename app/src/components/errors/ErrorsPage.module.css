@@ -7,6 +7,13 @@
   padding: var(--fa-space-3) var(--fa-space-2);
 }
 
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fa-space-2);
+}
+
 .back {
   display: inline-flex;
   align-items: center;
