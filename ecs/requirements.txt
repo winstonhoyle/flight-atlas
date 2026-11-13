@@ -44,7 +44,7 @@ shapely==2.1.2
     # via -r requirements.in
 six==1.17.0
     # via python-dateutil
-soupsieve==2.10
+soupsieve==4.0
     # via beautifulsoup4
 tqdm==4.68.4
     # via -r requirements.in
